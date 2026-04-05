@@ -27,8 +27,10 @@ def seed_training():
     print("[*] Training Prometheus: Injecting initial knowledge...")
     for payload, score, status in knowledge_base:
         try:
+            # Use string format for timestamp to avoid Python 3.12 deprecation warning
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute('''INSERT OR IGNORE INTO experience (payload, score, status, timestamp)
-                            VALUES (?, ?, ?, ?)''', (payload, score, status, datetime.now()))
+                            VALUES (?, ?, ?, ?)''', (payload, score, status, now_str))
         except Exception as e:
             print(f"[!] Error seeding {payload}: {e}")
 
