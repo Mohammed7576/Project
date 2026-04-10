@@ -7,7 +7,8 @@ export class ASTMutator {
     "logical_alts": this._logical_equivalents.bind(this),
     "inline_comments": this._inline_version_comments.bind(this),
     "union_balance": this._balance_union_columns.bind(this),
-    "junk_fill": this._junk_filling.bind(this)
+    "junk_fill": this._junk_filling.bind(this),
+    "context_aware": this._context_aware_mutation.bind(this)
   };
 
   public mutate(payload: string): string {
@@ -74,11 +75,55 @@ export class ASTMutator {
   }
 
   private _junk_filling(payload: string): string {
-    const junk = ["bypass", "unit804", "audit"];
+    const junk = ["bypass", "attack_unit", "audit"];
     if (payload.includes("/**/")) {
       return payload.replace("/**/", `/*${junk[Math.floor(Math.random() * junk.length)]}*/`);
     }
     return payload;
+  }
+
+  private _context_aware_mutation(payload: string): string {
+    let mutated = payload;
+    
+    // 1. Quote Alteration: Swap quotes or use hex for strings
+    if (mutated.includes("'")) {
+      const rand = Math.random();
+      if (rand < 0.4) {
+        mutated = mutated.replace(/'/g, '"');
+      } else if (rand < 0.7) {
+        // Replace string literals with hex if they are in quotes
+        mutated = mutated.replace(/'([^']*)'/g, (match, p1) => {
+          if (p1.length > 0) {
+            const hex = Array.from(p1).map((c: string) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+            return `0x${hex}`;
+          }
+          return match;
+        });
+      }
+    }
+
+    // 2. Comment Wrapping: Wrap keywords or parts of the payload
+    const keywords = ["SELECT", "UNION", "FROM", "WHERE", "AND", "OR", "ORDER", "BY"];
+    for (const kw of keywords) {
+      const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+      if (regex.test(mutated)) {
+        const coin = Math.random();
+        if (coin < 0.3) {
+          mutated = mutated.replace(regex, `/**/${kw}/**/`);
+        } else if (coin < 0.6) {
+          mutated = mutated.replace(regex, `/*!${kw}*/`);
+        }
+      }
+    }
+
+    // 3. Space/Separator Mutation
+    if (mutated.includes(" ")) {
+      const separators = ["/**/", "/*!*/", "+", "%20"];
+      const sep = separators[Math.floor(Math.random() * separators.length)];
+      mutated = mutated.replace(/ /g, sep);
+    }
+
+    return mutated;
   }
 
   private _shuffle<T>(array: T[]): T[] {

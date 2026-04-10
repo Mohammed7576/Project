@@ -7,6 +7,32 @@ class SuccessValidator:
         self.hash_pattern = r"[a-f0-9]{32}"
         self.schema_signatures = ["table_name", "column_name", "information_schema", "users", "guest"]
 
+    def get_sql_error(self, response_text):
+        """Detects and extracts the full SQL error message for better feedback."""
+        # Common SQL error prefixes
+        error_indicators = [
+            r"you have an error in your sql syntax",
+            r"mysql_fetch_array\(\)",
+            r"native client",
+            r"unclosed quotation mark",
+            r"postgresql query failed",
+            r"the used select statements have a different number of columns",
+            r"column count doesn't match",
+            r"invalid column name",
+            r"sqlstate"
+        ]
+        
+        for indicator in error_indicators:
+            # Search for the indicator and capture everything until a common terminator
+            # (newline, <br>, or closing tag)
+            pattern = rf".*?({indicator}.*?)(?:\n|<br|<\/pre|<\/div|$)"
+            match = re.search(pattern, response_text, re.IGNORECASE | re.DOTALL)
+            if match:
+                # Clean up HTML tags if any
+                error_msg = re.sub(r'<[^>]+>', '', match.group(1)).strip()
+                return error_msg
+        return None
+
     def validate(self, response_text, status_code):
         if not response_text:
             return 0.0, "CONNECTION_ERROR"

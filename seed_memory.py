@@ -24,7 +24,7 @@ def seed_training():
                         status TEXT,
                         timestamp DATETIME)''')
 
-    print("[*] Training Prometheus: Injecting initial knowledge...")
+    print("[*] Training القيادة والسيطرة: Injecting initial knowledge...")
     for payload, score, status in knowledge_base:
         try:
             # Use string format for timestamp to avoid Python 3.12 deprecation warning
@@ -36,7 +36,7 @@ def seed_training():
 
     conn.commit()
     conn.close()
-    print("[+] Training Complete. Prometheus now has 'Historical Wisdom'.")
+    print("[+] Training Complete. وحدة الهجوم now has 'Historical Wisdom'.")
 
 if __name__ == "__main__":
     seed_training()

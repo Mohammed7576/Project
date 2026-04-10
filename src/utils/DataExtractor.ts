@@ -41,7 +41,7 @@ export class DataExtractor {
     }
 
     let report = "\n" + "═".repeat(55) + "\n";
-    report += "   PROMETHEUS PROJECT - UNIT 804 HARVEST REPORT\n";
+    report += "   القيادة والسيطرة - وحدة الهجوم HARVEST REPORT\n";
     report += "   Status: Full Exfiltration Successful\n";
     report += "═".repeat(55) + "\n";
 

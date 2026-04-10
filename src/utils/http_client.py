@@ -21,8 +21,8 @@ class HTTPClient:
             print(f"[!] Error extracting CSRF token: {e}")
             return None
 
-    def setup_dvwa(self, username="admin", password="password"):
-        """Performs login and sets security level to MEDIUM."""
+    def setup_dvwa(self, username="admin", password="password", security_level="medium"):
+        """Performs login and sets security level."""
         print(f"[*] Initializing connection to {self.base_url}...")
         
         # 1. Login
@@ -42,11 +42,11 @@ class HTTPClient:
             print("[!] Login failed. Check credentials.")
             return False
             
-        # 2. Set Security Level to MEDIUM
-        print("[*] Setting Security Level to: MEDIUM")
+        # 2. Set Security Level
+        print(f"[*] Setting Security Level to: {security_level.upper()}")
         token = self._get_token(self.security_url)
         security_data = {
-            'security': 'medium',
+            'security': security_level.lower(),
             'seclev_submit': 'Submit'
         }
         if token:

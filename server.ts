@@ -16,7 +16,18 @@ async function startServer() {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    const pythonProcess = spawn("python3", ["main.py"]);
+    const { url, username, password, security } = req.query;
+    
+    // Pass configuration as environment variables to the Python script
+    const pythonProcess = spawn("python3", ["main.py"], {
+      env: {
+        ...process.env,
+        TARGET_URL: url as string,
+        TARGET_USER: username as string,
+        TARGET_PASS: password as string,
+        TARGET_SECURITY: security as string
+      }
+    });
 
     pythonProcess.stdout.on("data", (data) => {
       res.write(data);

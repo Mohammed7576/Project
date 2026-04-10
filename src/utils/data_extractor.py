@@ -42,7 +42,7 @@ class DataExtractor:
             return "\n[-] No readable data found. The bypass was successful, but the output format is unknown."
 
         report = "\n" + "═"*55 + "\n"
-        report += "   PROMETHEUS PROJECT - UNIT 804 HARVEST REPORT\n"
+        report += "   القيادة والسيطرة - وحدة الهجوم HARVEST REPORT\n"
         report += "   Status: Full Exfiltration Successful\n"
         report += "═"*55 + "\n"
 

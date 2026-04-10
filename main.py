@@ -19,14 +19,18 @@ def detect_injection_type(client):
 
 def run_prometheus():
     print("\n" + "="*50, flush=True)
-    print("--- [ Prometheus Project: Unit 804 Initialized ] ---", flush=True)
+    print("--- [ القيادة والسيطرة: وحدة الهجوم Initialized ] ---", flush=True)
     print("="*50, flush=True)
     
-    client = HTTPClient()
+    client = HTTPClient(base_url=os.getenv("TARGET_URL", "http://localhost/"))
     exp_manager = ExperienceManager()
     extractor = DataExtractor()
     
-    if not client.setup_dvwa():
+    target_user = os.getenv("TARGET_USER", "admin")
+    target_pass = os.getenv("TARGET_PASS", "password")
+    target_security = os.getenv("TARGET_SECURITY", "medium")
+
+    if not client.setup_dvwa(username=target_user, password=target_pass, security_level=target_security):
         print("[!] Failed to establish session.", flush=True)
         return
 
@@ -69,5 +73,5 @@ if __name__ == "__main__":
     try:
         run_prometheus()
     except KeyboardInterrupt:
-        print("\n[!] Unit 804 halted by user.", flush=True)
+        print("\n[!] وحدة الهجوم halted by user.", flush=True)
         sys.exit(0)
