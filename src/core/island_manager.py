@@ -1,5 +1,6 @@
 import random
 import time
+import json
 from core.mutator_ast import ASTMutator
 from core.predictive_blocker import PredictiveBlocker
 from utils.success_validator import SuccessValidator
@@ -18,9 +19,32 @@ class IslandManager:
         self.stagnation_counter = 0
         self.context = context
         self.blocker = PredictiveBlocker()
+        self.session_tested = set() # Avoid repeating in same session
+        self.current_gen = 0
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
+        
+        # Try to load previous state
+        saved_state = self.exp_manager.load_session_state(client.base_url)
+        if saved_state:
+            try:
+                state = json.loads(saved_state)
+                self.current_gen = state.get('gen_num', 0)
+                print(f"[*] Resuming from previous session (Generation {self.current_gen})", flush=True)
+                for i_data in state['islands']:
+                    mutator = ASTMutator(context=context)
+                    mutator.strategy_weights = i_data['weights']
+                    mutator.keyword_reputation = i_data['reputation']
+                    self.islands.append({
+                        "id": i_data['id'],
+                        "mutator": mutator,
+                        "population": i_data['population']
+                    })
+                return # Skip default initialization
+            except Exception as e:
+                print(f"[!] Failed to load state: {e}. Starting fresh.", flush=True)
+
         for i in range(num_islands):
             mutator = ASTMutator(context=context)
             # 1. Context-Aware Initialization
@@ -103,6 +127,20 @@ class IslandManager:
             else:
                 self.stagnation_counter = 0
 
+        # 3. Save Session State for Persistence
+        state = {
+            "gen_num": gen_num,
+            "islands": [
+                {
+                    "id": i["id"],
+                    "population": i["population"],
+                    "weights": i["mutator"].strategy_weights,
+                    "reputation": i["mutator"].keyword_reputation
+                } for i in self.islands
+            ]
+        }
+        self.exp_manager.save_session_state(self.client.base_url, json.dumps(state))
+
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
     def _evolve_island(self, island, gen_num):
@@ -126,6 +164,10 @@ class IslandManager:
 
         for i, payload in enumerate(pop):
             if payload in self.hall_of_fame: continue
+            
+            # 0. Avoid repeating successful payloads in the same session
+            if payload in self.session_tested:
+                continue
 
             # 1. Predictive Blocking (The Intelligent Filter)
             blocked, reason = self.blocker.should_block(payload)
@@ -159,6 +201,9 @@ class IslandManager:
             mutator.report_success(payload, score)
             scored_population.append((payload, score, error_msg))
             
+            if score >= 0.9:
+                self.session_tested.add(payload)
+
             if score > max_score: max_score = score
             
             # Multi-Success Awareness

@@ -46,6 +46,7 @@ export default function PrometheusConsole() {
   const [winningPayloads, setWinningPayloads] = useState<string[]>([]);
   const [isStealthMode, setIsStealthMode] = useState(false);
   const [isChaosMode, setIsChaosMode] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(true);
   const [loot, setLoot] = useState<string | null>(null);
   const [savedExploits, setSavedExploits] = useState<{payload: string, type: string, timestamp: string}[]>([]);
   const [targetConfig, setTargetConfig] = useState({
@@ -438,37 +439,57 @@ export default function PrometheusConsole() {
                   <TerminalIcon className="w-4 h-4 text-cyber-green" />
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">c2@kali:~/attack_unit</span>
                 </div>
-                <div className="flex gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-slate-800" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-slate-800" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-cyber-green/50" />
+                <div className="flex gap-3 items-center">
+                  <button 
+                    onClick={() => setShowTerminal(!showTerminal)}
+                    className="text-[9px] font-bold uppercase tracking-tighter px-2 py-0.5 rounded border border-cyber-border hover:bg-white/5 transition-colors text-slate-500"
+                  >
+                    {showTerminal ? "إخفاء الترمنال" : "إظهار الترمنال"}
+                  </button>
+                  <div className="flex gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-cyber-green/50" />
+                  </div>
                 </div>
               </div>
               
-              <div className="flex-1 overflow-y-auto p-4 font-mono text-[13px] space-y-1 selection:bg-cyber-green/30">
-                {logs.length === 0 && (
-                  <div className="text-slate-700 italic">في انتظار البدء...</div>
-                )}
-                {logs.map((log) => (
-                  <div 
-                    key={log.id}
-                    className="flex gap-3 group border-b border-white/5 pb-1"
-                  >
-                    <span className="text-slate-700 shrink-0 select-none opacity-50 group-hover:opacity-100 transition-opacity">[{log.timestamp}]</span>
-                    <div className={cn(
-                      "whitespace-pre-wrap break-all leading-relaxed",
-                      log.type === 'success' && "text-cyber-green",
-                      log.type === 'error' && "text-cyber-red",
-                      log.type === 'warning' && "text-cyber-amber",
-                      log.type === 'critical' && "text-white bg-cyber-red/30 px-2 py-0.5 rounded border border-cyber-red/20",
-                      log.type === 'info' && "text-slate-300"
-                    )}>
-                      {log.message}
+              {showTerminal ? (
+                <div className="flex-1 overflow-y-auto p-4 font-mono text-[13px] space-y-1 selection:bg-cyber-green/30">
+                  {logs.length === 0 && (
+                    <div className="text-slate-700 italic">في انتظار البدء...</div>
+                  )}
+                  {logs.map((log) => (
+                    <div 
+                      key={log.id}
+                      className="flex gap-3 group border-b border-white/5 pb-1"
+                    >
+                      <span className="text-slate-700 shrink-0 select-none opacity-50 group-hover:opacity-100 transition-opacity">[{log.timestamp}]</span>
+                      <div className={cn(
+                        "whitespace-pre-wrap break-all leading-relaxed",
+                        log.type === 'success' && "text-cyber-green",
+                        log.type === 'error' && "text-cyber-red",
+                        log.type === 'warning' && "text-cyber-amber",
+                        log.type === 'critical' && "text-white bg-cyber-red/30 px-2 py-0.5 rounded border border-cyber-red/20",
+                        log.type === 'info' && "text-slate-300"
+                      )}>
+                        {log.message}
+                      </div>
                     </div>
+                  ))}
+                  <div ref={logEndRef} />
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 bg-black/20">
+                  <div className="w-12 h-12 rounded-full border-2 border-dashed border-cyber-border animate-spin flex items-center justify-center">
+                    <Activity className="w-6 h-6 text-cyber-green/30" />
                   </div>
-                ))}
-                <div ref={logEndRef} />
-              </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">الترمنال مخفي لتقليل استهلاك المعالج</p>
+                    <p className="text-[10px] text-slate-600 mt-1">يتم تسجيل البيانات في الخلفية</p>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* Evolution Chart */}

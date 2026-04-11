@@ -41,11 +41,43 @@ class ExperienceManager:
                     confidence REAL
                 )
             ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS session_state (
+                    target_url TEXT PRIMARY KEY,
+                    state_json TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
             conn.close()
             self._seed_knowledge() # Seed real-world patterns
         except Exception as e:
             print(f"[!] Error initializing database: {e}")
+
+    def save_session_state(self, target_url, state_json):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO session_state (target_url, state_json, timestamp)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (target_url, state_json))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Save State): {e}")
+
+    def load_session_state(self, target_url):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT state_json FROM session_state WHERE target_url = ?', (target_url,))
+            result = cursor.fetchone()
+            conn.close()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"[!] Database Error (Load State): {e}")
+            return None
 
     def _seed_knowledge(self):
         """Seeds the database with real-world attack patterns."""
