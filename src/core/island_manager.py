@@ -42,7 +42,7 @@ class IslandManager:
                 mutator.strategy_weights["context_aware"] *= 2.0
 
             # Initialize population for this island
-            golden_seeds = self.exp_manager.get_golden_payloads(limit=2)
+            golden_seeds = self.exp_manager.get_golden_payloads(limit=10)
             combined_seeds = golden_seeds + base_payloads
             pop = random.sample(combined_seeds, min(len(combined_seeds), self.island_pop_size))
             
