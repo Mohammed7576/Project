@@ -4,30 +4,46 @@ from core.mutator_ast import ASTMutator
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3):
         self.client = client
         self.exp_manager = exp_manager
         self.base_seeds = base_payloads
-        self.population_size = population_size
-        self.mutator = ASTMutator()
+        self.num_islands = num_islands
+        self.island_pop_size = population_size // num_islands
         self.validator = SuccessValidator()
         self.best_score_history = []
         self.hall_of_fame = [] 
-        self.discovered_niches = set() # Awareness: Track types of successes (e.g. UNION, Error)
+        self.discovered_niches = set()
         self.stagnation_counter = 0
         
-        # 1. Experience-Driven Initialization
-        golden_seeds = self.exp_manager.get_golden_payloads(limit=4)
-        if golden_seeds:
-            print(f"[*] Learning from history: Injecting {len(golden_seeds)} golden payloads.", flush=True)
+        # Initialize Islands with their own mutators and populations
+        self.islands = []
+        for i in range(num_islands):
+            mutator = ASTMutator()
+            # Specialization: Each island has a different initial bias
+            if i == 0: # Structural Island
+                mutator.strategy_weights["logical_alts"] *= 2.0
+                mutator.strategy_weights["union_balance"] *= 2.0
+            elif i == 1: # Bypass Island
+                mutator.strategy_weights["inline_comments"] *= 2.0
+                mutator.strategy_weights["junk_fill"] *= 2.0
+            else: # Context Island
+                mutator.strategy_weights["context_aware"] *= 2.0
+
+            # Initialize population for this island
+            golden_seeds = self.exp_manager.get_golden_payloads(limit=2)
+            combined_seeds = golden_seeds + base_payloads
+            pop = random.sample(combined_seeds, min(len(combined_seeds), self.island_pop_size))
             
-        combined_seeds = golden_seeds + base_payloads
-        
-        if combined_seeds:
-            sample_size = min(len(combined_seeds), self.population_size)
-            self.population = random.sample(combined_seeds, sample_size)
-        else:
-            self.population = []
+            self.islands.append({
+                "id": i,
+                "population": pop,
+                "mutator": mutator,
+                "stagnation": 0,
+                "best_score": 0
+            })
+
+        print(f"[*] Archipelago Initialized: {num_islands} Islands established.", flush=True)
 
     def _calculate_similarity(self, p1, p2):
         """Simple Jaccard similarity based on characters to detect structural bias."""
@@ -37,117 +53,129 @@ class IslandManager:
         return intersection / union if union > 0 else 0
 
     def evolve_generation(self, gen_num):
-        if not self.population:
-            return None
-
-        scored_population = []
-        max_gen_score = 0
-        success_count = 0
+        global_max_score = 0
         
-        # 1. Stagnation Detection
-        if len(self.best_score_history) > 2:
+        # 1. Evolve each island independently
+        for island in self.islands:
+            island_results = self._evolve_island(island, gen_num)
+            if island_results["max_score"] > global_max_score:
+                global_max_score = island_results["max_score"]
+            
+            # Track island-specific stagnation
+            if island_results["max_score"] <= island["best_score"]:
+                island["stagnation"] += 1
+            else:
+                island["stagnation"] = 0
+                island["best_score"] = island_results["max_score"]
+
+        # 2. Migration Step: Every 5 generations, exchange genetic material
+        if gen_num > 0 and gen_num % 5 == 0:
+            self._migrate()
+
+        self.best_score_history.append(global_max_score)
+        
+        # Global stagnation tracking
+        if len(self.best_score_history) > 1:
             if self.best_score_history[-1] <= self.best_score_history[-2]:
                 self.stagnation_counter += 1
             else:
                 self.stagnation_counter = 0
 
-        mutation_intensity = 1
-        if self.stagnation_counter >= 3:
-            mutation_intensity = 3 
-            print(f"[!] Stagnation detected. Injecting chaos (Intensity: {mutation_intensity})...", flush=True)
+        return self.hall_of_fame[-1] if self.hall_of_fame else None
 
-        for i, payload in enumerate(self.population):
-            # Skip exact matches in Hall of Fame
-            if payload in self.hall_of_fame:
-                continue
+    def _evolve_island(self, island, gen_num):
+        pop = island["population"]
+        mutator = island["mutator"]
+        scored_population = []
+        max_score = 0
+        
+        # Calculate diversity for this island
+        unique_payloads = len(set(pop))
+        diversity_ratio = unique_payloads / len(pop) if pop else 0
+
+        # Dynamic Mutation Intensity for this island
+        calc_intensity = 1.0 + (island["stagnation"] * 0.8)
+        if diversity_ratio < 0.75:
+            calc_intensity += (0.75 - diversity_ratio) * 4.0
+        mutation_intensity = min(max(1, round(calc_intensity)), 6)
+
+        if mutation_intensity >= 3:
+            print(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}", flush=True)
+
+        for i, payload in enumerate(pop):
+            if payload in self.hall_of_fame: continue
 
             response = self.client.send_request(payload)
             score, status = self.validator.validate(response['text'], response['status'])
             
-            # 2. Similarity Penalty: Avoid Bias
-            # If this payload is too similar to something we already solved, penalize its score
-            # to encourage exploring different structures.
+            # Similarity Penalty
             for successful_p in self.hall_of_fame:
                 if self._calculate_similarity(payload, successful_p) > 0.8:
                     score *= 0.5
                     status = f"BIASED_{status}"
                     break
 
-            if score >= 0.5: success_count += 1
-            
             error_msg = self.validator.get_sql_error(response['text'])
-            
-            print(f"  [>] Testing {i+1}/{len(self.population)}: {payload[:40]}... [Score: {score:.2f} | {status}]", flush=True)
+            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: {payload[:30]}... [{score:.2f} | {status}]", flush=True)
             
             self.exp_manager.save_attempt(payload, score, status)
-            self.mutator.report_success(score)
+            mutator.report_success(score)
             scored_population.append((payload, score, error_msg))
             
-            if score > max_gen_score:
-                max_gen_score = score
+            if score > max_score: max_score = score
             
-            # 3. Multi-Success & Niche Awareness
+            # Multi-Success Awareness
             if score >= 0.9 and payload not in self.hall_of_fame:
-                # Check if this is a new "Niche" (new status)
                 if status not in self.discovered_niches:
-                    print(f"[!!!] NEW EXPLOIT TYPE DISCOVERED ({status}): {payload}", flush=True)
+                    print(f"[!!!] NEW EXPLOIT TYPE (Island {island['id']}): {status} | {payload}", flush=True)
                     self.discovered_niches.add(status)
                     self.hall_of_fame.append(payload)
                     self.exp_manager.save_exploit(payload, status)
                 elif score >= 1.0:
-                    # Even if niche is known, keep perfect payloads
                     self.hall_of_fame.append(payload)
                     self.exp_manager.save_exploit(payload, "PERFECT_MATCH")
 
-        # 4. Diversity Check
-        unique_payloads = len(set(self.population))
-        diversity_ratio = unique_payloads / len(self.population)
-        if diversity_ratio < 0.4:
-            print(f"[*] Critical low diversity ({int(diversity_ratio*100)}%). Purging 50% of population.", flush=True)
-            # Keep only top 2, replace rest with fresh seeds
-            scored_population.sort(key=lambda x: x[1], reverse=True)
-            top_survivors = [p[0] for p in scored_population[:2]]
-            fresh_seeds = random.sample(self.base_seeds, min(len(self.base_seeds), self.population_size - 2))
-            self.population = top_survivors + fresh_seeds
-            self.stagnation_counter = 0 # Reset after purge
-            return self.hall_of_fame[-1] if self.hall_of_fame else None
-
-        self.best_score_history.append(max_gen_score)
+        # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)
+        elites = [p[0] for p in scored_population[:max(1, int(self.island_pop_size * 0.2))]]
+        survivors = [p for p in scored_population if p[1] >= 0.15]
         
-        # Elitism
-        elite_count = max(2, int(self.population_size * 0.2))
-        elites = [p[0] for p in scored_population[:elite_count]]
+        island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
         
-        # Survivors
-        survivors = [p for p in scored_population if p[1] >= 0.15] # Lowered threshold to keep more genetic material
-        
-        self.population = self._generate_next_gen(elites, survivors, mutation_intensity)
-        
-        return self.hall_of_fame[-1] if self.hall_of_fame else None
+        return {"max_score": max_score}
 
-    def _generate_next_gen(self, elites, survivors, intensity):
-        next_gen = list(elites) # Start with elites
+    def _migrate(self):
+        """Copies the best payload from each island to the next one in the ring."""
+        print("[*] Migration Event: Exchanging genetic material between islands...", flush=True)
+        for i in range(self.num_islands):
+            source_island = self.islands[i]
+            target_island = self.islands[(i + 1) % self.num_islands]
+            
+            # Get best from source (first in population is usually elite)
+            best_payload = source_island["population"][0]
+            
+            # Inject into target island (replace a random one that isn't elite)
+            replace_idx = random.randint(1, len(target_island["population"]) - 1)
+            target_island["population"][replace_idx] = best_payload
+
+    def _generate_next_gen(self, elites, survivors, intensity, mutator):
+        next_gen = list(elites)
         
         if not survivors:
-            return random.sample(self.base_seeds, min(len(self.base_seeds), self.population_size))
+            return random.sample(self.base_seeds, min(len(self.base_seeds), self.island_pop_size))
 
-        while len(next_gen) < self.population_size:
+        while len(next_gen) < self.island_pop_size:
             rand_val = random.random()
             
-            if rand_val < 0.1: # 10% Chance of fresh seed
+            if rand_val < 0.1:
                 next_gen.append(random.choice(self.base_seeds))
-            elif rand_val < 0.4 and len(survivors) >= 2: # 30% Crossover
+            elif rand_val < 0.4 and len(survivors) >= 2:
                 p1, p2 = random.sample(survivors, 2)
                 child = self._crossover(p1[0], p2[0])
-                next_gen.append(self.mutator.mutate(child, intensity=intensity))
-            else: # 60% Mutation
+                next_gen.append(mutator.mutate(child, intensity=intensity))
+            else:
                 parent_data = random.choice(survivors)
-                parent_payload = parent_data[0]
-                error_feedback = parent_data[2]
-                
-                # Context-Aware & Error-Based Mutation
-                child = self.mutator.mutate(parent_payload, error_msg=error_feedback, intensity=intensity)
+                child = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity)
                 if child not in next_gen:
                     next_gen.append(child)
         
