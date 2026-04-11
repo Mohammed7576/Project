@@ -36,7 +36,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 interface LogEntry {
   id: number;
   message: string;
-  type: 'info' | 'success' | 'error' | 'warning' | 'critical';
+  type: 'info' | 'success' | 'error' | 'warning' | 'critical' | 'refinement';
   timestamp: string;
 }
 
@@ -64,7 +64,7 @@ export default function PrometheusConsole() {
   
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' | 'critical' = 'info') => {
+  const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' | 'critical' | 'refinement' = 'info') => {
     setLogs(prev => [...prev, { 
       id: Date.now() + Math.random(), 
       message, 
@@ -169,9 +169,10 @@ export default function PrometheusConsole() {
         
         lines.forEach(line => {
           if (line.trim()) {
-            let type: 'info' | 'success' | 'error' | 'warning' | 'critical' = 'info';
+            let type: 'info' | 'success' | 'error' | 'warning' | 'critical' | 'refinement' = 'info';
             if (line.includes('[!!!]') || line.includes('CRITICAL')) type = 'critical';
             else if (line.includes('[+]') || line.includes('SUCCESSFUL')) type = 'success';
+            else if (line.includes('[REFINEMENT]')) type = 'refinement';
             else if (line.includes('[!]')) type = 'error';
             else if (line.includes('[*]') || line.includes('[SKIPPED]')) type = 'warning';
             
@@ -501,6 +502,7 @@ export default function PrometheusConsole() {
                         log.type === 'success' && "text-cyber-green",
                         log.type === 'error' && "text-cyber-red",
                         log.type === 'warning' && "text-cyber-amber",
+                        log.type === 'refinement' && "text-cyber-blue font-bold border-l-2 border-cyber-blue pl-2",
                         log.type === 'critical' && "text-white bg-cyber-red/30 px-2 py-0.5 rounded border border-cyber-red/20",
                         log.type === 'info' && "text-slate-300"
                       )}>

@@ -209,7 +209,7 @@ class IslandManager:
             if error_msg:
                 refinement = self.error_refiner.refine(payload, error_msg)
                 if refinement:
-                    print(f"  [Island {island['id']}] SQL Error detected. Refinement Strategy: {refinement['strategy']}", flush=True)
+                    print(f"  [REFINEMENT] SQL Error detected. Strategy: {refinement['strategy']}", flush=True)
                     mutator.apply_hint({"suggestion": refinement["strategy"]})
 
             # Similarity Penalty
