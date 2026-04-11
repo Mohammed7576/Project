@@ -44,6 +44,7 @@ export default function PrometheusConsole() {
   const [isStealthMode, setIsStealthMode] = useState(false);
   const [isChaosMode, setIsChaosMode] = useState(false);
   const [loot, setLoot] = useState<string | null>(null);
+  const [savedExploits, setSavedExploits] = useState<{payload: string, type: string, timestamp: string}[]>([]);
   const [targetConfig, setTargetConfig] = useState({
     url: 'http://localhost/',
     username: 'admin',
@@ -72,6 +73,20 @@ export default function PrometheusConsole() {
   useEffect(() => {
     scrollToBottom();
   }, [logs]);
+
+  useEffect(() => {
+    fetchExploits();
+  }, []);
+
+  const fetchExploits = async () => {
+    try {
+      const res = await fetch('/api/exploits');
+      const data = await res.json();
+      setSavedExploits(data);
+    } catch (e) {
+      console.error("Failed to fetch exploits", e);
+    }
+  };
 
   const runPrometheus = async () => {
     setIsRunning(true);
@@ -148,6 +163,7 @@ export default function PrometheusConsole() {
               const payload = line.split(': ')[1];
               setWinningPayloads(prev => [...new Set([...prev, payload])]);
               setStats(prev => [...prev, { gen: currentGen + 1, score: 1.0 }]);
+              fetchExploits(); // Refresh from DB
             }
 
             if (line.includes('--- [ Loot ] ---')) {
@@ -379,32 +395,28 @@ export default function PrometheusConsole() {
                 </div>
               </div>
               
-              <div className="flex-1 overflow-y-auto p-4 font-mono text-[13px] space-y-1.5 selection:bg-cyber-green/30">
-                <AnimatePresence initial={false}>
-                  {logs.length === 0 && (
-                    <div className="text-slate-700 italic">Waiting for initialization...</div>
-                  )}
-                  {logs.map((log) => (
-                    <motion.div 
-                      key={log.id}
-                      initial={{ opacity: 0, x: -4 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="flex gap-3 group"
-                    >
-                      <span className="text-slate-700 shrink-0 select-none opacity-50 group-hover:opacity-100 transition-opacity">[{log.timestamp}]</span>
-                      <div className={cn(
-                        "whitespace-pre-wrap break-all leading-relaxed",
-                        log.type === 'success' && "text-cyber-green",
-                        log.type === 'error' && "text-cyber-red",
-                        log.type === 'warning' && "text-cyber-amber",
-                        log.type === 'critical' && "text-white bg-cyber-red/30 px-2 py-0.5 rounded border border-cyber-red/20",
-                        log.type === 'info' && "text-slate-300"
-                      )}>
-                        {log.message}
-                      </div>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
+              <div className="flex-1 overflow-y-auto p-4 font-mono text-[13px] space-y-1 selection:bg-cyber-green/30">
+                {logs.length === 0 && (
+                  <div className="text-slate-700 italic">في انتظار البدء...</div>
+                )}
+                {logs.map((log) => (
+                  <div 
+                    key={log.id}
+                    className="flex gap-3 group border-b border-white/5 pb-1"
+                  >
+                    <span className="text-slate-700 shrink-0 select-none opacity-50 group-hover:opacity-100 transition-opacity">[{log.timestamp}]</span>
+                    <div className={cn(
+                      "whitespace-pre-wrap break-all leading-relaxed",
+                      log.type === 'success' && "text-cyber-green",
+                      log.type === 'error' && "text-cyber-red",
+                      log.type === 'warning' && "text-cyber-amber",
+                      log.type === 'critical' && "text-white bg-cyber-red/30 px-2 py-0.5 rounded border border-cyber-red/20",
+                      log.type === 'info' && "text-slate-300"
+                    )}>
+                      {log.message}
+                    </div>
+                  </div>
+                ))}
                 <div ref={logEndRef} />
               </div>
             </section>
@@ -467,39 +479,72 @@ export default function PrometheusConsole() {
             </section>
           </div>
 
-          {/* Right Column: Loot & Analysis */}
+          {/* Right Column: Exploits & Loot */}
           <div className="xl:col-span-3 space-y-6">
             
-            {/* Winning Payloads */}
-            <section className="cyber-card p-5 space-y-4 border-cyber-green/20 bg-cyber-green/5">
-              <h3 className="text-xs font-bold text-cyber-green uppercase tracking-widest flex items-center gap-2 border-b border-cyber-green/20 pb-3">
-                <Zap className="w-3.5 h-3.5" /> Optimal Exploits ({winningPayloads.length})
+            {/* Exploit Repository (Long-term Memory) */}
+            <section className="cyber-card p-5 flex flex-col h-[400px]">
+              <div className="flex items-center justify-between border-b border-cyber-border pb-3 mb-4">
+                <h3 className="text-xs font-bold text-cyber-green uppercase tracking-widest flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5" /> مستودع الثغرات المكتشفة
+                </h3>
+                <span className="px-2 py-0.5 bg-cyber-green/10 rounded text-[10px] font-bold text-cyber-green">
+                  {savedExploits.length} إجمالي
+                </span>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+                {savedExploits.length === 0 && (
+                  <div className="text-center py-10">
+                    <Database className="w-8 h-8 text-slate-800 mx-auto mb-2 opacity-20" />
+                    <p className="text-[10px] text-slate-600 uppercase font-bold">لا توجد بيانات محفوظة</p>
+                  </div>
+                )}
+                {savedExploits.map((exploit, idx) => (
+                  <div key={idx} className="p-3 bg-black/40 border border-cyber-border rounded-lg group hover:border-cyber-green/50 transition-colors">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-[9px] font-bold text-cyber-green bg-cyber-green/10 px-1.5 py-0.5 rounded uppercase">
+                        {exploit.type}
+                      </span>
+                      <span className="text-[8px] text-slate-600 font-mono">
+                        {new Date(exploit.timestamp).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <code className="text-[11px] text-slate-300 break-all font-mono block leading-relaxed">
+                      {exploit.payload}
+                    </code>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Optimal Exploits (Current Session) */}
+            <section className="cyber-card p-5 space-y-4 border-cyber-amber/20 bg-cyber-amber/5">
+              <h3 className="text-xs font-bold text-cyber-amber uppercase tracking-widest flex items-center gap-2 border-b border-cyber-amber/20 pb-3">
+                <Zap className="w-3.5 h-3.5" /> حمولات الجلسة الحالية ({winningPayloads.length})
               </h3>
               {winningPayloads.length > 0 ? (
                 <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2">
                   {winningPayloads.map((payload, idx) => (
                     <div key={idx} className="space-y-2">
-                      <div className="p-2 bg-black/60 rounded border border-cyber-green/30 font-mono text-[10px] text-cyber-green break-all leading-relaxed">
+                      <div className="p-2 bg-black/60 rounded border border-cyber-amber/30 font-mono text-[10px] text-cyber-amber break-all leading-relaxed">
                         {payload}
                       </div>
                     </div>
                   ))}
-                  <button className="w-full py-2 bg-cyber-green/10 hover:bg-cyber-green/20 text-cyber-green text-[10px] font-bold uppercase tracking-widest rounded border border-cyber-green/30 transition-colors">
-                    Export All Payloads
-                  </button>
                 </div>
               ) : (
                 <div className="h-24 flex flex-col items-center justify-center text-slate-600 space-y-2">
                   <Cpu className="w-6 h-6 opacity-20" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest">Searching for entry points...</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest">جاري البحث عن ثغرات...</p>
                 </div>
               )}
             </section>
 
             {/* Harvested Data */}
-            <section className="cyber-card p-5 flex flex-col h-[500px]">
+            <section className="cyber-card p-5 flex flex-col h-[300px]">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 border-b border-cyber-border pb-3 mb-4">
-                <Database className="w-3.5 h-3.5 text-cyber-blue" /> Harvested Loot
+                <Database className="w-3.5 h-3.5 text-cyber-blue" /> البيانات المستخرجة
               </h3>
               
               <div className="flex-1 overflow-y-auto space-y-4 pr-2">
@@ -508,7 +553,7 @@ export default function PrometheusConsole() {
                     <div className="p-3 bg-cyber-blue/5 border border-cyber-blue/20 rounded-lg">
                       <div className="flex items-center gap-2 mb-2">
                         <ShieldCheck className="w-3.5 h-3.5 text-cyber-blue" />
-                        <span className="text-[10px] font-bold text-cyber-blue uppercase">Schema Detected</span>
+                        <span className="text-[10px] font-bold text-cyber-blue uppercase">تم اكتشاف الهيكل</span>
                       </div>
                       <pre className="text-[11px] text-slate-300 font-mono whitespace-pre-wrap">
                         {loot}
@@ -519,7 +564,7 @@ export default function PrometheusConsole() {
                   <div className="h-full flex flex-col items-center justify-center text-slate-700 space-y-3 text-center px-4">
                     <AlertTriangle className="w-8 h-8 opacity-10" />
                     <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed">
-                      No data exfiltrated yet. <br/> Awaiting successful exploit chain.
+                      لا توجد بيانات مستخرجة بعد. <br/> في انتظار نجاح سلسلة الاستغلال.
                     </p>
                   </div>
                 )}
@@ -532,12 +577,12 @@ export default function PrometheusConsole() {
         {/* Footer Info */}
         <footer className="flex justify-between items-center text-[10px] text-slate-600 font-bold uppercase tracking-[0.2em] pt-4 border-t border-cyber-border">
           <div className="flex gap-6">
-            <span>System: Linux x86_64</span>
-            <span>Kernel: 6.5.0-kali-amd64</span>
+            <span>النظام: Linux x86_64</span>
+            <span>النواة: 6.5.0-kali-amd64</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-cyber-green animate-pulse" />
-            <span>Encrypted Connection Active</span>
+            <span>اتصال مشفر نشط</span>
           </div>
         </footer>
 

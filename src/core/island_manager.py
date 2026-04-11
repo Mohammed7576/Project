@@ -93,9 +93,11 @@ class IslandManager:
                     print(f"[!!!] NEW EXPLOIT TYPE DISCOVERED ({status}): {payload}", flush=True)
                     self.discovered_niches.add(status)
                     self.hall_of_fame.append(payload)
+                    self.exp_manager.save_exploit(payload, status)
                 elif score >= 1.0:
                     # Even if niche is known, keep perfect payloads
                     self.hall_of_fame.append(payload)
+                    self.exp_manager.save_exploit(payload, "PERFECT_MATCH")
 
         # 4. Diversity Check
         unique_payloads = len(set(self.population))

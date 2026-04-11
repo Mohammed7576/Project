@@ -18,6 +18,13 @@ class ExperienceManager:
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS exploits (
+                    payload TEXT PRIMARY KEY,
+                    type TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
             conn.close()
         except Exception as e:
@@ -35,6 +42,31 @@ class ExperienceManager:
             conn.close()
         except Exception as e:
             print(f"[!] Database Error (Save): {e}")
+
+    def save_exploit(self, payload, exploit_type):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR IGNORE INTO exploits (payload, type)
+                VALUES (?, ?)
+            ''', (payload, exploit_type))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Exploit): {e}")
+
+    def get_all_exploits(self):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT payload, type FROM exploits ORDER BY timestamp DESC')
+            results = cursor.fetchall()
+            conn.close()
+            return results
+        except Exception as e:
+            print(f"[!] Database Error (Get Exploits): {e}")
+            return []
 
     def get_golden_payloads(self, limit=5):
         """Retrieves the most successful payloads from previous sessions."""

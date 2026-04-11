@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import sqlite3 from "sqlite3";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,6 +11,19 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // API route to get all saved exploits
+  app.get("/api/exploits", (req, res) => {
+    const db = new sqlite3.Database("memory.db");
+    db.all("SELECT payload, type, timestamp FROM exploits ORDER BY timestamp DESC", (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json(rows);
+      db.close();
+    });
+  });
 
   // API route to run Prometheus (Python script)
   app.get("/api/run-prometheus", (req, res) => {
