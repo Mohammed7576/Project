@@ -40,16 +40,19 @@ export default function PrometheusConsole() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentGen, setCurrentGen] = useState(0);
-  const [winningPayload, setWinningPayload] = useState<string | null>(null);
+  const [winningPayloads, setWinningPayloads] = useState<string[]>([]);
+  const [isStealthMode, setIsStealthMode] = useState(false);
+  const [isChaosMode, setIsChaosMode] = useState(false);
   const [loot, setLoot] = useState<string | null>(null);
   const [targetConfig, setTargetConfig] = useState({
     url: 'http://localhost/',
     username: 'admin',
     password: 'password',
-    security: 'medium'
+    security: 'medium',
+    populationSize: '12',
+    maxGenerations: '30'
   });
   const [stats, setStats] = useState<{gen: number, score: number}[]>([]);
-  const [isStealthMode, setIsStealthMode] = useState(false);
   
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -82,8 +85,12 @@ export default function PrometheusConsole() {
     addLog("Establishing secure tunnel to target...", "info");
 
     try {
-      const query = new URLSearchParams(targetConfig).toString();
-      const response = await fetch(`/api/run-prometheus?${query}`);
+      const params = new URLSearchParams({
+        ...targetConfig,
+        population: targetConfig.populationSize,
+        generations: targetConfig.maxGenerations
+      });
+      const response = await fetch(`/api/run-prometheus?${params.toString()}`);
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
@@ -110,8 +117,11 @@ export default function PrometheusConsole() {
             
             if (line.includes('[*] Stealth Mode Active')) {
               setIsStealthMode(true);
+            } else if (line.includes('[!] Stagnation detected') || line.includes('Injecting chaos')) {
+              setIsChaosMode(true);
             } else if (line.includes('Score:') && parseFloat(line.match(/Score: ([\d.]+)/)?.[1] || "0") > 0.1) {
               setIsStealthMode(false);
+              setIsChaosMode(false);
             }
             
             // Extract generation and score for stats
@@ -134,9 +144,9 @@ export default function PrometheusConsole() {
               }
             }
 
-            if (line.includes('[!] Winning Payload:')) {
+            if (line.includes('[!!!] NEW EXPLOIT DISCOVERED:') || line.includes('[!] Winning Payload:')) {
               const payload = line.split(': ')[1];
-              setWinningPayload(payload);
+              setWinningPayloads(prev => [...new Set([...prev, payload])]);
               setStats(prev => [...prev, { gen: currentGen + 1, score: 1.0 }]);
             }
 
@@ -211,14 +221,14 @@ export default function PrometheusConsole() {
             <section className="cyber-card p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-cyber-border pb-3">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <Search className="w-3.5 h-3.5 text-cyber-blue" /> Target Parameters
+                  <Search className="w-3.5 h-3.5 text-cyber-blue" /> معايير الهدف
                 </h3>
                 <Lock className="w-3 h-3 text-slate-600" />
               </div>
               
               <div className="space-y-4">
                 <div>
-                  <label className="cyber-label">Target Endpoint</label>
+                  <label className="cyber-label">رابط الهدف</label>
                   <div className="relative">
                     <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                     <input 
@@ -233,7 +243,7 @@ export default function PrometheusConsole() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="cyber-label">Auth User</label>
+                    <label className="cyber-label">اسم المستخدم</label>
                     <input 
                       type="text" 
                       value={targetConfig.username}
@@ -242,7 +252,7 @@ export default function PrometheusConsole() {
                     />
                   </div>
                   <div>
-                    <label className="cyber-label">Auth Pass</label>
+                    <label className="cyber-label">كلمة المرور</label>
                     <input 
                       type="password" 
                       value={targetConfig.password}
@@ -253,17 +263,42 @@ export default function PrometheusConsole() {
                 </div>
 
                 <div>
-                  <label className="cyber-label">Security Level</label>
+                  <label className="cyber-label">مستوى الحماية</label>
                   <select 
                     value={targetConfig.security}
                     onChange={(e) => setTargetConfig({...targetConfig, security: e.target.value})}
                     className="cyber-input appearance-none"
                   >
-                    <option value="low">LOW (Basic)</option>
-                    <option value="medium">MEDIUM (Filtered)</option>
-                    <option value="high">HIGH (Advanced)</option>
-                    <option value="impossible">IMPOSSIBLE (Secure)</option>
+                    <option value="low">منخفض (LOW)</option>
+                    <option value="medium">متوسط (MEDIUM)</option>
+                    <option value="high">عالي (HIGH)</option>
+                    <option value="impossible">مستحيل (IMPOSSIBLE)</option>
                   </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="cyber-label">عدد السكان</label>
+                    <input 
+                      type="number" 
+                      value={targetConfig.populationSize}
+                      onChange={(e) => setTargetConfig({...targetConfig, populationSize: e.target.value})}
+                      className="cyber-input"
+                      min="1"
+                      max="100"
+                    />
+                  </div>
+                  <div>
+                    <label className="cyber-label">عدد الأجيال</label>
+                    <input 
+                      type="number" 
+                      value={targetConfig.maxGenerations}
+                      onChange={(e) => setTargetConfig({...targetConfig, maxGenerations: e.target.value})}
+                      className="cyber-input"
+                      min="1"
+                      max="200"
+                    />
+                  </div>
                 </div>
               </div>
             </section>
@@ -292,6 +327,12 @@ export default function PrometheusConsole() {
                   <span className="text-slate-500">Stealth Mode</span>
                   <span className={cn("font-mono font-bold", isStealthMode ? "text-cyber-amber animate-pulse" : "text-slate-700")}>
                     {isStealthMode ? "ACTIVE" : "INACTIVE"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500">Chaos Mode</span>
+                  <span className={cn("font-mono font-bold", isChaosMode ? "text-cyber-red animate-pulse" : "text-slate-700")}>
+                    {isChaosMode ? "ACTIVE" : "INACTIVE"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
@@ -429,24 +470,28 @@ export default function PrometheusConsole() {
           {/* Right Column: Loot & Analysis */}
           <div className="xl:col-span-3 space-y-6">
             
-            {/* Winning Payload */}
+            {/* Winning Payloads */}
             <section className="cyber-card p-5 space-y-4 border-cyber-green/20 bg-cyber-green/5">
               <h3 className="text-xs font-bold text-cyber-green uppercase tracking-widest flex items-center gap-2 border-b border-cyber-green/20 pb-3">
-                <Zap className="w-3.5 h-3.5" /> Optimal Exploit
+                <Zap className="w-3.5 h-3.5" /> Optimal Exploits ({winningPayloads.length})
               </h3>
-              {winningPayload ? (
-                <div className="space-y-3">
-                  <div className="p-3 bg-black/60 rounded border border-cyber-green/30 font-mono text-xs text-cyber-green break-all leading-relaxed">
-                    {winningPayload}
-                  </div>
+              {winningPayloads.length > 0 ? (
+                <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2">
+                  {winningPayloads.map((payload, idx) => (
+                    <div key={idx} className="space-y-2">
+                      <div className="p-2 bg-black/60 rounded border border-cyber-green/30 font-mono text-[10px] text-cyber-green break-all leading-relaxed">
+                        {payload}
+                      </div>
+                    </div>
+                  ))}
                   <button className="w-full py-2 bg-cyber-green/10 hover:bg-cyber-green/20 text-cyber-green text-[10px] font-bold uppercase tracking-widest rounded border border-cyber-green/30 transition-colors">
-                    Copy to Clipboard
+                    Export All Payloads
                   </button>
                 </div>
               ) : (
                 <div className="h-24 flex flex-col items-center justify-center text-slate-600 space-y-2">
                   <Cpu className="w-6 h-6 opacity-20" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest">Searching for entry point...</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest">Searching for entry points...</p>
                 </div>
               )}
             </section>

