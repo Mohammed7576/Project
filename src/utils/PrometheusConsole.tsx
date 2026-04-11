@@ -169,7 +169,7 @@ export default function PrometheusConsole() {
             if (line.includes('[!!!]') || line.includes('CRITICAL')) type = 'critical';
             else if (line.includes('[+]') || line.includes('SUCCESSFUL')) type = 'success';
             else if (line.includes('[!]')) type = 'error';
-            else if (line.includes('[*]')) type = 'warning';
+            else if (line.includes('[*]') || line.includes('[SKIPPED]')) type = 'warning';
             
             addLog(line, type);
             

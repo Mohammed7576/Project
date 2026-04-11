@@ -1,6 +1,7 @@
 import random
 import time
 from core.mutator_ast import ASTMutator
+from core.predictive_blocker import PredictiveBlocker
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
@@ -16,6 +17,7 @@ class IslandManager:
         self.discovered_niches = set()
         self.stagnation_counter = 0
         self.context = context
+        self.blocker = PredictiveBlocker()
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
@@ -125,9 +127,24 @@ class IslandManager:
         for i, payload in enumerate(pop):
             if payload in self.hall_of_fame: continue
 
+            # 1. Predictive Blocking (The Intelligent Filter)
+            blocked, reason = self.blocker.should_block(payload)
+            if blocked:
+                print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Matches known block rule: {reason}", flush=True)
+                score, status = 0.05, "PREDICTIVE_BLOCKED"
+                mutator.report_success(payload, score)
+                scored_population.append((payload, score, None))
+                continue
+
             response = self.client.send_request(payload)
             score, status = self.validator.validate(response['text'], response['status'])
             
+            # 2. Learning from real blocks
+            if score <= 0.1:
+                self.blocker.learn_from_block(payload)
+            elif score >= 0.8:
+                self.blocker.report_success(payload)
+
             # Similarity Penalty
             for successful_p in self.hall_of_fame:
                 if self._calculate_similarity(payload, successful_p) > 0.8:
