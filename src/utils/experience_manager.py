@@ -25,10 +25,59 @@ class ExperienceManager:
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS hints (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    strategy TEXT,
+                    target_keyword TEXT,
+                    suggestion TEXT,
+                    consumed INTEGER DEFAULT 0,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
             conn.close()
         except Exception as e:
             print(f"[!] Error initializing database: {e}")
+
+    def save_hint(self, strategy, target_keyword, suggestion):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO hints (strategy, target_keyword, suggestion)
+                VALUES (?, ?, ?)
+            ''', (strategy, target_keyword, suggestion))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Save Hint): {e}")
+
+    def get_latest_hint(self):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, strategy, target_keyword, suggestion FROM hints 
+                WHERE consumed = 0 
+                ORDER BY timestamp DESC LIMIT 1
+            ''')
+            result = cursor.fetchone()
+            if result:
+                # Mark as consumed
+                cursor.execute('UPDATE hints SET consumed = 1 WHERE id = ?', (result[0],))
+                conn.commit()
+                conn.close()
+                return {
+                    "strategy": result[1],
+                    "target_keyword": result[2],
+                    "suggestion": result[3]
+                }
+            conn.close()
+            return None
+        except Exception as e:
+            print(f"[!] Database Error (Get Hint): {e}")
+            return None
 
     def save_attempt(self, payload, score, status):
         try:

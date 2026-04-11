@@ -17,9 +17,20 @@ async function startServer() {
 
   // API route to receive AI hints
   app.post("/api/hint", (req, res) => {
-    const hint = req.body;
-    fs.writeFileSync("hints.json", JSON.stringify(hint));
-    res.json({ status: "hint_received" });
+    const { strategy, target_keyword, suggestion } = req.body;
+    const db = new sqlite3.Database("memory.db");
+    db.run(
+      "INSERT INTO hints (strategy, target_keyword, suggestion) VALUES (?, ?, ?)",
+      [strategy, target_keyword, suggestion],
+      (err) => {
+        if (err) {
+          res.status(500).json({ error: err.message });
+        } else {
+          res.json({ status: "hint_received" });
+        }
+        db.close();
+      }
+    );
   });
 
   // API route to get all saved exploits

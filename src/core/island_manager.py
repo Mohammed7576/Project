@@ -3,9 +3,6 @@ import time
 from core.mutator_ast import ASTMutator
 from utils.success_validator import SuccessValidator
 
-import json
-import os
-
 class IslandManager:
     def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC"):
         self.client = client
@@ -19,7 +16,6 @@ class IslandManager:
         self.discovered_niches = set()
         self.stagnation_counter = 0
         self.context = context
-        self.hint_file = "hints.json"
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
@@ -68,18 +64,12 @@ class IslandManager:
     def evolve_generation(self, gen_num):
         global_max_score = 0
         
-        # 0. Poll for AI Hints
-        if os.path.exists(self.hint_file):
-            try:
-                with open(self.hint_file, "r") as f:
-                    hints = json.load(f)
-                if hints:
-                    print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
-                    for island in self.islands:
-                        island["mutator"].apply_hint(hints)
-                os.remove(self.hint_file) # Consume hint
-            except Exception as e:
-                print(f"[!] Error reading hint file: {e}", flush=True)
+        # 0. Poll for AI Hints from SQLite
+        hints = self.exp_manager.get_latest_hint()
+        if hints:
+            print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
+            for island in self.islands:
+                island["mutator"].apply_hint(hints)
 
         # 1. Evolve each island independently
         for island in self.islands:
