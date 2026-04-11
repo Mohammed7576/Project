@@ -3,8 +3,11 @@ import time
 from core.mutator_ast import ASTMutator
 from utils.success_validator import SuccessValidator
 
+import json
+import os
+
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC"):
         self.client = client
         self.exp_manager = exp_manager
         self.base_seeds = base_payloads
@@ -15,11 +18,21 @@ class IslandManager:
         self.hall_of_fame = [] 
         self.discovered_niches = set()
         self.stagnation_counter = 0
+        self.context = context
+        self.hint_file = "hints.json"
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
         for i in range(num_islands):
-            mutator = ASTMutator()
+            mutator = ASTMutator(context=context)
+            # 1. Context-Aware Initialization
+            if context == "SINGLE_QUOTE":
+                mutator.strategy_weights["context_aware"] *= 3.0
+                print(f"[*] Island {i}: Optimizing for SINGLE_QUOTE context.", flush=True)
+            elif context == "DOUBLE_QUOTE":
+                mutator.strategy_weights["context_aware"] *= 3.0
+                print(f"[*] Island {i}: Optimizing for DOUBLE_QUOTE context.", flush=True)
+
             # Specialization: Each island has a different initial bias
             if i == 0: # Structural Island
                 mutator.strategy_weights["logical_alts"] *= 2.0
@@ -55,6 +68,19 @@ class IslandManager:
     def evolve_generation(self, gen_num):
         global_max_score = 0
         
+        # 0. Poll for AI Hints
+        if os.path.exists(self.hint_file):
+            try:
+                with open(self.hint_file, "r") as f:
+                    hints = json.load(f)
+                if hints:
+                    print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
+                    for island in self.islands:
+                        island["mutator"].apply_hint(hints)
+                os.remove(self.hint_file) # Consume hint
+            except Exception as e:
+                print(f"[!] Error reading hint file: {e}", flush=True)
+
         # 1. Evolve each island independently
         for island in self.islands:
             island_results = self._evolve_island(island, gen_num)
@@ -78,6 +104,10 @@ class IslandManager:
         if len(self.best_score_history) > 1:
             if self.best_score_history[-1] <= self.best_score_history[-2]:
                 self.stagnation_counter += 1
+                if self.stagnation_counter >= 5:
+                    # Request AI Analysis
+                    best_p = self.hall_of_fame[-1] if self.hall_of_fame else self.base_seeds[0]
+                    print(f"[ANALYSIS_REQUIRED] Payload: {best_p} | Stagnation: {self.stagnation_counter}", flush=True)
             else:
                 self.stagnation_counter = 0
 

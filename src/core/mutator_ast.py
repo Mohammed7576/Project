@@ -2,8 +2,9 @@ import random
 import re
 
 class ASTMutator:
-    def __init__(self):
+    def __init__(self, context="GENERIC"):
         self.sql_keywords = ["UNION", "SELECT", "OR", "AND", "WHERE", "ORDER BY", "SLEEP", "GROUP BY", "FROM", "INFORMATION_SCHEMA"]
+        self.context = context
         self.strategies = {
             "logical_alts": self._logical_equivalents,
             "inline_comments": self._inline_version_comments,
@@ -18,6 +19,19 @@ class ASTMutator:
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
         self.last_strategy_used = None
         self.stealth_mode = False
+
+    def apply_hint(self, hint):
+        """Applies AI-driven hints to strategy weights."""
+        strategy = hint.get("strategy")
+        if strategy in self.strategy_weights:
+            self.strategy_weights[strategy] *= 5.0
+            print(f"[*] Mutator: AI Hint Applied - Boosting {strategy}", flush=True)
+        
+        # Keyword specific hints
+        target_kw = hint.get("target_keyword")
+        if target_kw in self.keyword_reputation:
+            self.keyword_reputation[target_kw] = 0.1 # Force bypass for this keyword
+            print(f"[*] Mutator: AI Hint Applied - Flagging {target_kw} for bypass", flush=True)
 
     def mutate(self, payload, error_msg=None, intensity=1):
         mutated = str(payload)
@@ -167,6 +181,12 @@ class ASTMutator:
     def _context_aware_mutation(self, payload):
         mutated = str(payload)
         
+        # 0. Context-Specific Injection
+        if self.context == "SINGLE_QUOTE" and not mutated.startswith("'"):
+            mutated = "'" + mutated
+        elif self.context == "DOUBLE_QUOTE" and not mutated.startswith('"'):
+            mutated = '"' + mutated
+
         # 1. Quote Alteration: Swap quotes
         if "'" in mutated:
             if random.random() < 0.4:

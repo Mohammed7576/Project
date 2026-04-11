@@ -8,9 +8,19 @@ import sqlite3 from "sqlite3";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import fs from "fs";
+
 async function startServer() {
   const app = express();
+  app.use(express.json());
   const PORT = 3000;
+
+  // API route to receive AI hints
+  app.post("/api/hint", (req, res) => {
+    const hint = req.body;
+    fs.writeFileSync("hints.json", JSON.stringify(hint));
+    res.json({ status: "hint_received" });
+  });
 
   // API route to get all saved exploits
   app.get("/api/exploits", (req, res) => {

@@ -17,6 +17,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { GoogleGenAI, Type } from "@google/genai";
 import { 
   LineChart, 
   Line, 
@@ -28,6 +29,8 @@ import {
   AreaChart,
   Area
 } from 'recharts';
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface LogEntry {
   id: number;
@@ -88,6 +91,46 @@ export default function PrometheusConsole() {
     }
   };
 
+  const analyzeAndHint = async (payload: string, context: string) => {
+    addLog("[AI] Analyzing stagnation. Consulting Gemini...", "warning");
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `The SQL injection tool is stuck. 
+        Current Best Payload: ${payload}
+        Context: ${context}
+        Suggest a mutation strategy (logical_alts, inline_comments, union_balance, junk_fill, context_aware, directed_bypass) 
+        and a target keyword to bypass.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              strategy: { type: Type.STRING },
+              target_keyword: { type: Type.STRING },
+              suggestion: { type: Type.STRING }
+            },
+            required: ["strategy", "target_keyword", "suggestion"]
+          }
+        }
+      });
+
+      const hint = JSON.parse(response.text || "{}");
+      addLog(`[AI Insight] ${hint.suggestion}`, "success");
+      
+      // Send hint to backend
+      await fetch('/api/hint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(hint)
+      });
+      addLog("[AI] Hint injected into next generation.", "info");
+    } catch (e) {
+      console.error("AI Analysis failed", e);
+      addLog("[AI] Analysis failed. Continuing with standard evolution.", "error");
+    }
+  };
+
   const runPrometheus = async () => {
     setIsRunning(true);
     setLogs([]);
@@ -129,6 +172,13 @@ export default function PrometheusConsole() {
             else if (line.includes('[*]')) type = 'warning';
             
             addLog(line, type);
+            
+            if (line.includes('[ANALYSIS_REQUIRED]')) {
+              const payloadMatch = line.match(/Payload: (.*?) \|/);
+              if (payloadMatch) {
+                analyzeAndHint(payloadMatch[1], "Stagnation detected in evolution");
+              }
+            }
             
             if (line.includes('[*] Stealth Mode Active')) {
               setIsStealthMode(true);
