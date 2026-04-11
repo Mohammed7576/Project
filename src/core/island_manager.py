@@ -3,6 +3,8 @@ import time
 import json
 from core.mutator_ast import ASTMutator
 from core.predictive_blocker import PredictiveBlocker
+from core.waf_fingerprinter import WAFFingerprinter
+from core.error_refiner import SQLErrorRefiner
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
@@ -19,6 +21,8 @@ class IslandManager:
         self.stagnation_counter = 0
         self.context = context
         self.blocker = PredictiveBlocker()
+        self.fingerprinter = WAFFingerprinter()
+        self.error_refiner = SQLErrorRefiner()
         self.session_tested = set() # Avoid repeating in same session
         self.current_gen = 0
         
@@ -144,11 +148,15 @@ class IslandManager:
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
     def _evolve_island(self, island, gen_num):
-        pop = island["population"]
+        pop_data = island["population"]
         mutator = island["mutator"]
         scored_population = []
         max_score = 0
         
+        # Extract payloads for processing
+        pop = [p["payload"] if isinstance(p, dict) else p for p in pop_data]
+        parents = {p["payload"]: p["parent"] for p in pop_data if isinstance(p, dict)}
+
         # Calculate diversity for this island
         unique_payloads = len(set(pop))
         diversity_ratio = unique_payloads / len(pop) if pop else 0
@@ -179,6 +187,15 @@ class IslandManager:
                 continue
 
             response = self.client.send_request(payload)
+            
+            # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
+            if i == 0:
+                waf = self.fingerprinter.identify(response['headers'], response['text'])
+                if waf != "GENERIC / UNKNOWN":
+                    print(f"[*] WAF DETECTED: {waf}", flush=True)
+                    strategy = self.fingerprinter.get_bypass_strategy(waf)
+                    mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
+
             score, status = self.validator.validate(response['text'], response['status'])
             
             # 2. Learning from real blocks
@@ -187,6 +204,14 @@ class IslandManager:
             elif score >= 0.8:
                 self.blocker.report_success(payload)
 
+            # 3. SQL Error Refinement
+            error_msg = self.validator.get_sql_error(response['text'])
+            if error_msg:
+                refinement = self.error_refiner.refine(payload, error_msg)
+                if refinement:
+                    print(f"  [Island {island['id']}] SQL Error detected. Refinement Strategy: {refinement['strategy']}", flush=True)
+                    mutator.apply_hint({"suggestion": refinement["strategy"]})
+
             # Similarity Penalty
             for successful_p in self.hall_of_fame:
                 if self._calculate_similarity(payload, successful_p) > 0.8:
@@ -194,10 +219,10 @@ class IslandManager:
                     status = f"BIASED_{status}"
                     break
 
-            error_msg = self.validator.get_sql_error(response['text'])
             print(f"  [Island {island['id']}] {i+1}/{len(pop)}: {payload[:30]}... [{score:.2f} | {status}]", flush=True)
             
-            self.exp_manager.save_attempt(payload, score, status)
+            parent = parents.get(payload)
+            self.exp_manager.save_attempt(payload, score, status, parent_payload=parent)
             mutator.report_success(payload, score)
             scored_population.append((payload, score, error_msg))
             
@@ -241,25 +266,30 @@ class IslandManager:
             target_island["population"][replace_idx] = best_payload
 
     def _generate_next_gen(self, elites, survivors, intensity, mutator):
-        next_gen = list(elites)
-        
+        next_gen = []
+        # Elites stay as they are, but we track them
+        for e in elites:
+            next_gen.append({"payload": e, "parent": e})
+
         if not survivors:
-            return random.sample(self.base_seeds, min(len(self.base_seeds), self.island_pop_size))
+            seeds = random.sample(self.base_seeds, min(len(self.base_seeds), self.island_pop_size))
+            return [{"payload": s, "parent": None} for s in seeds]
 
         while len(next_gen) < self.island_pop_size:
             rand_val = random.random()
             
             if rand_val < 0.1:
-                next_gen.append(random.choice(self.base_seeds))
+                s = random.choice(self.base_seeds)
+                next_gen.append({"payload": s, "parent": None})
             elif rand_val < 0.4 and len(survivors) >= 2:
                 p1, p2 = random.sample(survivors, 2)
                 child = self._crossover(p1[0], p2[0])
-                next_gen.append(mutator.mutate(child, intensity=intensity))
+                mutated = mutator.mutate(child, intensity=intensity)
+                next_gen.append({"payload": mutated, "parent": p1[0]})
             else:
                 parent_data = random.choice(survivors)
                 child = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity)
-                if child not in next_gen:
-                    next_gen.append(child)
+                next_gen.append({"payload": child, "parent": parent_data[0]})
         
         return next_gen
 

@@ -33,6 +33,22 @@ async function startServer() {
     );
   });
 
+  app.get("/api/lineage", (req, res) => {
+    const db = new sqlite3.Database("memory.db");
+    db.all(
+      "SELECT payload, parent_payload as parent, score, status FROM experience WHERE parent_payload IS NOT NULL ORDER BY timestamp DESC LIMIT 100",
+      [],
+      (err, rows) => {
+        if (err) {
+          res.status(500).json({ error: err.message });
+        } else {
+          res.json(rows);
+        }
+        db.close();
+      }
+    );
+  });
+
   // API route to get all saved exploits
   app.get("/api/exploits", (req, res) => {
     const db = new sqlite3.Database("memory.db");

@@ -14,7 +14,8 @@ import {
   Globe, 
   BarChart3,
   ChevronRight,
-  AlertTriangle
+  AlertTriangle,
+  GitGraph
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -48,6 +49,8 @@ export default function PrometheusConsole() {
   const [isChaosMode, setIsChaosMode] = useState(false);
   const [showTerminal, setShowTerminal] = useState(true);
   const [loot, setLoot] = useState<string | null>(null);
+  const [wafInfo, setWafInfo] = useState<string | null>(null);
+  const [lineage, setLineage] = useState<{payload: string, parent: string, score: number, status: string}[]>([]);
   const [savedExploits, setSavedExploits] = useState<{payload: string, type: string, timestamp: string}[]>([]);
   const [targetConfig, setTargetConfig] = useState({
     url: 'http://localhost/',
@@ -190,6 +193,11 @@ export default function PrometheusConsole() {
               setIsChaosMode(false);
             }
             
+            if (line.includes('[*] WAF DETECTED:')) {
+              const wafMatch = line.match(/WAF DETECTED: (.*)/);
+              if (wafMatch) setWafInfo(wafMatch[1]);
+            }
+            
             // Extract generation and score for stats
             if (line.includes('[+] Generation')) {
               const genMatch = line.match(/Generation (\d+)/);
@@ -230,6 +238,23 @@ export default function PrometheusConsole() {
 
     setIsRunning(false);
   };
+
+  const fetchLineage = async () => {
+    try {
+      const res = await fetch('/api/lineage');
+      const data = await res.json();
+      setLineage(data);
+    } catch (err) {
+      console.error("Error fetching lineage:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (isRunning) {
+      const interval = setInterval(fetchLineage, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isRunning]);
 
   return (
     <div className="min-h-screen relative overflow-hidden cyber-grid">
@@ -414,6 +439,12 @@ export default function PrometheusConsole() {
                   <span className="text-slate-500">معدل النجاح</span>
                   <span className="text-slate-300 font-mono">{(stats.length > 0 ? (stats[stats.length-1].score * 100).toFixed(1) : 0)}%</span>
                 </div>
+                {wafInfo && (
+                  <div className="flex items-center justify-between text-xs pt-2 border-t border-cyber-border/30">
+                    <span className="text-cyber-blue font-bold">WAF المكتشف</span>
+                    <span className="text-cyber-blue font-mono animate-pulse">{wafInfo}</span>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -553,6 +584,51 @@ export default function PrometheusConsole() {
           {/* Right Column: Exploits & Loot */}
           <div className="xl:col-span-3 space-y-6">
             
+            {/* Evolution Tree Visualization */}
+            <section className="cyber-card p-5 flex flex-col h-[380px]">
+              <div className="flex items-center justify-between border-b border-cyber-border pb-3 mb-4">
+                <h3 className="text-xs font-bold text-cyber-amber uppercase tracking-widest flex items-center gap-2">
+                  <GitGraph className="w-3.5 h-3.5" /> شجرة تطور الحمولات
+                </h3>
+                <span className="text-[10px] text-slate-500 font-mono">آخر 100 طفرة</span>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                {lineage.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 opacity-50">
+                    <Activity className="w-8 h-8 animate-pulse" />
+                    <p className="text-[10px] uppercase font-bold tracking-widest">في انتظار بدء التطور...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {lineage.map((node, idx) => (
+                      <div key={idx} className="group relative pl-4 border-l border-cyber-border/30 py-1 hover:border-cyber-amber/50 transition-colors">
+                        <div className="absolute -left-[5px] top-3 w-2 h-2 rounded-full bg-cyber-border group-hover:bg-cyber-amber transition-colors" />
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] text-slate-500 font-mono truncate max-w-[150px] opacity-60">
+                              {node.parent.substring(0, 20)}...
+                            </span>
+                            <ChevronRight className="w-2 h-2 text-slate-700" />
+                            <span className={cn(
+                              "text-[10px] font-mono font-bold truncate max-w-[200px]",
+                              node.score > 0.8 ? "text-cyber-green" : "text-slate-300"
+                            )}>
+                              {node.payload}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-[8px] uppercase tracking-tighter">
+                            <span className="text-cyber-amber">Score: {(node.score * 100).toFixed(0)}%</span>
+                            <span className="text-slate-600">{node.status}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
             {/* Exploit Repository (Long-term Memory) */}
             <section className="cyber-card p-5 flex flex-col h-[400px]">
               <div className="flex items-center justify-between border-b border-cyber-border pb-3 mb-4">

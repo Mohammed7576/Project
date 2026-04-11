@@ -15,6 +15,7 @@ class ExperienceManager:
                     payload TEXT PRIMARY KEY,
                     score REAL,
                     status TEXT,
+                    parent_payload TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -78,6 +79,24 @@ class ExperienceManager:
         except Exception as e:
             print(f"[!] Database Error (Load State): {e}")
             return None
+
+    def get_lineage(self, limit=50):
+        """Retrieves parent-child relationships for visualization."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT payload, parent_payload, score, status 
+                FROM experience 
+                WHERE parent_payload IS NOT NULL 
+                ORDER BY timestamp DESC LIMIT ?
+            ''', (limit,))
+            results = cursor.fetchall()
+            conn.close()
+            return [{"payload": r[0], "parent": r[1], "score": r[2], "status": r[3]} for r in results]
+        except Exception as e:
+            print(f"[!] Database Error (Lineage): {e}")
+            return []
 
     def _seed_knowledge(self):
         """Seeds the database with real-world attack patterns."""
@@ -147,14 +166,14 @@ class ExperienceManager:
             print(f"[!] Database Error (Get Hint): {e}")
             return None
 
-    def save_attempt(self, payload, score, status):
+    def save_attempt(self, payload, score, status, parent_payload=None):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO experience (payload, score, status)
-                VALUES (?, ?, ?)
-            ''', (payload, score, status))
+                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload)
+                VALUES (?, ?, ?, ?)
+            ''', (payload, score, status, parent_payload))
             conn.commit()
             conn.close()
         except Exception as e:
