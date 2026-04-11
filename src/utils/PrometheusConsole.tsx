@@ -76,7 +76,7 @@ export default function PrometheusConsole() {
   const runPrometheus = async () => {
     setIsRunning(true);
     setLogs([]);
-    setWinningPayload(null);
+    setWinningPayloads([]);
     setLoot(null);
     setCurrentGen(0);
     setStats([]);
@@ -198,14 +198,14 @@ export default function PrometheusConsole() {
                 onClick={runPrometheus}
                 className="cyber-button cyber-button-primary w-full lg:w-auto"
               >
-                <Play className="w-4 h-4 fill-current" /> INITIALIZE UNIT
+                <Play className="w-4 h-4 fill-current" /> تشغيل الوحدة
               </button>
             ) : (
               <button 
                 onClick={() => setIsRunning(false)}
                 className="cyber-button cyber-button-danger w-full lg:w-auto"
               >
-                <Square className="w-4 h-4 fill-current" /> HALT EXECUTION
+                <Square className="w-4 h-4 fill-current" /> إيقاف التنفيذ
               </button>
             )}
           </div>
@@ -306,45 +306,45 @@ export default function PrometheusConsole() {
             {/* System Metrics */}
             <section className="cyber-card p-5 space-y-4">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 border-b border-cyber-border pb-3">
-                <Activity className="w-3.5 h-3.5 text-cyber-amber" /> Real-time Metrics
+                <Activity className="w-3.5 h-3.5 text-cyber-amber" /> مقاييس الوقت الفعلي
               </h3>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-3 bg-black/40 rounded-lg border border-cyber-border">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Generation</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">الجيل</p>
                   <p className="text-2xl font-display font-bold text-white tracking-tight">{currentGen}</p>
                 </div>
                 <div className="p-3 bg-black/40 rounded-lg border border-cyber-border">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Status</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">الحالة</p>
                   <p className={`text-xs font-bold uppercase tracking-wider ${isRunning ? 'text-cyber-amber animate-pulse' : 'text-cyber-green'}`}>
-                    {isRunning ? 'Evolving' : 'Standby'}
+                    {isRunning ? 'قيد التطور' : 'في الانتظار'}
                   </p>
                 </div>
               </div>
 
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Stealth Mode</span>
+                  <span className="text-slate-500">وضع التخفي</span>
                   <span className={cn("font-mono font-bold", isStealthMode ? "text-cyber-amber animate-pulse" : "text-slate-700")}>
-                    {isStealthMode ? "ACTIVE" : "INACTIVE"}
+                    {isStealthMode ? "نشط" : "غير نشط"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Chaos Mode</span>
+                  <span className="text-slate-500">وضع الفوضى</span>
                   <span className={cn("font-mono font-bold", isChaosMode ? "text-cyber-red animate-pulse" : "text-slate-700")}>
-                    {isChaosMode ? "ACTIVE" : "INACTIVE"}
+                    {isChaosMode ? "نشط" : "غير نشط"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Mutation Depth</span>
-                  <span className="text-slate-300 font-mono">Dynamic</span>
+                  <span className="text-slate-500">عمق الطفرة</span>
+                  <span className="text-slate-300 font-mono">ديناميكي</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Population Size</span>
-                  <span className="text-slate-300 font-mono">12 Units</span>
+                  <span className="text-slate-500">حجم السكان</span>
+                  <span className="text-slate-300 font-mono">{targetConfig.populationSize} وحدة</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Success Rate</span>
+                  <span className="text-slate-500">معدل النجاح</span>
                   <span className="text-slate-300 font-mono">{(stats.length > 0 ? (stats[stats.length-1].score * 100).toFixed(1) : 0)}%</span>
                 </div>
               </div>
@@ -353,11 +353,11 @@ export default function PrometheusConsole() {
             {/* Knowledge Base */}
             <section className="cyber-card p-5 bg-cyber-blue/5 border-cyber-blue/20">
               <h3 className="text-xs font-bold text-cyber-blue uppercase tracking-widest flex items-center gap-2 mb-3">
-                <Database className="w-3.5 h-3.5" /> Historical Wisdom
+                <Database className="w-3.5 h-3.5" /> الحكمة التاريخية
               </h3>
               <p className="text-[11px] text-slate-400 leading-relaxed font-medium">
-                Memory.db active. Experience manager tracking <span className="text-cyber-blue">9 golden payloads</span>. 
-                Applying reinforcement learning from previous successful mutations.
+                Memory.db نشط. مدير الخبرة يتتبع <span className="text-cyber-blue">9 حمولات ذهبية</span>. 
+                تطبيق التعلم المعزز من الطفرات الناجحة السابقة.
               </p>
             </section>
           </div>
@@ -413,12 +413,12 @@ export default function PrometheusConsole() {
             <section className="cyber-card p-5 h-[280px]">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <BarChart3 className="w-3.5 h-3.5 text-cyber-green" /> Evolution Progress
+                  <BarChart3 className="w-3.5 h-3.5 text-cyber-green" /> تقدم التطور
                 </h3>
                 <div className="flex items-center gap-4 text-[10px] uppercase font-bold tracking-wider">
                   <div className="flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-full bg-cyber-green" />
-                    <span className="text-slate-500">Fitness Score</span>
+                    <span className="text-slate-500">درجة اللياقة</span>
                   </div>
                 </div>
               </div>
