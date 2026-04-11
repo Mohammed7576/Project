@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import PrometheusConsole from './components/PrometheusConsole';
+import PrometheusConsole from './utils/PrometheusConsole';
 
 export default function App() {
   return <PrometheusConsole />;

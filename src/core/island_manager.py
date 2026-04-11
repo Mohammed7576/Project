@@ -13,9 +13,16 @@ class IslandManager:
         self.validator = SuccessValidator()
         self.best_score_history = []
         
-        if base_payloads:
-            sample_size = min(len(base_payloads), self.population_size)
-            self.population = random.sample(base_payloads, sample_size)
+        # 1. Experience-Driven Initialization: Load "Golden Payloads" from memory.db
+        golden_seeds = self.exp_manager.get_golden_payloads(limit=4)
+        if golden_seeds:
+            print(f"[*] Learning from history: Injecting {len(golden_seeds)} golden payloads into initial population.", flush=True)
+            
+        combined_seeds = golden_seeds + base_payloads
+        
+        if combined_seeds:
+            sample_size = min(len(combined_seeds), self.population_size)
+            self.population = random.sample(combined_seeds, sample_size)
         else:
             self.population = []
 
@@ -52,6 +59,7 @@ class IslandManager:
                 print(f"      [!] SQL Error Detected: {error_msg}", flush=True)
             
             self.exp_manager.save_attempt(payload, score, status)
+            self.mutator.report_success(score) # Awareness: Feedback to mutator
             scored_population.append((payload, score, error_msg))
             
             if score > max_gen_score:

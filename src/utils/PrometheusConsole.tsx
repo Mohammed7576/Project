@@ -49,6 +49,7 @@ export default function PrometheusConsole() {
     security: 'medium'
   });
   const [stats, setStats] = useState<{gen: number, score: number}[]>([]);
+  const [isStealthMode, setIsStealthMode] = useState(false);
   
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -106,6 +107,12 @@ export default function PrometheusConsole() {
             else if (line.includes('[*]')) type = 'warning';
             
             addLog(line, type);
+            
+            if (line.includes('[*] Stealth Mode Active')) {
+              setIsStealthMode(true);
+            } else if (line.includes('Score:') && parseFloat(line.match(/Score: ([\d.]+)/)?.[1] || "0") > 0.1) {
+              setIsStealthMode(false);
+            }
             
             // Extract generation and score for stats
             if (line.includes('[+] Generation')) {
@@ -281,6 +288,12 @@ export default function PrometheusConsole() {
               </div>
 
               <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-500">Stealth Mode</span>
+                  <span className={cn("font-mono font-bold", isStealthMode ? "text-cyber-amber animate-pulse" : "text-slate-700")}>
+                    {isStealthMode ? "ACTIVE" : "INACTIVE"}
+                  </span>
+                </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-500">Mutation Depth</span>
                   <span className="text-slate-300 font-mono">Dynamic</span>

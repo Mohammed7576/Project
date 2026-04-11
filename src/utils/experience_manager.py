@@ -36,14 +36,20 @@ class ExperienceManager:
         except Exception as e:
             print(f"[!] Database Error (Save): {e}")
 
-    def get_score(self, payload):
+    def get_golden_payloads(self, limit=5):
+        """Retrieves the most successful payloads from previous sessions."""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('SELECT score FROM experience WHERE payload = ?', (payload,))
-            result = cursor.fetchone()
+            cursor.execute('''
+                SELECT payload FROM experience 
+                WHERE score >= 0.8 
+                ORDER BY score DESC, timestamp DESC 
+                LIMIT ?
+            ''', (limit,))
+            results = cursor.fetchall()
             conn.close()
-            return result[0] if result else None
+            return [r[0] for r in results]
         except Exception as e:
-            print(f"[!] Database Error (Get): {e}")
-            return None
+            print(f"[!] Database Error (Golden): {e}")
+            return []
