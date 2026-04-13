@@ -25,6 +25,7 @@ class IslandManager:
         self.error_refiner = SQLErrorRefiner()
         self.session_tested = set() # Avoid repeating in same session
         self.current_gen = 0
+        self.waf_info = {"name": "GENERIC / UNKNOWN", "probed": False, "blocked_chars": []}
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
@@ -156,6 +157,7 @@ class IslandManager:
         # Extract payloads for processing
         pop = [p["payload"] if isinstance(p, dict) else p for p in pop_data]
         parents = {p["payload"]: p["parent"] for p in pop_data if isinstance(p, dict)}
+        response_times = []
 
         # Calculate diversity for this island
         unique_payloads = len(set(pop))
@@ -186,15 +188,28 @@ class IslandManager:
                 scored_population.append((payload, score, None))
                 continue
 
+            start_time = time.time()
             response = self.client.send_request(payload)
+            r_time = time.time() - start_time
+            response_times.append(r_time)
             
-            # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
-            if i == 0:
+            # 1.1 WAF Fingerprinting & Adaptation
+            if self.waf_info["name"] == "GENERIC / UNKNOWN" or (not self.waf_info["probed"] and i == 0):
                 waf = self.fingerprinter.identify(response['headers'], response['text'])
                 if waf != "GENERIC / UNKNOWN":
+                    self.waf_info["name"] = waf
                     print(f"[*] WAF DETECTED: {waf}", flush=True)
-                    strategy = self.fingerprinter.get_bypass_strategy(waf)
-                    mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
+                    
+                    if not self.waf_info["probed"]:
+                        self.waf_info["blocked_chars"] = self.fingerprinter.probe(self.client)
+                        self.waf_info["probed"] = True
+                    
+                    strategy = self.fingerprinter.get_bypass_strategy(waf, self.waf_info["blocked_chars"])
+                    mutator.apply_hint({
+                        "suggestion": strategy["hint"], 
+                        "weights": strategy["weights"],
+                        "blocked_chars": self.waf_info["blocked_chars"]
+                    })
 
             score, status = self.validator.validate(response['text'], response['status'])
             
@@ -247,7 +262,8 @@ class IslandManager:
         elites = [p[0] for p in scored_population[:max(1, int(self.island_pop_size * 0.2))]]
         survivors = [p for p in scored_population if p[1] >= 0.15]
         
-        island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
+        avg_r_time = sum(response_times) / len(response_times) if response_times else None
+        island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator, avg_r_time)
         
         return {"max_score": max_score}
 
@@ -265,7 +281,7 @@ class IslandManager:
             replace_idx = random.randint(1, len(target_island["population"]) - 1)
             target_island["population"][replace_idx] = best_payload
 
-    def _generate_next_gen(self, elites, survivors, intensity, mutator):
+    def _generate_next_gen(self, elites, survivors, intensity, mutator, response_time=None):
         next_gen = []
         # Elites stay as they are, but we track them
         for e in elites:
@@ -284,11 +300,11 @@ class IslandManager:
             elif rand_val < 0.4 and len(survivors) >= 2:
                 p1, p2 = random.sample(survivors, 2)
                 child = self._crossover(p1[0], p2[0])
-                mutated = mutator.mutate(child, intensity=intensity)
+                mutated = mutator.mutate(child, intensity=intensity, response_time=response_time)
                 next_gen.append({"payload": mutated, "parent": p1[0]})
             else:
                 parent_data = random.choice(survivors)
-                child = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity)
+                child = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time)
                 next_gen.append({"payload": child, "parent": parent_data[0]})
         
         return next_gen
