@@ -58,6 +58,5 @@ class DataExtractor:
                 report += f"[+] SYSTEM INFO: {val}\n"
             else:
                 report += f"[+] LEAKED DATA: {val}\n"
-
         report += "═"*55
         return report

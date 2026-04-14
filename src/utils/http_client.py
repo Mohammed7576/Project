@@ -68,10 +68,16 @@ class HTTPClient:
             response = self.session.post(self.injection_url, data=data)
             return {
                 "text": response.text,
-                "status": response.status_code
+                "status": response.status_code,
+                "size": len(response.content),
+                "word_count": len(response.text.split()),
+                "headers": dict(response.headers)
             }
         except Exception as e:
             return {
                 "text": f"Connection Error: {e}",
-                "status": 500
+                "status": 500,
+                "size": 0,
+                "word_count": 0,
+                "headers": {}
             }

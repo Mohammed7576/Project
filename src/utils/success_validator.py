@@ -33,16 +33,36 @@ class SuccessValidator:
                 return error_msg
         return None
 
-    def validate(self, response_text, status_code):
+    def validate(self, response_text, status_code, size=0, word_count=0, baseline=None):
         if not response_text:
             return 0.0, "CONNECTION_ERROR"
-        low_body = response_text.toLowerCase() if hasattr(response_text, 'toLowerCase') else response_text.lower()
+        
+        low_body = response_text.lower()
+        
+        # 1. High Confidence: Data Leakage
         if re.search(self.hash_pattern, response_text):
             return 1.0, "CRITICAL_DATA_LEAKED"
         if any(sig in low_body for sig in self.schema_signatures) and "UNION" in response_text.upper():
             return 0.95, "SCHEMA_EXFILTRATED"
         if any(sig in response_text for sig in self.basic_signatures):
             return 0.9, "WAF_BYPASSED_PARTIAL"
+
+        # 2. Response Shape Fingerprinting (Idea #3)
+        if baseline:
+            size_diff = abs(size - baseline.get("size", 0))
+            word_diff = abs(word_count - baseline.get("word_count", 0))
+            
+            # If size or word count changed significantly without a 403/406
+            if status_code == 200:
+                if size_diff > 50 or word_diff > 5:
+                    print(f"  [Fingerprint] Shape change detected: Size Diff {size_diff}, Word Diff {word_diff}", flush=True)
+                    return 0.6, "BLIND_SUCCESS_POTENTIAL"
+
+        # 3. Fallbacks
         if status_code == 200 and len(response_text) > 1000:
             return 0.5, "POTENTIAL_BYPASS"
-        return 0.1, "WAF_BLOCKED"
+        
+        if status_code in [403, 406] or "waf" in low_body or "forbidden" in low_body:
+            return 0.1, "WAF_BLOCKED"
+            
+        return 0.2, "UNKNOWN_RESPONSE"

