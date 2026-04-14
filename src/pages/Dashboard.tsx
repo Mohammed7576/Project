@@ -33,7 +33,16 @@ import {
 import { Virtuoso } from 'react-virtuoso';
 import { cn } from '../lib/utils';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "DUMMY_KEY" });
+const getEnv = (key: string) => {
+  try {
+    return process.env[key];
+  } catch (e) {
+    return undefined;
+  }
+};
+
+const geminiApiKey = getEnv('GEMINI_API_KEY') || "DUMMY_KEY";
+const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
 interface LogEntry {
   id: number;
@@ -43,6 +52,7 @@ interface LogEntry {
 }
 
 export default function Dashboard() {
+  console.log("[DASHBOARD] Rendering component...");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentGen, setCurrentGen] = useState(0);
@@ -145,7 +155,7 @@ export default function Dashboard() {
   };
 
   const analyzeAndHint = async (payload: string, context: string) => {
-    if (!process.env.GEMINI_API_KEY) {
+    if (geminiApiKey === "DUMMY_KEY") {
       addLog("[AI] Gemini API key not configured. Skipping hint.", "warning");
       return;
     }
