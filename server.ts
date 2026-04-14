@@ -247,10 +247,6 @@ async function startServer() {
   });
 
   // Catch-all for /api/* to ensure JSON response
-  app.all("/api/*", (req, res) => {
-    res.status(404).json({ error: `Route ${req.method} ${req.path} not found` });
-  });
-
   // API route to run Prometheus (Python script)
   app.get("/api/run-prometheus", (req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -289,6 +285,11 @@ async function startServer() {
       res.write(`\n[PROCESS COMPLETED WITH CODE ${code}]\n`);
       res.end();
     });
+  });
+
+  // API 404 handler - MUST be after all other API routes
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `Route ${req.method} ${req.path} not found` });
   });
 
   // Vite middleware for development
