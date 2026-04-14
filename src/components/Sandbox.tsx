@@ -20,6 +20,12 @@ export default function Sandbox({ defaultUrl }: { defaultUrl: string }) {
     setPayload(newPayload);
   };
 
+  const isMounted = React.useRef(true);
+  React.useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
   const handleSend = async () => {
     setLoading(true);
     try {
@@ -28,12 +34,21 @@ export default function Sandbox({ defaultUrl }: { defaultUrl: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, method, payload })
       });
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
-      setResponse(data);
+      if (isMounted.current) setResponse(data);
     } catch (e) {
       console.error(e);
+      if (isMounted.current) {
+        setResponse({
+          status: 'ERROR',
+          latency: 0,
+          data: e instanceof Error ? e.message : String(e)
+        });
+      }
+    } finally {
+      if (isMounted.current) setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

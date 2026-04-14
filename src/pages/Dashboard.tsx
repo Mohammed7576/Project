@@ -81,47 +81,18 @@ export default function Dashboard() {
   const [swarmData, setSwarmData] = useState<any[]>([]);
   const [brainLogs, setBrainLogs] = useState<any[]>([]);
 
+  const isMounted = useRef(true);
   useEffect(() => {
-    fetchExploits();
-    fetchLoot();
-    fetchEvolutionStats();
-    
-    // Fetch Swarm Radar Data
-    const fetchSwarmData = async () => {
-      try {
-        const res = await fetch('/api/swarm-radar');
-        const data = await res.json();
-        setSwarmData(data);
-      } catch (e) {
-        console.error("Failed to fetch swarm data", e);
-      }
-    };
-
-    // Fetch Brain Logs
-    const fetchBrainLogs = async () => {
-      try {
-        const res = await fetch('/api/brain-logs');
-        const data = await res.json();
-        setBrainLogs(data);
-      } catch (e) {
-        console.error("Failed to fetch brain logs", e);
-      }
-    };
-    
-    fetchSwarmData();
-    fetchBrainLogs();
-    const interval = setInterval(() => {
-      fetchSwarmData();
-      fetchBrainLogs();
-    }, 3000);
-    return () => clearInterval(interval);
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
   }, []);
 
   const fetchEvolutionStats = async () => {
     try {
       const res = await fetch('/api/ai-stats');
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
-      setAiStats(data);
+      if (isMounted.current) setAiStats(data);
     } catch (e) {
       console.error("Failed to fetch evolution stats", e);
     }
@@ -130,8 +101,9 @@ export default function Dashboard() {
   const fetchExploits = async () => {
     try {
       const res = await fetch('/api/exploits');
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
-      setSavedExploits(data);
+      if (isMounted.current) setSavedExploits(data);
     } catch (e) {
       console.error("Failed to fetch exploits", e);
     }
@@ -140,12 +112,61 @@ export default function Dashboard() {
   const fetchLoot = async () => {
     try {
       const res = await fetch('/api/loot');
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
-      setLootData(data);
+      if (isMounted.current) setLootData(data);
     } catch (e) {
       console.error("Failed to fetch loot", e);
     }
   };
+
+  const fetchSwarmData = async () => {
+    try {
+      const res = await fetch('/api/swarm-radar');
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      if (isMounted.current) setSwarmData(data);
+    } catch (e) {
+      console.error("Failed to fetch swarm data", e);
+    }
+  };
+
+  const fetchBrainLogs = async () => {
+    try {
+      const res = await fetch('/api/brain-logs');
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      if (isMounted.current) setBrainLogs(data);
+    } catch (e) {
+      console.error("Failed to fetch brain logs", e);
+    }
+  };
+
+  const fetchLineage = async () => {
+    try {
+      const res = await fetch('/api/lineage');
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      if (isMounted.current) setLineage(data);
+    } catch (err) {
+      console.error("Error fetching lineage:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchExploits();
+    fetchLoot();
+    fetchEvolutionStats();
+    fetchSwarmData();
+    fetchBrainLogs();
+
+    const interval = setInterval(() => {
+      fetchSwarmData();
+      fetchBrainLogs();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const runPrometheus = async () => {
     setIsRunning(true);
@@ -240,16 +261,6 @@ export default function Dashboard() {
     }
 
     setIsRunning(false);
-  };
-
-  const fetchLineage = async () => {
-    try {
-      const res = await fetch('/api/lineage');
-      const data = await res.json();
-      setLineage(data);
-    } catch (err) {
-      console.error("Error fetching lineage:", err);
-    }
   };
 
   useEffect(() => {
