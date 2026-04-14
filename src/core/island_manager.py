@@ -1,10 +1,12 @@
 import random
 import time
 import json
+import concurrent.futures
 from core.mutator_ast import ASTMutator
 from core.predictive_blocker import PredictiveBlocker
 from core.waf_fingerprinter import WAFFingerprinter
 from core.error_refiner import SQLErrorRefiner
+from core.differential_analyzer import DifferentialAnalyzer
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
@@ -13,7 +15,7 @@ class IslandManager:
         self.exp_manager = exp_manager
         self.base_seeds = base_payloads
         self.num_islands = num_islands
-        self.island_pop_size = population_size // num_islands
+        self.island_pop_size = max(4, population_size // num_islands)
         self.validator = SuccessValidator()
         self.best_score_history = []
         self.hall_of_fame = [] 
@@ -23,6 +25,7 @@ class IslandManager:
         self.blocker = PredictiveBlocker()
         self.fingerprinter = WAFFingerprinter()
         self.error_refiner = SQLErrorRefiner()
+        self.diff_analyzer = DifferentialAnalyzer(client)
         self.session_tested = set() # Avoid repeating in same session
         self.current_gen = 0
         self.waf_info = {"name": "GENERIC / UNKNOWN", "probed": False, "blocked_chars": []}
@@ -40,7 +43,7 @@ class IslandManager:
                 for i_data in state['islands']:
                     mutator = ASTMutator(context=context)
                     mutator.strategy_weights = i_data['weights']
-                    mutator.keyword_reputation = i_data['reputation']
+                    mutator.token_reputation = i_data['reputation']
                     self.islands.append({
                         "id": i_data['id'],
                         "mutator": mutator,
@@ -50,8 +53,28 @@ class IslandManager:
             except Exception as e:
                 print(f"[!] Failed to load state: {e}. Starting fresh.", flush=True)
 
+        # Target Profiling & Knowledge Transfer
+        target_profile = self.exp_manager.load_target_profile(client.base_url)
+        shared_recipes = []
+        if target_profile:
+            self.waf_info["name"] = target_profile["waf_name"]
+            self.waf_info["blocked_chars"] = target_profile["blocked_chars"]
+            self.waf_info["probed"] = True
+            print(f"[*] Target Profile Loaded: WAF={self.waf_info['name']}", flush=True)
+            
+            # Find similar targets to borrow recipes
+            if target_profile["avg_latency"]:
+                shared_recipes = self.exp_manager.find_similar_targets(self.waf_info["name"], target_profile["avg_latency"])
+                if shared_recipes:
+                    print(f"[*] Behavioral Clustering: Found {len(shared_recipes)} recipes from similar targets.", flush=True)
+
         for i in range(num_islands):
             mutator = ASTMutator(context=context)
+            
+            # Inject shared recipes from similar targets
+            if shared_recipes:
+                mutator.successful_recipes.extend(shared_recipes)
+                
             # 1. Context-Aware Initialization
             if context == "SINGLE_QUOTE":
                 mutator.strategy_weights["context_aware"] *= 3.0
@@ -102,9 +125,23 @@ class IslandManager:
             for island in self.islands:
                 island["mutator"].apply_hint(hints)
 
-        # 1. Evolve each island independently
-        for island in self.islands:
-            island_results = self._evolve_island(island, gen_num)
+        # 1. Evolve each island independently and in parallel using ThreadPoolExecutor
+        island_results_list = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.num_islands) as executor:
+            # Submit all island evolution tasks
+            future_to_island = {executor.submit(self._evolve_island, island, gen_num): island for island in self.islands}
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_island):
+                island = future_to_island[future]
+                try:
+                    island_results = future.result()
+                    island_results_list.append((island, island_results))
+                except Exception as exc:
+                    print(f"[!] Island {island['id']} generated an exception: {exc}", flush=True)
+
+        # Process results sequentially to avoid race conditions on global state
+        for island, island_results in island_results_list:
             if island_results["max_score"] > global_max_score:
                 global_max_score = island_results["max_score"]
             
@@ -140,11 +177,30 @@ class IslandManager:
                     "id": i["id"],
                     "population": i["population"],
                     "weights": i["mutator"].strategy_weights,
-                    "reputation": i["mutator"].keyword_reputation
+                    "reputation": i["mutator"].token_reputation
                 } for i in self.islands
             ]
         }
         self.exp_manager.save_session_state(self.client.base_url, json.dumps(state))
+
+        # Save Target Profile
+        all_recipes = []
+        for i in self.islands:
+            all_recipes.extend(i["mutator"].successful_recipes)
+        
+        # Calculate average latency across all islands
+        latencies = []
+        for i in self.islands:
+            latencies.extend(i["mutator"].latency_history)
+        avg_latency = sum(latencies) / len(latencies) if latencies else 0
+
+        self.exp_manager.save_target_profile(
+            target_url=self.client.base_url,
+            waf_name=self.waf_info["name"],
+            blocked_chars=self.waf_info["blocked_chars"],
+            successful_recipes=list(set(tuple(r) for r in all_recipes)), # Deduplicate
+            avg_latency=avg_latency
+        )
 
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
@@ -216,6 +272,16 @@ class IslandManager:
             # 2. Learning from real blocks
             if score <= 0.1:
                 self.blocker.learn_from_block(payload)
+                
+                # Differential Bisection Analysis (20% chance to avoid slowing down)
+                if (status == "WAF_BLOCKED" or response['status'] in [403, 406]) and random.random() < 0.2:
+                    signature = self.diff_analyzer.analyze(payload)
+                    if signature:
+                        mutator.blocked_signatures.add(signature)
+                        # Broadcast to all islands for swarm learning
+                        for isl in self.islands:
+                            isl["mutator"].blocked_signatures.add(signature)
+                            
             elif score >= 0.8:
                 self.blocker.report_success(payload)
 
@@ -243,6 +309,11 @@ class IslandManager:
             
             if score >= 0.9:
                 self.session_tested.add(payload)
+                # Recipe Memory: Save the recipe that led to this high score
+                recipe = next((p.get("recipe") for p in pop_data if isinstance(p, dict) and p.get("payload") == payload), None)
+                if recipe and recipe not in mutator.successful_recipes:
+                    mutator.successful_recipes.append(recipe)
+                    print(f"  [+] Island {island['id']} Memorized Recipe: {recipe}", flush=True)
 
             if score > max_score: max_score = score
             
@@ -300,12 +371,12 @@ class IslandManager:
             elif rand_val < 0.4 and len(survivors) >= 2:
                 p1, p2 = random.sample(survivors, 2)
                 child = self._crossover(p1[0], p2[0])
-                mutated = mutator.mutate(child, intensity=intensity, response_time=response_time)
-                next_gen.append({"payload": mutated, "parent": p1[0]})
+                mutated, recipe = mutator.mutate(child, intensity=intensity, response_time=response_time)
+                next_gen.append({"payload": mutated, "parent": p1[0], "recipe": recipe})
             else:
                 parent_data = random.choice(survivors)
-                child = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time)
-                next_gen.append({"payload": child, "parent": parent_data[0]})
+                child, recipe = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time)
+                next_gen.append({"payload": child, "parent": parent_data[0], "recipe": recipe})
         
         return next_gen
 

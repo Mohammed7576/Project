@@ -3,8 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import PrometheusConsole from './utils/PrometheusConsole';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
+import Sandbox from './components/Sandbox';
+import AttackBuilder from './components/AttackBuilder';
 
 export default function App() {
-  return <PrometheusConsole />;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="sandbox" element={<Sandbox defaultUrl="http://localhost/" />} />
+          <Route path="builder" element={<AttackBuilder />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
 }

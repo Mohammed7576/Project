@@ -49,6 +49,16 @@ class ExperienceManager:
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS target_profiles (
+                    target_url TEXT PRIMARY KEY,
+                    waf_name TEXT,
+                    blocked_chars TEXT,
+                    successful_recipes TEXT,
+                    avg_latency REAL,
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
             conn.close()
             self._seed_knowledge() # Seed real-world patterns
@@ -79,6 +89,63 @@ class ExperienceManager:
         except Exception as e:
             print(f"[!] Database Error (Load State): {e}")
             return None
+
+    def save_target_profile(self, target_url, waf_name, blocked_chars, successful_recipes, avg_latency):
+        try:
+            import json
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO target_profiles (target_url, waf_name, blocked_chars, successful_recipes, avg_latency, last_updated)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (target_url, waf_name, json.dumps(blocked_chars), json.dumps(successful_recipes), avg_latency))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Save Profile): {e}")
+
+    def load_target_profile(self, target_url):
+        try:
+            import json
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT waf_name, blocked_chars, successful_recipes, avg_latency FROM target_profiles WHERE target_url = ?', (target_url,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                return {
+                    "waf_name": result[0],
+                    "blocked_chars": json.loads(result[1]) if result[1] else [],
+                    "successful_recipes": json.loads(result[2]) if result[2] else [],
+                    "avg_latency": result[3]
+                }
+            return None
+        except Exception as e:
+            print(f"[!] Database Error (Load Profile): {e}")
+            return None
+
+    def find_similar_targets(self, waf_name, avg_latency, tolerance=0.2):
+        """Finds other targets with the same WAF and similar latency to share recipes."""
+        try:
+            import json
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            # Find targets with same WAF and latency within +/- tolerance
+            cursor.execute('''
+                SELECT target_url, successful_recipes FROM target_profiles 
+                WHERE waf_name = ? AND avg_latency BETWEEN ? AND ?
+            ''', (waf_name, avg_latency * (1 - tolerance), avg_latency * (1 + tolerance)))
+            results = cursor.fetchall()
+            conn.close()
+            
+            shared_recipes = []
+            for row in results:
+                recipes = json.loads(row[1]) if row[1] else []
+                shared_recipes.extend(recipes)
+            return shared_recipes
+        except Exception as e:
+            print(f"[!] Database Error (Find Similar): {e}")
+            return []
 
     def get_lineage(self, limit=50):
         """Retrieves parent-child relationships for visualization."""

