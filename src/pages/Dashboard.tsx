@@ -35,14 +35,15 @@ import { cn } from '../lib/utils';
 
 const getEnv = (key: string) => {
   try {
-    return process.env[key];
+    // Vite defines process.env via define in config, but let's be extra safe
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env[key];
+    }
   } catch (e) {
-    return undefined;
+    console.warn(`[ENV] Failed to access process.env.${key}`, e);
   }
+  return undefined;
 };
-
-const geminiApiKey = getEnv('GEMINI_API_KEY') || "DUMMY_KEY";
-const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
 interface LogEntry {
   id: number;
@@ -53,6 +54,19 @@ interface LogEntry {
 
 export default function Dashboard() {
   console.log("[DASHBOARD] Rendering component...");
+  
+  // Initialize AI lazily to prevent top-level crashes
+  const aiRef = useRef<GoogleGenAI | null>(null);
+  const geminiApiKey = getEnv('GEMINI_API_KEY') || "DUMMY_KEY";
+
+  if (!aiRef.current) {
+    try {
+      aiRef.current = new GoogleGenAI({ apiKey: geminiApiKey });
+    } catch (e) {
+      console.error("[DASHBOARD] Failed to initialize GoogleGenAI", e);
+    }
+  }
+
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentGen, setCurrentGen] = useState(0);
@@ -155,13 +169,13 @@ export default function Dashboard() {
   };
 
   const analyzeAndHint = async (payload: string, context: string) => {
-    if (geminiApiKey === "DUMMY_KEY") {
+    if (geminiApiKey === "DUMMY_KEY" || !aiRef.current) {
       addLog("[AI] Gemini API key not configured. Skipping hint.", "warning");
       return;
     }
     addLog("[AI] Analyzing stagnation. Consulting Gemini...", "warning");
     try {
-      const response = await ai.models.generateContent({ 
+      const response = await aiRef.current.models.generateContent({ 
         model: "gemini-3-flash-preview",
         contents: `The genetic algorithm is stuck trying to bypass a WAF.
         Current best payload: ${payload}

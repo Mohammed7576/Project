@@ -1,24 +1,28 @@
+console.log("[MAIN] Script starting...");
+const debugInfo = document.getElementById('debug-info');
+if (debugInfo) debugInfo.innerText = "JavaScript starting...";
+
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-console.log("[APP] Initializing React application...");
+console.log("[MAIN] Imports completed.");
+if (debugInfo) debugInfo.innerText = "Imports completed, rendering...";
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  console.error("[APP] Root element not found!");
+  console.error("[MAIN] Root element not found!");
 } else {
-  console.log("[APP] Root element found, rendering...");
   try {
     createRoot(rootElement).render(
       <StrictMode>
         <App />
       </StrictMode>,
     );
-    console.log("[APP] Render call completed.");
+    console.log("[MAIN] Render call completed.");
   } catch (err) {
-    console.error("[APP] Render failed:", err);
-    rootElement.innerHTML = `<div style="color: white; padding: 20px; background: #900;"><h1>Critical Error</h1><pre>${err}</pre></div>`;
+    console.error("[MAIN] Render failed:", err);
+    rootElement.innerHTML = `<div style="color: #ff4444; padding: 40px; background: #1a0000; font-family: monospace; height: 100vh; border: 4px solid #ff0000;"><h1>Render Error</h1><pre>${err}</pre></div>`;
   }
 }
