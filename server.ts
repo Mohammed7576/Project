@@ -11,66 +11,82 @@ const __dirname = path.dirname(__filename);
 
 import fs from "fs";
 
-// Initialize database
-const db = new Database("memory.db");
+// Initialize database with error handling
+let db: any;
+try {
+  db = new Database("memory.db");
+  console.log("[DB] Database initialized successfully.");
+} catch (err) {
+  console.error("[DB] Failed to initialize database, using in-memory fallback:", err);
+  db = new Database(":memory:");
+}
 
 // Create tables if they don't exist
-db.exec(`
-  CREATE TABLE IF NOT EXISTS experience (
-      payload TEXT PRIMARY KEY,
-      score REAL,
-      status TEXT,
-      parent_payload TEXT,
-      island_id INTEGER DEFAULT 0,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS exploits (
-      payload TEXT PRIMARY KEY,
-      type TEXT,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS hints (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      strategy TEXT,
-      target_keyword TEXT,
-      suggestion TEXT,
-      consumed INTEGER DEFAULT 0,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS target_profiles (
-      target_url TEXT PRIMARY KEY,
-      waf_name TEXT,
-      blocked_chars TEXT,
-      successful_recipes TEXT,
-      avg_latency REAL,
-      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS loot (
-      target_url TEXT PRIMARY KEY,
-      database_name TEXT,
-      tables_json TEXT,
-      columns_json TEXT,
-      data_json TEXT,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS rl_knowledge (
-      state TEXT PRIMARY KEY,
-      actions_json TEXT,
-      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS brain_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT,
-      message TEXT,
-      confidence REAL,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS experience (
+        payload TEXT PRIMARY KEY,
+        score REAL,
+        status TEXT,
+        parent_payload TEXT,
+        island_id INTEGER DEFAULT 0,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS exploits (
+        payload TEXT PRIMARY KEY,
+        type TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS hints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        strategy TEXT,
+        target_keyword TEXT,
+        suggestion TEXT,
+        consumed INTEGER DEFAULT 0,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS target_profiles (
+        target_url TEXT PRIMARY KEY,
+        waf_name TEXT,
+        blocked_chars TEXT,
+        successful_recipes TEXT,
+        avg_latency REAL,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS loot (
+        target_url TEXT PRIMARY KEY,
+        database_name TEXT,
+        tables_json TEXT,
+        columns_json TEXT,
+        data_json TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS rl_knowledge (
+        state TEXT PRIMARY KEY,
+        actions_json TEXT,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS brain_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        message TEXT,
+        confidence REAL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+} catch (err) {
+  console.error("[DB] Schema creation failed:", err);
+}
 
 async function startServer() {
   const app = express();
   app.use(express.json());
   
+  // Health check endpoint
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // API logging middleware
   app.use("/api", (req, res, next) => {
     console.log(`[API] ${req.method} ${req.path}`);
