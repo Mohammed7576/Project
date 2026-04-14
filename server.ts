@@ -52,6 +52,11 @@ db.exec(`
       data_json TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS rl_knowledge (
+      state TEXT PRIMARY KEY,
+      actions_json TEXT,
+      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 async function startServer() {
@@ -118,6 +123,20 @@ async function startServer() {
       const stmt = db.prepare("SELECT payload, parent_payload as parent, score, status FROM experience WHERE parent_payload IS NOT NULL ORDER BY timestamp DESC LIMIT 100");
       const rows = stmt.all();
       res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/ai-stats", (req, res) => {
+    try {
+      const countStmt = db.prepare("SELECT COUNT(*) as count FROM rl_knowledge");
+      const { count } = countStmt.get() as { count: number };
+      
+      const recentStmt = db.prepare("SELECT state, last_updated FROM rl_knowledge ORDER BY last_updated DESC LIMIT 5");
+      const recentStates = recentStmt.all();
+      
+      res.json({ totalStates: count, recentStates });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

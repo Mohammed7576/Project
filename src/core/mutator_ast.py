@@ -100,7 +100,7 @@ class ASTMutator:
             self.blocked_chars = list(set(self.blocked_chars + blocked))
             print(f"[*] Mutator: WAF Adaptation - Avoiding blocked chars: {self.blocked_chars}", flush=True)
 
-    def mutate(self, payload, error_msg=None, intensity=1, response_time=None):
+    def mutate(self, payload, error_msg=None, intensity=1, response_time=None, forced_strategy=None):
         mutated = str(payload)
         applied_recipe = []
         
@@ -128,7 +128,14 @@ class ASTMutator:
         # 3. Context-Aware Mutation: Detect and wrap payload if needed
         mutated = self._context_aware_wrap(mutated)
         
-        # 4. Standard Mutations
+        # 4. RL Integration: If a strategy is forced by the RL agent
+        if forced_strategy and forced_strategy in self.strategies:
+            mutated = self.strategies[forced_strategy](mutated)
+            applied_recipe.append(forced_strategy)
+            print(f"  [AI Agent] RL Agent chose strategy: {forced_strategy}", flush=True)
+            return mutated, applied_recipe
+
+        # 5. Standard Mutations
         # RECIPE MEMORY: 30% chance to reuse a known successful recipe if we have one
         if self.successful_recipes and random.random() < 0.3:
             recipe = random.choice(self.successful_recipes)

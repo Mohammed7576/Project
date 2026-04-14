@@ -10,6 +10,7 @@ from core.differential_analyzer import DifferentialAnalyzer
 from core.payload_minimizer import PayloadMinimizer
 from core.data_exfiltrator import DataExfiltrator
 from core.waf_rule_inferrer import WAFRuleInferrer
+from core.rl_agent import QLearningAgent
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
@@ -32,6 +33,11 @@ class IslandManager:
         self.minimizer = PayloadMinimizer(client, self.validator)
         self.exfiltrator = DataExfiltrator(client, self.validator)
         self.rule_inferrer = WAFRuleInferrer(client)
+        self.rl_agent = QLearningAgent(actions=["logical_alts", "inline_comments", "union_balance", "junk_fill", "context_aware", "directed_bypass", "polyglot", "encoding", "keyword_comment_wrap"])
+        
+        # Load global knowledge from database
+        self.rl_agent.load_knowledge()
+        
         self.session_tested = set() # Avoid repeating in same session
         self.session_scores = {} # Track payload -> score for backtracking
         self.current_gen = 0
@@ -332,6 +338,19 @@ class IslandManager:
             # Pass parent score for negative learning
             parent_score = self.session_scores.get(parent, 0) if parent else 0
             mutator.report_success(payload, score)
+            
+            # RL LEARNING: Update the AI Agent based on the reward (score improvement)
+            p_data = pop_data[i]
+            if isinstance(p_data, dict) and "rl_state" in p_data:
+                state = p_data["rl_state"]
+                action = p_data["rl_action"]
+                reward = (score - parent_score) * 10 # Scale reward
+                if status == "SUCCESS": reward += 50
+                if status == "WAF_BLOCKED": reward -= 5
+                
+                next_state = self.rl_agent.get_state(self.waf_info["name"], score, island.get("stagnation", 0))
+                self.rl_agent.learn(state, action, reward, next_state)
+
             scored_population.append((payload, score, error_msg))
             
             if score >= 0.9:
@@ -392,7 +411,10 @@ class IslandManager:
         survivors = [p for p in scored_population if p[1] >= 0.15]
         
         avg_r_time = sum(response_times) / len(response_times) if response_times else None
-        island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator, avg_r_time)
+        island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator, island["id"], avg_r_time)
+        
+        # Save knowledge after each generation to the database
+        self.rl_agent.save_knowledge()
         
         return {"max_score": max_score}
 
@@ -410,7 +432,7 @@ class IslandManager:
             replace_idx = random.randint(1, len(target_island["population"]) - 1)
             target_island["population"][replace_idx] = best_payload
 
-    def _generate_next_gen(self, elites, survivors, intensity, mutator, response_time=None):
+    def _generate_next_gen(self, elites, survivors, intensity, mutator, island_id, response_time=None):
         next_gen = []
         # Elites stay as they are, but we track them
         for e in elites:
@@ -419,6 +441,10 @@ class IslandManager:
         if not survivors:
             seeds = random.sample(self.base_seeds, min(len(self.base_seeds), self.island_pop_size))
             return [{"payload": s, "parent": None} for s in seeds]
+
+        # AI AGENT: Get current state for this island
+        island = next(isl for isl in self.islands if isl["id"] == island_id)
+        state = self.rl_agent.get_state(self.waf_info["name"], island.get("last_max_score", 0), island.get("stagnation", 0))
 
         while len(next_gen) < self.island_pop_size:
             rand_val = random.random()
@@ -435,10 +461,20 @@ class IslandManager:
                 next_gen.append({"payload": mutated, "parent": p1[0], "recipe": recipe})
             else:
                 parent_data = random.choice(survivors)
-                child, recipe = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time)
+                
+                # AI AGENT: Choose strategy
+                forced_strat = self.rl_agent.choose_action(state)
+                
+                child, recipe = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time, forced_strategy=forced_strat)
                 # Track mutation history for learning
                 mutator.mutation_history[child] = {"strategy": recipe[-1] if recipe else "unknown", "parent_score": parent_data[1]}
-                next_gen.append({"payload": child, "parent": parent_data[0], "recipe": recipe})
+                next_gen.append({
+                    "payload": child, 
+                    "parent": parent_data[0], 
+                    "recipe": recipe,
+                    "rl_state": state,
+                    "rl_action": forced_strat
+                })
         
         return next_gen
 

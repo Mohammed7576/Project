@@ -59,6 +59,7 @@ export default function Dashboard() {
   });
   const [stats, setStats] = useState<{gen: number, score: number}[]>([]);
   const [lootData, setLootData] = useState<any[]>([]);
+  const [aiStats, setAiStats] = useState<{totalStates: number, recentStates: any[]}>({totalStates: 0, recentStates: []});
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' | 'critical' | 'refinement' = 'info') => {
     setLogs(prev => [...prev, { 
@@ -72,7 +73,18 @@ export default function Dashboard() {
   useEffect(() => {
     fetchExploits();
     fetchLoot();
+    fetchAiStats();
   }, []);
+
+  const fetchAiStats = async () => {
+    try {
+      const res = await fetch('/api/ai-stats');
+      const data = await res.json();
+      setAiStats(data);
+    } catch (e) {
+      console.error("Failed to fetch AI stats", e);
+    }
+  };
 
   const fetchExploits = async () => {
     try {
@@ -245,6 +257,7 @@ export default function Dashboard() {
       const interval = setInterval(() => {
         fetchLineage();
         fetchLoot();
+        fetchAiStats();
       }, 5000);
       return () => clearInterval(interval);
     }
@@ -450,6 +463,38 @@ export default function Dashboard() {
                 <span className="text-cyber-blue font-mono animate-pulse">{wafInfo}</span>
               </div>
             )}
+          </div>
+        </section>
+
+        {/* AI Intelligence Level (New) */}
+        <section className="cyber-card p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-cyber-border pb-3">
+            <h3 className="text-xs font-bold text-cyber-blue uppercase tracking-widest flex items-center gap-2">
+              <Zap className="w-3.5 h-3.5" /> الذكاء الاصطناعي التراكمي
+            </h3>
+            <span className="text-[10px] text-cyber-blue font-mono">RL Engine</span>
+          </div>
+
+          <div className="p-4 bg-cyber-blue/5 border border-cyber-blue/20 rounded-lg text-center">
+            <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">إجمالي الخبرات المكتسبة</p>
+            <p className="text-3xl font-display font-bold text-cyber-blue tracking-tight">{aiStats.totalStates}</p>
+            <p className="text-[9px] text-cyber-blue/60 mt-1 uppercase tracking-tighter">حالة (State) مسجلة في الذاكرة</p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[10px] text-slate-500 font-bold uppercase">آخر التطورات:</p>
+            <div className="space-y-1.5">
+              {aiStats.recentStates.length === 0 ? (
+                <p className="text-[10px] text-slate-700 italic">لا توجد خبرات مسجلة بعد...</p>
+              ) : (
+                aiStats.recentStates.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between text-[10px] font-mono bg-black/20 p-1.5 rounded border border-white/5">
+                    <span className="text-slate-400 truncate max-w-[120px]">{s.state}</span>
+                    <span className="text-slate-600 text-[8px]">{new Date(s.last_updated).toLocaleTimeString()}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </section>
       </div>
