@@ -66,6 +66,7 @@ export default function Dashboard() {
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
     console.log(`[LOG] ${type.toUpperCase()}: ${message}`);
+    if (!isMounted.current) return;
     setLogs(prev => {
       const newLogs = [...prev, { 
         id: Date.now() + Math.random(), 
@@ -183,6 +184,8 @@ export default function Dashboard() {
     try {
       const queryParams = new URLSearchParams(targetConfig).toString();
       const response = await fetch(`/api/run-prometheus?${queryParams}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
@@ -191,6 +194,11 @@ export default function Dashboard() {
       let lastScore = 0;
 
       while (true) {
+        if (!isMounted.current) {
+          reader.cancel();
+          break;
+        }
+        
         const { done, value } = await reader.read();
         if (done) break;
         
@@ -207,6 +215,8 @@ export default function Dashboard() {
             if (line.includes('REFINEMENT')) type = 'refinement';
             
             addLog(line, type);
+
+            if (!isMounted.current) return;
 
             if (line.includes('[ANALYSIS_REQUIRED]')) {
               addLog("[SYSTEM] Stagnation detected. Evolution strategy adjustment required.", "warning");

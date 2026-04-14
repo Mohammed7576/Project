@@ -236,43 +236,55 @@ async function startServer() {
 
   // Catch-all for /api/* to ensure JSON response
   // API route to run Prometheus (Python script)
-  app.get("/api/run-prometheus", (req, res) => {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
+  app.get("/api/run-prometheus", async (req, res) => {
+    try {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
 
-    const { url, username, password, security, population, generations } = req.query;
-    
-    // Pass configuration as environment variables to the Python script
-    const pythonProcess = spawn("python3", ["main.py"], {
-      env: {
-        ...process.env,
-        TARGET_URL: url as string,
-        TARGET_USER: username as string,
-        TARGET_PASS: password as string,
-        TARGET_SECURITY: security as string,
-        POPULATION_SIZE: population as string,
-        MAX_GENERATIONS: generations as string
+      const { url, username, password, security, population, generations } = req.query;
+      
+      // Pass configuration as environment variables to the Python script
+      const pythonProcess = spawn("python3", ["main.py"], {
+        env: {
+          ...process.env,
+          TARGET_URL: url as string,
+          TARGET_USER: username as string,
+          TARGET_PASS: password as string,
+          TARGET_SECURITY: security as string,
+          POPULATION_SIZE: population as string,
+          MAX_GENERATIONS: generations as string
+        }
+      });
+
+      pythonProcess.on("error", (err) => {
+        console.error("Failed to start python process:", err);
+        if (!res.writableEnded) {
+          res.write(`[ERROR] Failed to start engine: ${err.message}\n`);
+          res.end();
+        }
+      });
+
+      pythonProcess.stdout.on("data", (data) => {
+        if (!res.writableEnded) res.write(data);
+      });
+
+      pythonProcess.stderr.on("data", (data) => {
+        if (!res.writableEnded) res.write(`[ERROR] ${data}`);
+      });
+
+      pythonProcess.on("close", (code) => {
+        if (!res.writableEnded) {
+          res.write(`\n[PROCESS COMPLETED WITH CODE ${code}]\n`);
+          res.end();
+        }
+      });
+    } catch (err: any) {
+      console.error("Error in run-prometheus route:", err);
+      if (!res.writableEnded) {
+        res.status(500).write(`[CRITICAL ERROR] ${err.message}\n`);
+        res.end();
       }
-    });
-
-    pythonProcess.on("error", (err) => {
-      console.error("Failed to start python process:", err);
-      res.write(`[ERROR] Failed to start engine: ${err.message}\n`);
-      res.end();
-    });
-
-    pythonProcess.stdout.on("data", (data) => {
-      res.write(data);
-    });
-
-    pythonProcess.stderr.on("data", (data) => {
-      res.write(`[ERROR] ${data}`);
-    });
-
-    pythonProcess.on("close", (code) => {
-      res.write(`\n[PROCESS COMPLETED WITH CODE ${code}]\n`);
-      res.end();
-    });
+    }
   });
 
   // API 404 handler - MUST be after all other API routes
@@ -300,4 +312,6 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("[CRITICAL] Server failed to start:", err);
+});
