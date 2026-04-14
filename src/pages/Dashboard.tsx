@@ -17,6 +17,7 @@ import {
   Network
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
+
 import { 
   XAxis, 
   YAxis, 
@@ -32,7 +33,7 @@ import {
 import { Virtuoso } from 'react-virtuoso';
 import { cn } from '../lib/utils';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "DUMMY_KEY" });
 
 interface LogEntry {
   id: number;
@@ -63,7 +64,7 @@ export default function Dashboard() {
   });
   const [stats, setStats] = useState<{gen: number, score: number}[]>([]);
   const [lootData, setLootData] = useState<any[]>([]);
-  const [aiStats, setAiStats] = useState<{totalStates: number, recentStates: any[]}>({totalStates: 0, recentStates: []});
+  const [aiStats, setAiStats] = useState<{totalStates: number, stepsDone?: number, recentStates: any[]}>({totalStates: 0, stepsDone: 0, recentStates: []});
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' | 'critical' | 'refinement' = 'info') => {
     setLogs(prev => [...prev, { 
@@ -144,10 +145,14 @@ export default function Dashboard() {
   };
 
   const analyzeAndHint = async (payload: string, context: string) => {
+    if (!process.env.GEMINI_API_KEY) {
+      addLog("[AI] Gemini API key not configured. Skipping hint.", "warning");
+      return;
+    }
     addLog("[AI] Analyzing stagnation. Consulting Gemini...", "warning");
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+      const response = await ai.models.generateContent({ 
+        model: "gemini-3-flash-preview",
         contents: `The genetic algorithm is stuck trying to bypass a WAF.
         Current best payload: ${payload}
         Context: ${context}
@@ -165,8 +170,9 @@ export default function Dashboard() {
         }
       });
       
-      if (response.text) {
-        const hint = JSON.parse(response.text);
+      const text = response.text;
+      if (text) {
+        const hint = JSON.parse(text);
         addLog(`[AI Hint] Strategy: ${hint.strategy}`, "refinement");
         addLog(`[AI Hint] Focus Keyword: ${hint.target_keyword}`, "refinement");
         

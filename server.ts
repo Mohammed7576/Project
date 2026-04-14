@@ -70,6 +70,13 @@ db.exec(`
 async function startServer() {
   const app = express();
   app.use(express.json());
+  
+  // API logging middleware
+  app.use("/api", (req, res, next) => {
+    console.log(`[API] ${req.method} ${req.path}`);
+    next();
+  });
+
   const PORT = 3000;
 
   // API route to get loot
@@ -223,6 +230,11 @@ async function startServer() {
     }
   });
 
+  // Catch-all for /api/* to ensure JSON response
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `Route ${req.method} ${req.path} not found` });
+  });
+
   // API route to run Prometheus (Python script)
   app.get("/api/run-prometheus", (req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -241,6 +253,12 @@ async function startServer() {
         POPULATION_SIZE: population as string,
         MAX_GENERATIONS: generations as string
       }
+    });
+
+    pythonProcess.on("error", (err) => {
+      console.error("Failed to start python process:", err);
+      res.write(`[ERROR] Failed to start engine: ${err.message}\n`);
+      res.end();
     });
 
     pythonProcess.stdout.on("data", (data) => {
