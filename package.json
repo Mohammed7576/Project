@@ -1,5 +1,6 @@
 {
-  "name": "react-example",
+  "name": "prometheus-ai-sqli",
+  "description": "Autonomous Genetic SQLi Evolution System with Swarm Intelligence",
   "private": true,
   "version": "0.0.0",
   "type": "module",
