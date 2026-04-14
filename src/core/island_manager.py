@@ -10,7 +10,7 @@ from core.differential_analyzer import DifferentialAnalyzer
 from core.payload_minimizer import PayloadMinimizer
 from core.data_exfiltrator import DataExfiltrator
 from core.waf_rule_inferrer import WAFRuleInferrer
-from core.rl_agent import QLearningAgent
+from core.deep_brain import DeepQLearningAgent
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
@@ -33,10 +33,7 @@ class IslandManager:
         self.minimizer = PayloadMinimizer(client, self.validator)
         self.exfiltrator = DataExfiltrator(client, self.validator)
         self.rule_inferrer = WAFRuleInferrer(client)
-        self.rl_agent = QLearningAgent(actions=["logical_alts", "inline_comments", "union_balance", "junk_fill", "context_aware", "directed_bypass", "polyglot", "encoding", "keyword_comment_wrap"])
-        
-        # Load global knowledge from database
-        self.rl_agent.load_knowledge()
+        self.rl_agent = DeepQLearningAgent(actions=["logical_alts", "inline_comments", "union_balance", "junk_fill", "context_aware", "directed_bypass", "polyglot", "encoding", "keyword_comment_wrap"])
         
         self.session_tested = set() # Avoid repeating in same session
         self.session_scores = {} # Track payload -> score for backtracking
@@ -342,14 +339,13 @@ class IslandManager:
             # RL LEARNING: Update the AI Agent based on the reward (score improvement)
             p_data = pop_data[i]
             if isinstance(p_data, dict) and "rl_state" in p_data:
-                state = p_data["rl_state"]
+                state_info = p_data["rl_state"] # [waf, score, stag]
                 action = p_data["rl_action"]
                 reward = (score - parent_score) * 10 # Scale reward
                 if status == "SUCCESS": reward += 50
                 if status == "WAF_BLOCKED": reward -= 5
                 
-                next_state = self.rl_agent.get_state(self.waf_info["name"], score, island.get("stagnation", 0))
-                self.rl_agent.learn(state, action, reward, next_state)
+                self.rl_agent.learn(state_info[0], state_info[1], state_info[2], action, reward, score, island.get("stagnation", 0))
 
             scored_population.append((payload, score, error_msg))
             
@@ -414,7 +410,7 @@ class IslandManager:
         island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator, island["id"], avg_r_time)
         
         # Save knowledge after each generation to the database
-        self.rl_agent.save_knowledge()
+        self.rl_agent.save()
         
         return {"max_score": max_score}
 
@@ -444,7 +440,9 @@ class IslandManager:
 
         # AI AGENT: Get current state for this island
         island = next(isl for isl in self.islands if isl["id"] == island_id)
-        state = self.rl_agent.get_state(self.waf_info["name"], island.get("last_max_score", 0), island.get("stagnation", 0))
+        waf_name = self.waf_info["name"]
+        score = island.get("last_max_score", 0)
+        stag = island.get("stagnation", 0)
 
         while len(next_gen) < self.island_pop_size:
             rand_val = random.random()
@@ -462,8 +460,8 @@ class IslandManager:
             else:
                 parent_data = random.choice(survivors)
                 
-                # AI AGENT: Choose strategy
-                forced_strat = self.rl_agent.choose_action(state)
+                # AI AGENT: Choose strategy using Deep Brain
+                forced_strat = self.rl_agent.choose_action(waf_name, score, stag)
                 
                 child, recipe = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time, forced_strategy=forced_strat)
                 # Track mutation history for learning
@@ -472,7 +470,7 @@ class IslandManager:
                     "payload": child, 
                     "parent": parent_data[0], 
                     "recipe": recipe,
-                    "rl_state": state,
+                    "rl_state": [waf_name, score, stag],
                     "rl_action": forced_strat
                 })
         
