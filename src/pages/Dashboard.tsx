@@ -13,17 +13,21 @@ import {
   BarChart3,
   ChevronRight,
   AlertTriangle,
-  GitGraph
+  GitGraph,
+  Network
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   XAxis, 
   YAxis, 
   CartesianGrid, 
-  Tooltip, 
+  Tooltip as RechartsTooltip, 
   ResponsiveContainer,
   AreaChart,
-  Area
+  Area,
+  ScatterChart,
+  Scatter,
+  ZAxis
 } from 'recharts';
 import { Virtuoso } from 'react-virtuoso';
 import { cn } from '../lib/utils';
@@ -70,10 +74,43 @@ export default function Dashboard() {
     }]);
   };
 
+  const [swarmData, setSwarmData] = useState<any[]>([]);
+  const [brainLogs, setBrainLogs] = useState<any[]>([]);
+
   useEffect(() => {
     fetchExploits();
     fetchLoot();
     fetchAiStats();
+    
+    // Fetch Swarm Radar Data
+    const fetchSwarmData = async () => {
+      try {
+        const res = await fetch('/api/swarm-radar');
+        const data = await res.json();
+        setSwarmData(data);
+      } catch (e) {
+        console.error("Failed to fetch swarm data", e);
+      }
+    };
+
+    // Fetch Brain Logs
+    const fetchBrainLogs = async () => {
+      try {
+        const res = await fetch('/api/brain-logs');
+        const data = await res.json();
+        setBrainLogs(data);
+      } catch (e) {
+        console.error("Failed to fetch brain logs", e);
+      }
+    };
+    
+    fetchSwarmData();
+    fetchBrainLogs();
+    const interval = setInterval(() => {
+      fetchSwarmData();
+      fetchBrainLogs();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchAiStats = async () => {
@@ -466,31 +503,95 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* AI Intelligence Level (New) */}
+        {/* Swarm Radar (New) */}
+        <section className="cyber-card p-5 lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-cyber-border pb-3 mb-4">
+            <h3 className="text-xs font-bold text-cyber-amber uppercase tracking-widest flex items-center gap-2">
+              <Network className="w-4 h-4" /> رادار الأسراب الحي (Live Swarm Radar)
+            </h3>
+            <div className="flex gap-3 text-[10px] font-bold uppercase">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyber-blue"></span> Island 1</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyber-green"></span> Island 2</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyber-amber"></span> Island 3</span>
+            </div>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis type="number" dataKey="x" name="Complexity" stroke="#475569" tick={{fontSize: 10}} />
+                <YAxis type="number" dataKey="y" name="Success Rate" stroke="#475569" tick={{fontSize: 10}} />
+                <ZAxis type="number" dataKey="z" range={[20, 200]} name="Payload Size" />
+                <RechartsTooltip 
+                  cursor={{ strokeDasharray: '3 3' }}
+                  contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', border: '1px solid #0ea5e9', borderRadius: '4px' }}
+                  itemStyle={{ color: '#0ea5e9', fontSize: '12px' }}
+                />
+                <Scatter name="Island 1" data={swarmData.filter(d => d.island === 1)} fill="#0ea5e9" opacity={0.7} />
+                <Scatter name="Island 2" data={swarmData.filter(d => d.island === 2)} fill="#10b981" opacity={0.7} />
+                <Scatter name="Island 3" data={swarmData.filter(d => d.island === 3)} fill="#f59e0b" opacity={0.7} />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        {/* AI Intelligence Level */}
         <section className="cyber-card p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-cyber-border pb-3">
             <h3 className="text-xs font-bold text-cyber-blue uppercase tracking-widest flex items-center gap-2">
               <Zap className="w-3.5 h-3.5" /> الذكاء الاصطناعي التراكمي
             </h3>
-            <span className="text-[10px] text-cyber-blue font-mono">RL Engine</span>
+            <span className="text-[10px] text-cyber-blue font-mono">PyTorch LSTM</span>
           </div>
 
-          <div className="p-4 bg-cyber-blue/5 border border-cyber-blue/20 rounded-lg text-center">
-            <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">إجمالي الخبرات المكتسبة</p>
-            <p className="text-3xl font-display font-bold text-cyber-blue tracking-tight">{aiStats.totalStates}</p>
-            <p className="text-[9px] text-cyber-blue/60 mt-1 uppercase tracking-tighter">حالة (State) مسجلة في الذاكرة</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 bg-cyber-blue/5 border border-cyber-blue/20 rounded-lg text-center">
+              <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">الذكريات المخزنة</p>
+              <p className="text-2xl font-display font-bold text-cyber-blue tracking-tight">{aiStats.totalStates}</p>
+              <p className="text-[9px] text-cyber-blue/60 mt-1 uppercase tracking-tighter">Replay Buffer</p>
+            </div>
+            <div className="p-3 bg-cyber-blue/5 border border-cyber-blue/20 rounded-lg text-center">
+              <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">خطوات التدريب</p>
+              <p className="text-2xl font-display font-bold text-cyber-blue tracking-tight">{aiStats.stepsDone || 0}</p>
+              <p className="text-[9px] text-cyber-blue/60 mt-1 uppercase tracking-tighter">Steps Done</p>
+            </div>
           </div>
 
           <div className="space-y-2">
-            <p className="text-[10px] text-slate-500 font-bold uppercase">آخر التطورات:</p>
-            <div className="space-y-1.5">
-              {aiStats.recentStates.length === 0 ? (
-                <p className="text-[10px] text-slate-700 italic">لا توجد خبرات مسجلة بعد...</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase flex items-center gap-2">
+              <Activity className="w-3 h-3" /> نشاط الدماغ (Brain Activity):
+            </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+              {brainLogs.length === 0 ? (
+                <p className="text-[10px] text-slate-700 italic">لا توجد نشاطات مسجلة بعد...</p>
               ) : (
-                aiStats.recentStates.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between text-[10px] font-mono bg-black/20 p-1.5 rounded border border-white/5">
-                    <span className="text-slate-400 truncate max-w-[120px]">{s.state}</span>
-                    <span className="text-slate-600 text-[8px]">{new Date(s.last_updated).toLocaleTimeString()}</span>
+                brainLogs.map((log, i) => (
+                  <div key={i} className="p-2 bg-black/40 border border-cyber-border/50 rounded text-xs flex flex-col gap-1">
+                    <div className="flex justify-between items-center">
+                      <span className={cn(
+                        "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded",
+                        log.type === 'DECISION' ? "bg-cyber-blue/20 text-cyber-blue" :
+                        log.type === 'LEARNING' ? "bg-cyber-green/20 text-cyber-green" :
+                        log.type === 'CURIOSITY' ? "bg-cyber-amber/20 text-cyber-amber" :
+                        log.type === 'SWARM' ? "bg-purple-500/20 text-purple-400" :
+                        "bg-slate-800 text-slate-300"
+                      )}>
+                        {log.type}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-mono">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <p className="text-slate-300 font-mono text-[10px] leading-relaxed">{log.message}</p>
+                    {log.confidence && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="h-1 flex-1 bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-cyber-blue" 
+                            style={{ width: `${Math.min(100, Math.max(0, log.confidence * 100))}%` }}
+                          />
+                        </div>
+                        <span className="text-[8px] text-cyber-blue font-mono">{(log.confidence * 100).toFixed(0)}%</span>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -604,7 +705,7 @@ export default function Dashboard() {
                   axisLine={false}
                   domain={[0, 1]}
                 />
-                <Tooltip 
+                <RechartsTooltip 
                   contentStyle={{ backgroundColor: '#0f1115', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '10px' }}
                   itemStyle={{ color: '#10b981' }}
                 />

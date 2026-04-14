@@ -33,13 +33,17 @@ class IslandManager:
         self.minimizer = PayloadMinimizer(client, self.validator)
         self.exfiltrator = DataExfiltrator(client, self.validator)
         self.rule_inferrer = WAFRuleInferrer(client)
-        self.rl_agent = DeepQLearningAgent(actions=["logical_alts", "inline_comments", "union_balance", "junk_fill", "context_aware", "directed_bypass", "polyglot", "encoding", "keyword_comment_wrap"])
+        self.rl_agent = DeepQLearningAgent(
+            actions=["logical_alts", "inline_comments", "union_balance", "junk_fill", "context_aware", "directed_bypass", "polyglot", "encoding", "keyword_comment_wrap"],
+            exp_manager=self.exp_manager
+        )
         
         self.session_tested = set() # Avoid repeating in same session
         self.session_scores = {} # Track payload -> score for backtracking
         self.current_gen = 0
         self.waf_info = {"name": "GENERIC / UNKNOWN", "probed": False, "blocked_chars": []}
         self.baseline_response = None # For fingerprinting
+        self.discovered_errors = set() # Track unique SQL errors for curiosity reward
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
@@ -311,9 +315,17 @@ class IslandManager:
             elif score >= 0.8:
                 self.blocker.report_success(payload)
 
-            # 3. SQL Error Refinement
+            # 3. SQL Error Refinement & Curiosity Reward
             error_msg = self.validator.get_sql_error(response['text'])
+            curiosity_reward = 0
             if error_msg:
+                # Intrinsic Motivation: Reward discovering NEW errors
+                error_hash = hash(error_msg)
+                if error_hash not in self.discovered_errors:
+                    self.discovered_errors.add(error_hash)
+                    curiosity_reward = 15 # High reward for new discoveries
+                    print(f"  [AI Curiosity] Discovered NEW SQL Error! (+15 Reward)", flush=True)
+                
                 refinement = self.error_refiner.refine(payload, error_msg)
                 if refinement:
                     print(f"  [REFINEMENT] SQL Error detected. Strategy: {refinement['strategy']}", flush=True)
@@ -330,7 +342,7 @@ class IslandManager:
             
             parent = parents.get(payload)
             self.session_scores[payload] = score
-            self.exp_manager.save_attempt(payload, score, status, parent_payload=parent)
+            self.exp_manager.save_attempt(payload, score, status, parent_payload=parent, island_id=island['id'])
             
             # Pass parent score for negative learning
             parent_score = self.session_scores.get(parent, 0) if parent else 0
@@ -339,13 +351,25 @@ class IslandManager:
             # RL LEARNING: Update the AI Agent based on the reward (score improvement)
             p_data = pop_data[i]
             if isinstance(p_data, dict) and "rl_state" in p_data:
-                state_info = p_data["rl_state"] # [waf, score, stag]
+                state_info = p_data["rl_state"] # [waf, score, stag, parent_payload]
                 action = p_data["rl_action"]
-                reward = (score - parent_score) * 10 # Scale reward
+                
+                # Base Reward: Score improvement
+                reward = (score - parent_score) * 10 
+                
+                # Extrinsic Rewards (Goal-oriented)
                 if status == "SUCCESS": reward += 50
                 if status == "WAF_BLOCKED": reward -= 5
                 
-                self.rl_agent.learn(state_info[0], state_info[1], state_info[2], action, reward, score, island.get("stagnation", 0))
+                # Intrinsic Reward (Curiosity-driven)
+                if curiosity_reward > 0:
+                    self.exp_manager.log_brain_activity("CURIOSITY", f"Discovered new error state. Reward: +{curiosity_reward}", 1.0)
+                reward += curiosity_reward
+                
+                self.rl_agent.learn(state_info[0], state_info[1], state_info[2], state_info[3], action, reward, score, island.get("stagnation", 0), payload)
+
+                # Log learning
+                self.exp_manager.log_brain_activity("LEARNING", f"Updated weights. Action: {action}, Reward: {reward:.2f}", 1.0)
 
             scored_population.append((payload, score, error_msg))
             
@@ -415,18 +439,35 @@ class IslandManager:
         return {"max_score": max_score}
 
     def _migrate(self):
-        """Copies the best payload from each island to the next one in the ring."""
-        print("[*] Migration Event: Exchanging genetic material between islands...", flush=True)
+        """Copies the best payload and shares knowledge between islands in the ring."""
+        print("[*] Migration Event: Exchanging genetic material and knowledge between islands...", flush=True)
         for i in range(self.num_islands):
             source_island = self.islands[i]
             target_island = self.islands[(i + 1) % self.num_islands]
             
+            # 1. Genetic Exchange (Payloads)
             # Get best from source (first in population is usually elite)
-            best_payload = source_island["population"][0]
+            if source_island["population"]:
+                best_payload = source_island["population"][0]
+                # Inject into target island (replace a random one that isn't elite)
+                if len(target_island["population"]) > 1:
+                    replace_idx = random.randint(1, len(target_island["population"]) - 1)
+                    target_island["population"][replace_idx] = best_payload
             
-            # Inject into target island (replace a random one that isn't elite)
-            replace_idx = random.randint(1, len(target_island["population"]) - 1)
-            target_island["population"][replace_idx] = best_payload
+            # 2. Knowledge Sharing (Swarm Intelligence)
+            # Share blocked signatures (what NOT to do)
+            target_island["mutator"].blocked_signatures.update(source_island["mutator"].blocked_signatures)
+            
+            # Share successful strategies (what TO do)
+            # If source island has a high score, share its latest hint
+            if source_island.get("last_max_score", 0) > 0.5:
+                # Find the strategy that led to the best payload
+                best_p_str = best_payload if isinstance(best_payload, str) else best_payload.get("payload", "")
+                history = source_island["mutator"].mutation_history.get(best_p_str)
+                if history and history.get("strategy"):
+                    print(f"  [Swarm] Island {i} sharing successful strategy '{history['strategy']}' with Island {(i+1)%self.num_islands}", flush=True)
+                    self.exp_manager.log_brain_activity("SWARM", f"Island {i} shared strategy '{history['strategy']}' with Island {(i+1)%self.num_islands}", 0.9)
+                    target_island["mutator"].apply_hint({"suggestion": history["strategy"]})
 
     def _generate_next_gen(self, elites, survivors, intensity, mutator, island_id, response_time=None):
         next_gen = []
@@ -461,7 +502,7 @@ class IslandManager:
                 parent_data = random.choice(survivors)
                 
                 # AI AGENT: Choose strategy using Deep Brain
-                forced_strat = self.rl_agent.choose_action(waf_name, score, stag)
+                forced_strat = self.rl_agent.choose_action(waf_name, score, stag, parent_data[0])
                 
                 child, recipe = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity, response_time=response_time, forced_strategy=forced_strat)
                 # Track mutation history for learning
@@ -470,7 +511,7 @@ class IslandManager:
                     "payload": child, 
                     "parent": parent_data[0], 
                     "recipe": recipe,
-                    "rl_state": [waf_name, score, stag],
+                    "rl_state": [waf_name, score, stag, parent_data[0]],
                     "rl_action": forced_strat
                 })
         

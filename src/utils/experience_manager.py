@@ -16,9 +16,16 @@ class ExperienceManager:
                     score REAL,
                     status TEXT,
                     parent_payload TEXT,
+                    island_id INTEGER DEFAULT 0,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # Try to add island_id if it doesn't exist (for existing databases)
+            try:
+                cursor.execute('ALTER TABLE experience ADD COLUMN island_id INTEGER DEFAULT 0')
+            except sqlite3.OperationalError:
+                pass # Column already exists
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS exploits (
                     payload TEXT PRIMARY KEY,
@@ -66,6 +73,15 @@ class ExperienceManager:
                     tables_json TEXT,
                     columns_json TEXT,
                     data_json TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS brain_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT,
+                    message TEXT,
+                    confidence REAL,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -195,6 +211,31 @@ class ExperienceManager:
             print(f"[!] Database Error (Lineage): {e}")
             return []
 
+    def log_brain_activity(self, event_type, message, confidence=1.0):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO brain_logs (event_type, message, confidence)
+                VALUES (?, ?, ?)
+            ''', (event_type, message, confidence))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Brain Log): {e}")
+
+    def get_brain_logs(self, limit=10):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT event_type, message, confidence, timestamp FROM brain_logs ORDER BY timestamp DESC LIMIT ?', (limit,))
+            results = cursor.fetchall()
+            conn.close()
+            return [{"type": r[0], "message": r[1], "confidence": r[2], "timestamp": r[3]} for r in results]
+        except Exception as e:
+            print(f"[!] Database Error (Get Brain Logs): {e}")
+            return []
+
     def _seed_knowledge(self):
         """Seeds the database with real-world attack patterns."""
         payloads = [
@@ -263,14 +304,14 @@ class ExperienceManager:
             print(f"[!] Database Error (Get Hint): {e}")
             return None
 
-    def save_attempt(self, payload, score, status, parent_payload=None):
+    def save_attempt(self, payload, score, status, parent_payload=None, island_id=0):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload)
-                VALUES (?, ?, ?, ?)
-            ''', (payload, score, status, parent_payload))
+                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (payload, score, status, parent_payload, island_id))
             conn.commit()
             conn.close()
         except Exception as e:
