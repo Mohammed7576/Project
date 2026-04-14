@@ -1,5 +1,4 @@
 import re
-from bs4 import BeautifulSoup
 
 class DataExtractor:
     def __init__(self):
@@ -13,24 +12,26 @@ class DataExtractor:
     def extract(self, html_content):
         if not html_content:
             return None
-        soup = BeautifulSoup(html_content, 'html.parser')
-        pre_tags = soup.find_all('pre')
-        if pre_tags:
-            clean_text = "\n".join([tag.get_text() for tag in pre_tags])
-        else:
-            clean_text = soup.get_text(separator='\n')
-
+        
+        # Simple HTML tag removal
+        clean_text = re.sub(r'<[^>]+>', '\n', html_content)
+        
+        # Extract data using regex
         extracted_data = []
+        
+        # User records
         matches = re.findall(self.regex_patterns["user_record"], clean_text, re.IGNORECASE)
         for match in matches:
             val = match.strip()
             if val and len(val) > 1:
                 extracted_data.append({"type": "info", "val": val})
 
+        # MD5 Hashes
         hashes = re.findall(self.regex_patterns["md5_hash"], clean_text)
         for h in hashes:
             extracted_data.append({"type": "hash", "val": h})
 
+        # Database info
         db_matches = re.findall(self.regex_patterns["db_info"], clean_text, re.IGNORECASE)
         for db_val in db_matches:
             extracted_data.append({"type": "system", "val": db_val.strip()})

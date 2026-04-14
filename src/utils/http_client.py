@@ -1,22 +1,27 @@
-import requests
-from bs4 import BeautifulSoup
+import urllib.request
+import urllib.parse
+import http.cookiejar
+import re
 import time
 
 class HTTPClient:
     def __init__(self, base_url="http://localhost/"):
         self.base_url = base_url.rstrip('/') + '/'
-        self.session = requests.Session()
+        self.cj = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cj))
         self.login_url = f"{self.base_url}login.php"
         self.security_url = f"{self.base_url}security.php"
         self.injection_url = f"{self.base_url}vulnerabilities/sqli/"
 
     def _get_token(self, url):
-        """Extracts user_token from the specified page."""
+        """Extracts user_token from the specified page using regex."""
         try:
-            response = self.session.get(url)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            token_input = soup.find('input', {'name': 'user_token'})
-            return token_input['value'] if token_input else None
+            with self.opener.open(url) as response:
+                html = response.read().decode('utf-8', errors='ignore')
+                match = re.search(r'name=["\']user_token["\']\s+value=["\']([^"\']+)["\']', html)
+                if not match:
+                    match = re.search(r'value=["\']([^"\']+)["\']\s+name=["\']user_token["\']', html)
+                return match.group(1) if match else None
         except Exception as e:
             print(f"[!] Error extracting CSRF token: {e}")
             return None
@@ -36,10 +41,15 @@ class HTTPClient:
             login_data['user_token'] = token
             
         print(f"[*] Attempting login as '{username}'...")
-        res = self.session.post(self.login_url, data=login_data)
-        
-        if "Login failed" in res.text:
-            print("[!] Login failed. Check credentials.")
+        try:
+            encoded_data = urllib.parse.urlencode(login_data).encode('utf-8')
+            with self.opener.open(self.login_url, data=encoded_data) as res:
+                content = res.read().decode('utf-8', errors='ignore')
+                if "Login failed" in content:
+                    print("[!] Login failed. Check credentials.")
+                    return False
+        except Exception as e:
+            print(f"[!] Login error: {e}")
             return False
             
         # 2. Set Security Level
@@ -52,27 +62,33 @@ class HTTPClient:
         if token:
             security_data['user_token'] = token
             
-        self.session.post(self.security_url, data=security_data)
+        try:
+            encoded_sec_data = urllib.parse.urlencode(security_data).encode('utf-8')
+            self.opener.open(self.security_url, data=encoded_sec_data)
+        except Exception as e:
+            print(f"[!] Error setting security level: {e}")
+            
         return True
 
     def send_request(self, payload):
         """Sends the SQLi payload to the target page."""
-        # DVWA Medium SQLi uses POST
         data = {
             'id': payload,
             'Submit': 'Submit'
         }
         
         try:
-            # Note: In DVWA Medium, the injection is often via POST on the SQLi page
-            response = self.session.post(self.injection_url, data=data)
-            return {
-                "text": response.text,
-                "status": response.status_code,
-                "size": len(response.content),
-                "word_count": len(response.text.split()),
-                "headers": dict(response.headers)
-            }
+            encoded_data = urllib.parse.urlencode(data).encode('utf-8')
+            with self.opener.open(self.injection_url, data=encoded_data) as response:
+                content_bytes = response.read()
+                content_text = content_bytes.decode('utf-8', errors='ignore')
+                return {
+                    "text": content_text,
+                    "status": response.getcode(),
+                    "size": len(content_bytes),
+                    "word_count": len(content_text.split()),
+                    "headers": dict(response.info())
+                }
         except Exception as e:
             return {
                 "text": f"Connection Error: {e}",
