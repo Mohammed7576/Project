@@ -59,6 +59,16 @@ class ExperienceManager:
                     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS loot (
+                    target_url TEXT PRIMARY KEY,
+                    database_name TEXT,
+                    tables_json TEXT,
+                    columns_json TEXT,
+                    data_json TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
             conn.close()
             self._seed_knowledge() # Seed real-world patterns
@@ -146,6 +156,26 @@ class ExperienceManager:
         except Exception as e:
             print(f"[!] Database Error (Find Similar): {e}")
             return []
+
+    def save_loot(self, target_url, loot_data):
+        try:
+            import json
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO loot (target_url, database_name, tables_json, columns_json, data_json, timestamp)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (
+                target_url, 
+                loot_data.get("database"), 
+                json.dumps(loot_data.get("tables", [])), 
+                json.dumps(loot_data.get("columns", {})), 
+                json.dumps(loot_data.get("data", [])),
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Save Loot): {e}")
 
     def get_lineage(self, limit=50):
         """Retrieves parent-child relationships for visualization."""

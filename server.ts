@@ -44,12 +44,36 @@ db.exec(`
       avg_latency REAL,
       last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS loot (
+      target_url TEXT PRIMARY KEY,
+      database_name TEXT,
+      tables_json TEXT,
+      columns_json TEXT,
+      data_json TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 async function startServer() {
   const app = express();
   app.use(express.json());
   const PORT = 3000;
+
+  // API route to get loot
+  app.get("/api/loot", (req, res) => {
+    try {
+      const stmt = db.prepare("SELECT * FROM loot ORDER BY timestamp DESC");
+      const rows = stmt.all();
+      res.json(rows.map((r: any) => ({
+        ...r,
+        tables: JSON.parse(r.tables_json),
+        columns: JSON.parse(r.columns_json),
+        data: JSON.parse(r.data_json)
+      })));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // API route for Sandbox
   app.post("/api/sandbox", async (req, res) => {

