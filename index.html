@@ -15,52 +15,68 @@
   </head>
   <body>
     <div id="root">
-      <div style="height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px;">
+      <div style="height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px; background: #050505; color: #10b981; font-family: monospace;">
         <div style="border: 2px solid #10b981; padding: 20px; border-radius: 8px; animation: pulse 2s infinite;">
           [ جاري تحميل النظام... ]
         </div>
         <div style="font-size: 10px; opacity: 0.5;">
-          INITIALIZING CYBER-CORE v0.0.0
+          INITIALIZING CYBER-CORE v0.0.1
         </div>
-        <div id="debug-info" style="font-size: 10px; color: #444; margin-top: 20px;">
-          Waiting for JavaScript...
+        <div id="debug-info" style="font-size: 10px; color: #444; margin-top: 20px; max-width: 80%; text-align: center;">
+          Waiting for JavaScript to initialize...
         </div>
       </div>
     </div>
     <script>
-      console.log("[INDEX] HTML Loaded, starting scripts...");
-      var debugInfo = document.getElementById('debug-info');
-      if (debugInfo) debugInfo.innerText = "HTML Loaded, checking scripts...";
-      
-      window.onerror = function(msg, url, line, col, error) {
-        console.error("[GLOBAL ERROR]", msg, url, line);
-        var root = document.getElementById('root');
-        if (root) {
-          root.innerHTML = '<div style="color: #ff4444; padding: 40px; background: #1a0000; font-family: monospace; height: 100vh; box-sizing: border-box; border: 4px solid #ff0000; overflow: auto;">' +
-            '<h1 style="margin-top: 0;">CRITICAL SYSTEM ERROR</h1>' +
-            '<div style="background: #000; padding: 20px; border: 1px solid #ff4444;">' +
-            '<p><strong>Message:</strong> ' + msg + '</p>' +
-            '<p><strong>Location:</strong> ' + url + ':' + line + ':' + col + '</p>' +
-            '</div>' +
-            '<p style="margin-top: 20px;">Please check the browser console (F12) for more details.</p>' +
-            '<button onclick="location.reload()" style="background: #ff4444; color: black; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; margin-top: 10px;">RELOAD SYSTEM</button>' +
-            '</div>';
+      (function() {
+        console.log("[INDEX] Bootstrapping system...");
+        var debugInfo = document.getElementById('debug-info');
+        function updateStatus(msg) {
+          console.log("[STATUS]", msg);
+          if (debugInfo) debugInfo.innerText = msg;
         }
-        return false;
-      };
-      
-      window.onunhandledrejection = function(event) {
-        console.error("[UNHANDLED REJECTION]", event.reason);
-        var root = document.getElementById('root');
-        if (root) {
-          root.innerHTML = '<div style="color: #ff4444; padding: 40px; background: #1a0000; font-family: monospace; height: 100vh; box-sizing: border-box; border: 4px solid #ff0000;">' +
-            '<h1>UNHANDLED PROMISE REJECTION</h1>' +
-            '<div style="background: #000; padding: 20px; border: 1px solid #ff4444;">' +
-            '<p>' + event.reason + '</p>' +
-            '</div>' +
-            '</div>';
-        }
-      };
+        
+        updateStatus("HTML Loaded, monitoring for errors...");
+
+        window.onerror = function(msg, url, line, col, error) {
+          var errorMsg = "[GLOBAL ERROR] " + msg + " at " + url + ":" + line;
+          console.error(errorMsg);
+          updateStatus("CRITICAL ERROR: " + msg);
+          
+          var root = document.getElementById('root');
+          if (root) {
+            root.innerHTML = '<div style="color: #ff4444; padding: 40px; background: #1a0000; font-family: monospace; min-height: 100vh; box-sizing: border-box; border: 4px solid #ff0000; overflow: auto;">' +
+              '<h1 style="margin-top: 0; font-size: 24px;">CRITICAL SYSTEM FAILURE</h1>' +
+              '<div style="background: #000; padding: 20px; border: 1px solid #ff4444; margin-bottom: 20px;">' +
+              '<p><strong>Message:</strong> ' + msg + '</p>' +
+              '<p><strong>Location:</strong> ' + url + ':' + line + ':' + col + '</p>' +
+              (error && error.stack ? '<details style="margin-top: 10px;"><summary>Stack Trace</summary><pre style="font-size: 10px; opacity: 0.7; white-space: pre-wrap;">' + error.stack + '</pre></details>' : '') +
+              '</div>' +
+              '<p>Please check the browser console (F12) for more details.</p>' +
+              '<button onclick="location.reload()" style="background: #ff4444; color: black; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; margin-top: 10px;">REBOOT SYSTEM</button>' +
+              '</div>';
+          }
+          return false;
+        };
+        
+        window.onunhandledrejection = function(event) {
+          console.error("[UNHANDLED REJECTION]", event.reason);
+          updateStatus("PROMISE REJECTION: " + event.reason);
+          
+          var root = document.getElementById('root');
+          if (root) {
+            root.innerHTML = '<div style="color: #ff4444; padding: 40px; background: #1a0000; font-family: monospace; min-height: 100vh; box-sizing: border-box; border: 4px solid #ff0000;">' +
+              '<h1>UNHANDLED ASYNC ERROR</h1>' +
+              '<div style="background: #000; padding: 20px; border: 1px solid #ff4444;">' +
+              '<p>' + (event.reason && event.reason.stack ? event.reason.stack : event.reason) + '</p>' +
+              '</div>' +
+              '<button onclick="location.reload()" style="background: #ff4444; color: black; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; margin-top: 20px;">REBOOT SYSTEM</button>' +
+              '</div>';
+          }
+        };
+        
+        window.updateStatus = updateStatus;
+      })();
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

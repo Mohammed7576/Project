@@ -16,8 +16,6 @@ import {
   GitGraph,
   Network
 } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
-
 import { 
   XAxis, 
   YAxis, 
@@ -33,18 +31,6 @@ import {
 import { Virtuoso } from 'react-virtuoso';
 import { cn } from '../lib/utils';
 
-const getEnv = (key: string) => {
-  try {
-    // Vite defines process.env via define in config, but let's be extra safe
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env[key];
-    }
-  } catch (e) {
-    console.warn(`[ENV] Failed to access process.env.${key}`, e);
-  }
-  return undefined;
-};
-
 interface LogEntry {
   id: number;
   message: string;
@@ -55,18 +41,6 @@ interface LogEntry {
 export default function Dashboard() {
   console.log("[DASHBOARD] Rendering component...");
   
-  // Initialize AI lazily to prevent top-level crashes
-  const aiRef = useRef<GoogleGenAI | null>(null);
-  const geminiApiKey = getEnv('GEMINI_API_KEY') || "DUMMY_KEY";
-
-  if (!aiRef.current) {
-    try {
-      aiRef.current = new GoogleGenAI({ apiKey: geminiApiKey });
-    } catch (e) {
-      console.error("[DASHBOARD] Failed to initialize GoogleGenAI", e);
-    }
-  }
-
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentGen, setCurrentGen] = useState(0);
@@ -90,13 +64,18 @@ export default function Dashboard() {
   const [lootData, setLootData] = useState<any[]>([]);
   const [aiStats, setAiStats] = useState<{totalStates: number, stepsDone?: number, recentStates: any[]}>({totalStates: 0, stepsDone: 0, recentStates: []});
 
-  const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' | 'critical' | 'refinement' = 'info') => {
-    setLogs(prev => [...prev, { 
-      id: Date.now() + Math.random(), 
-      message, 
-      timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      type 
-    }]);
+  const addLog = (message: string, type: LogEntry['type'] = 'info') => {
+    console.log(`[LOG] ${type.toUpperCase()}: ${message}`);
+    setLogs(prev => {
+      const newLogs = [...prev, { 
+        id: Date.now() + Math.random(), 
+        message, 
+        timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        type 
+      }];
+      // Keep only last 500 logs to prevent memory issues
+      return newLogs.slice(-500);
+    });
   };
 
   const [swarmData, setSwarmData] = useState<any[]>([]);
@@ -105,7 +84,7 @@ export default function Dashboard() {
   useEffect(() => {
     fetchExploits();
     fetchLoot();
-    fetchAiStats();
+    fetchEvolutionStats();
     
     // Fetch Swarm Radar Data
     const fetchSwarmData = async () => {
@@ -138,13 +117,13 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchAiStats = async () => {
+  const fetchEvolutionStats = async () => {
     try {
       const res = await fetch('/api/ai-stats');
       const data = await res.json();
       setAiStats(data);
     } catch (e) {
-      console.error("Failed to fetch AI stats", e);
+      console.error("Failed to fetch evolution stats", e);
     }
   };
 
@@ -165,49 +144,6 @@ export default function Dashboard() {
       setLootData(data);
     } catch (e) {
       console.error("Failed to fetch loot", e);
-    }
-  };
-
-  const analyzeAndHint = async (payload: string, context: string) => {
-    if (geminiApiKey === "DUMMY_KEY" || !aiRef.current) {
-      addLog("[AI] Gemini API key not configured. Skipping hint.", "warning");
-      return;
-    }
-    addLog("[AI] Analyzing stagnation. Consulting Gemini...", "warning");
-    try {
-      const response = await aiRef.current.models.generateContent({ 
-        model: "gemini-3-flash-preview",
-        contents: `The genetic algorithm is stuck trying to bypass a WAF.
-        Current best payload: ${payload}
-        Context: ${context}
-        Suggest a new mutation strategy, a target SQL keyword to focus on, and a specific hint.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              strategy: { type: Type.STRING },
-              target_keyword: { type: Type.STRING },
-              suggestion: { type: Type.STRING }
-            }
-          }
-        }
-      });
-      
-      const text = response.text;
-      if (text) {
-        const hint = JSON.parse(text);
-        addLog(`[AI Hint] Strategy: ${hint.strategy}`, "refinement");
-        addLog(`[AI Hint] Focus Keyword: ${hint.target_keyword}`, "refinement");
-        
-        await fetch('/api/hint', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(hint)
-        });
-      }
-    } catch (err) {
-      addLog(`[AI Error] Failed to get hint: ${err}`, "error");
     }
   };
 
@@ -252,10 +188,7 @@ export default function Dashboard() {
             addLog(line, type);
 
             if (line.includes('[ANALYSIS_REQUIRED]')) {
-              const payloadMatch = line.match(/Payload: (.*?) \|/);
-              if (payloadMatch) {
-                analyzeAndHint(payloadMatch[1], "Stagnation detected after 5 generations");
-              }
+              addLog("[SYSTEM] Stagnation detected. Evolution strategy adjustment required.", "warning");
             }
 
             if (line.includes('[*] WAF DETECTED:')) {
@@ -324,7 +257,7 @@ export default function Dashboard() {
       const interval = setInterval(() => {
         fetchLineage();
         fetchLoot();
-        fetchAiStats();
+        fetchEvolutionStats();
       }, 5000);
       return () => clearInterval(interval);
     }
@@ -565,13 +498,13 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* AI Intelligence Level */}
+        {/* Evolution Intelligence Level */}
         <section className="cyber-card p-5 space-y-4">
           <div className="flex items-center justify-between border-b border-cyber-border pb-3">
             <h3 className="text-xs font-bold text-cyber-blue uppercase tracking-widest flex items-center gap-2">
-              <Zap className="w-3.5 h-3.5" /> الذكاء الاصطناعي التراكمي
+              <Zap className="w-3.5 h-3.5" /> ذكاء التطور التراكمي
             </h3>
-            <span className="text-[10px] text-cyber-blue font-mono">PyTorch LSTM</span>
+            <span className="text-[10px] text-cyber-blue font-mono">Genetic RL</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

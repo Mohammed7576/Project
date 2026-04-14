@@ -137,18 +137,6 @@ async function startServer() {
     }
   });
 
-  // API route to receive AI hints
-  app.post("/api/hint", (req, res) => {
-    const { strategy, target_keyword, suggestion } = req.body;
-    try {
-      const stmt = db.prepare("INSERT INTO hints (strategy, target_keyword, suggestion) VALUES (?, ?, ?)");
-      stmt.run(strategy, target_keyword, suggestion);
-      res.json({ status: "hint_received" });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   // API route for Swarm Radar Data
   app.get("/api/swarm-radar", (req, res) => {
     try {

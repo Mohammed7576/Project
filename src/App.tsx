@@ -8,17 +8,20 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Sandbox from './components/Sandbox';
 import AttackBuilder from './components/AttackBuilder';
+import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="sandbox" element={<Sandbox defaultUrl="http://localhost/" />} />
-          <Route path="builder" element={<AttackBuilder />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="sandbox" element={<Sandbox defaultUrl="http://localhost/" />} />
+            <Route path="builder" element={<AttackBuilder />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
