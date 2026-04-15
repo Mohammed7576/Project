@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon } from 'lucide-react';
 
 export default function Sandbox() {
-  const [url, setUrl] = useState('http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit');
+  const [url, setUrl] = useState('http://localhost/');
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('password');
   const [security, setSecurity] = useState('medium');
   const [population, setPopulation] = useState(12);
-  const [generations, setGenerations] = useState(50);
+  const [generations, setGenerations] = useState(30);
   const [isAttacking, setIsAttacking] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
