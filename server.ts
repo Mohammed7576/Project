@@ -78,6 +78,14 @@ try {
   console.error("[DB] Schema creation failed:", err);
 }
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT EXCEPTION]', error);
+});
+
 async function startServer() {
   const app = express();
   app.use(express.json());
@@ -307,8 +315,17 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[ERROR] Port ${PORT} is already in use. Please close the other server or change the port.`);
+      process.exit(1);
+    } else {
+      console.error('[ERROR] Server error:', err);
+    }
   });
 }
 
