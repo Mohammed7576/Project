@@ -244,7 +244,7 @@ async function startServer() {
       const { url, username, password, security, population, generations } = req.query;
       
       // Pass configuration as environment variables to the Python script
-      const pythonProcess = spawn("python3", ["main.py"], {
+      const pythonProcess = spawn("python3", ["backend/main.py"], {
         env: {
           ...process.env,
           TARGET_URL: url as string,
