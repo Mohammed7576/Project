@@ -5,7 +5,7 @@ import Header from './Header';
 
 export default function Layout() {
   return (
-    <div className="flex h-screen bg-[#050505] text-slate-300 overflow-hidden font-sans selection:bg-[#10b981]/30">
+    <div className="flex h-screen bg-[#050505] text-slate-300 overflow-hidden font-sans selection:bg-[#10b981]/30" dir="rtl">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Cyberpunk Grid Background */}

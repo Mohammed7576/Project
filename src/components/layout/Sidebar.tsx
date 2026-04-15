@@ -3,21 +3,21 @@ import { NavLink } from 'react-router-dom';
 import { Terminal, Activity, Database, ShieldAlert, Settings, Cpu } from 'lucide-react';
 
 const navItems = [
-  { name: 'Dashboard', path: '/', icon: Activity },
-  { name: 'Sandbox', path: '/sandbox', icon: Terminal },
-  { name: 'Targets', path: '/targets', icon: Database },
-  { name: 'WAF Analysis', path: '/waf', icon: ShieldAlert },
-  { name: 'Settings', path: '/settings', icon: Settings },
+  { name: 'لوحة التحكم', path: '/', icon: Activity },
+  { name: 'المختبر', path: '/sandbox', icon: Terminal },
+  { name: 'الأهداف', path: '/targets', icon: Database },
+  { name: 'تحليل WAF', path: '/waf', icon: ShieldAlert },
+  { name: 'الإعدادات', path: '/settings', icon: Settings },
 ];
 
 export default function Sidebar() {
   return (
-    <aside className="w-64 h-screen bg-[#0a0a0a] border-r border-[#10b981]/20 flex flex-col">
+    <aside className="w-64 h-screen bg-[#0a0a0a] border-l border-[#10b981]/20 flex flex-col">
       {/* Logo Area */}
       <div className="h-16 flex items-center px-6 border-b border-[#10b981]/20">
-        <Cpu className="w-6 h-6 text-[#10b981] mr-3" />
+        <Cpu className="w-6 h-6 text-[#10b981] ml-3" />
         <span className="text-[#10b981] font-bold tracking-widest uppercase text-sm">
-          Prometheus
+          بروميثيوس
         </span>
       </div>
 
@@ -37,7 +37,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              <Icon className="w-5 h-5 mr-3" />
+              <Icon className="w-5 h-5 ml-3" />
               <span className="font-mono text-sm">{item.name}</span>
             </NavLink>
           );
@@ -47,8 +47,8 @@ export default function Sidebar() {
       {/* System Status */}
       <div className="p-4 border-t border-[#10b981]/20">
         <div className="flex items-center justify-between text-xs font-mono mb-2">
-          <span className="text-slate-400">System Status</span>
-          <span className="text-[#10b981] animate-pulse">ONLINE</span>
+          <span className="text-slate-400">حالة النظام</span>
+          <span className="text-[#10b981]">متصل</span>
         </div>
         <div className="w-full bg-slate-800 rounded-full h-1.5">
           <div className="bg-[#10b981] h-1.5 rounded-full w-full"></div>

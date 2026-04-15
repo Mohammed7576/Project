@@ -1,56 +1,28 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon } from 'lucide-react';
+import { useAttack } from '../context/AttackContext';
 
 export default function Sandbox() {
-  const [url, setUrl] = useState('http://localhost/');
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('password');
-  const [security, setSecurity] = useState('medium');
-  const [population, setPopulation] = useState(12);
-  const [generations, setGenerations] = useState(30);
-  const [isAttacking, setIsAttacking] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const {
+    url, setUrl,
+    username, setUsername,
+    password, setPassword,
+    security, setSecurity,
+    population, setPopulation,
+    generations, setGenerations,
+    isAttacking,
+    logs,
+    startAttack,
+    stopAttack
+  } = useAttack();
 
-  const startAttack = async () => {
-    if (!url) return;
-    setIsAttacking(true);
-    setLogs([]);
-    
-    const queryParams = new URLSearchParams({
-      url,
-      username,
-      password,
-      security,
-      population: population.toString(),
-      generations: generations.toString()
-    });
+  const logEndRef = useRef<HTMLDivElement>(null);
 
-    try {
-      const response = await fetch(`/api/run-prometheus?${queryParams.toString()}`);
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n').filter(line => line.trim() !== '');
-          setLogs(prev => [...prev, ...lines]);
-        }
-      }
-    } catch (error) {
-      setLogs(prev => [...prev, `[ERROR] Failed to connect to engine: ${error}`]);
-    } finally {
-      setIsAttacking(false);
+  useEffect(() => {
+    if (logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  };
-
-  const stopAttack = () => {
-    // In a real scenario, we might need an endpoint to kill the process
-    setIsAttacking(false);
-    setLogs(prev => [...prev, `[SYSTEM] Termination signal sent.`]);
-  };
+  }, [logs]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
@@ -58,27 +30,27 @@ export default function Sandbox() {
       <div className="lg:col-span-1 space-y-6">
         <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
           <h2 className="text-lg font-mono text-white mb-4 flex items-center">
-            <Target className="w-5 h-5 mr-2 text-[#10b981]" />
-            Attack Configuration
+            <Target className="w-5 h-5 ml-2 text-[#10b981]" />
+            إعدادات الهجوم
           </h2>
           
           <div className="space-y-4">
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Target URL</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">رابط الهدف</label>
               <div className="relative">
-                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Globe className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input 
                   type="text" 
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg pl-10 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#10b981]/50 transition-all font-mono"
+                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg pr-10 pl-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#10b981]/50 transition-all font-mono"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Username</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">اسم المستخدم</label>
                 <input 
                   type="text" 
                   value={username}
@@ -87,7 +59,7 @@ export default function Sandbox() {
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Password</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">كلمة المرور</label>
                 <input 
                   type="password" 
                   value={password}
@@ -98,22 +70,22 @@ export default function Sandbox() {
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Security Level</label>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">مستوى الحماية</label>
               <select 
                 value={security}
                 onChange={(e) => setSecurity(e.target.value)}
                 className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="impossible">Impossible</option>
+                <option value="low">منخفض (Low)</option>
+                <option value="medium">متوسط (Medium)</option>
+                <option value="high">عالي (High)</option>
+                <option value="impossible">مستحيل (Impossible)</option>
               </select>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Population</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">حجم المجتمع</label>
                 <input 
                   type="number" 
                   value={population}
@@ -122,7 +94,7 @@ export default function Sandbox() {
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Generations</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">عدد الأجيال</label>
                 <input 
                   type="number" 
                   value={generations}
@@ -140,7 +112,7 @@ export default function Sandbox() {
                   className="w-full bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/30 py-3 rounded-lg font-mono font-bold flex items-center justify-center gap-2 hover:bg-[#10b981]/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed group shadow-[0_0_15px_rgba(16,185,129,0.1)]"
                 >
                   <Play className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" />
-                  LAUNCH ATTACK
+                  بدء الهجوم
                 </button>
               ) : (
                 <button 
@@ -148,7 +120,7 @@ export default function Sandbox() {
                   className="w-full bg-red-500/10 text-red-500 border border-red-500/30 py-3 rounded-lg font-mono font-bold flex items-center justify-center gap-2 hover:bg-red-500/20 transition-all group"
                 >
                   <Square className="w-4 h-4 fill-current" />
-                  TERMINATE
+                  إنهاء
                 </button>
               )}
             </div>
@@ -157,14 +129,19 @@ export default function Sandbox() {
 
         <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
           <h2 className="text-sm font-mono text-white mb-4 flex items-center">
-            <Shield className="w-4 h-4 mr-2 text-[#10b981]" />
-            Bypass Strategies
+            <Shield className="w-4 h-4 ml-2 text-[#10b981]" />
+            استراتيجيات التجاوز
           </h2>
           <div className="space-y-2">
-            {['AST Mutation', 'Genetic Crossover', 'WAF Fingerprinting', 'Context Awareness'].map(s => (
-              <div key={s} className="flex items-center justify-between text-xs font-mono py-1 border-b border-[#10b981]/5">
-                <span className="text-slate-400">{s}</span>
-                <span className="text-[#10b981]">ENABLED</span>
+            {[
+              { en: 'AST Mutation', ar: 'طفرة AST' },
+              { en: 'Genetic Crossover', ar: 'التداخل الجيني' },
+              { en: 'WAF Fingerprinting', ar: 'بصمة WAF' },
+              { en: 'Context Awareness', ar: 'الوعي بالسياق' }
+            ].map(s => (
+              <div key={s.en} className="flex items-center justify-between text-xs font-mono py-1 border-b border-[#10b981]/5">
+                <span className="text-slate-400">{s.ar}</span>
+                <span className="text-[#10b981]">مفعل</span>
               </div>
             ))}
           </div>
@@ -174,11 +151,11 @@ export default function Sandbox() {
       {/* Terminal / Logs Panel */}
       <div className="lg:col-span-2 flex flex-col bg-black border border-[#10b981]/20 rounded-lg overflow-hidden">
         <div className="bg-[#0a0a0a] border-b border-[#10b981]/20 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 space-x-reverse">
             <TerminalIcon className="w-4 h-4 text-[#10b981]" />
             <span className="text-xs font-mono text-slate-400">Prometheus_Console v1.0.4</span>
           </div>
-          <div className="flex space-x-1.5">
+          <div className="flex space-x-1.5 space-x-reverse">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/40"></div>
             <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20 border border-yellow-500/40"></div>
             <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/40"></div>
@@ -187,20 +164,21 @@ export default function Sandbox() {
         
         <div className="flex-1 p-4 font-mono text-xs overflow-y-auto space-y-1 custom-scrollbar bg-[#050505]">
           {logs.length === 0 && (
-            <div className="text-slate-600 italic">Waiting for system launch...</div>
+            <div className="text-slate-600 italic">في انتظار تشغيل النظام...</div>
           )}
           {logs.map((log, i) => (
             <div key={i} className={log.includes('[ERROR]') ? 'text-red-400' : 'text-[#10b981]/80'}>
-              <span className="text-slate-600 mr-2">&gt;</span>
+              <span className="text-slate-600 ml-2">&lt;</span>
               {log}
             </div>
           ))}
           {isAttacking && (
-            <div className="text-[#10b981] animate-pulse">
-              <span className="text-slate-600 mr-2">&gt;</span>
-              Executing evolution cycles...
+            <div className="text-[#10b981]">
+              <span className="text-slate-600 ml-2">&lt;</span>
+              جاري تنفيذ دورات التطور...
             </div>
           )}
+          <div ref={logEndRef} />
         </div>
       </div>
     </div>

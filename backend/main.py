@@ -50,9 +50,9 @@ def run_prometheus():
 
     island = IslandManager(client, base_payloads, exp_manager, population_size=pop_size, context=inj_type)
     
-    max_generations = max_gens
-    successful_payloads = set(island.hall_of_fame)
     start_gen = island.current_gen
+    max_generations = start_gen + max_gens
+    successful_payloads = set(island.hall_of_fame)
 
     for gen in range(start_gen, max_generations):
         print(f"\n[+] Generation {gen + 1}/{max_generations}", flush=True)
