@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon } from 'lucide-react';
 import { useAttack } from '../context/AttackContext';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 
 export default function Sandbox() {
   const {
@@ -16,11 +17,14 @@ export default function Sandbox() {
     stopAttack
   } = useAttack();
 
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
 
   useEffect(() => {
-    if (logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (virtuosoRef.current && logs.length > 0) {
+      virtuosoRef.current.scrollToIndex({
+        index: logs.length - 1,
+        behavior: 'smooth'
+      });
     }
   }, [logs]);
 
@@ -162,23 +166,30 @@ export default function Sandbox() {
           </div>
         </div>
         
-        <div className="flex-1 p-4 font-mono text-xs overflow-y-auto space-y-1 custom-scrollbar bg-[#050505]">
-          {logs.length === 0 && (
-            <div className="text-slate-600 italic">في انتظار تشغيل النظام...</div>
+        <div className="flex-1 font-mono text-xs custom-scrollbar bg-[#050505]">
+          {logs.length === 0 ? (
+            <div className="p-4 text-slate-600 italic">في انتظار تشغيل النظام...</div>
+          ) : (
+            <Virtuoso
+              ref={virtuosoRef}
+              data={logs}
+              totalCount={logs.length}
+              itemContent={(index, log) => (
+                <div key={index} className={`px-4 py-0.5 ${log.includes('[ERROR]') ? 'text-red-400' : 'text-[#10b981]/80'}`}>
+                  <span className="text-slate-600 ml-2">&lt;</span>
+                  {log}
+                </div>
+              )}
+              followOutput="smooth"
+              style={{ height: '100%' }}
+            />
           )}
-          {logs.map((log, i) => (
-            <div key={i} className={log.includes('[ERROR]') ? 'text-red-400' : 'text-[#10b981]/80'}>
-              <span className="text-slate-600 ml-2">&lt;</span>
-              {log}
-            </div>
-          ))}
-          {isAttacking && (
-            <div className="text-[#10b981]">
+          {isAttacking && logs.length > 0 && (
+            <div className="px-4 py-1 text-[#10b981]">
               <span className="text-slate-600 ml-2">&lt;</span>
               جاري تنفيذ دورات التطور...
             </div>
           )}
-          <div ref={logEndRef} />
         </div>
       </div>
     </div>
