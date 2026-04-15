@@ -43,7 +43,9 @@ class IslandManager:
                     self.islands.append({
                         "id": i_data['id'],
                         "mutator": mutator,
-                        "population": i_data['population']
+                        "population": i_data['population'],
+                        "stagnation": i_data.get('stagnation', 0),
+                        "best_score": i_data.get('best_score', 0)
                     })
                 return # Skip default initialization
             except Exception as e:
@@ -139,7 +141,9 @@ class IslandManager:
                     "id": i["id"],
                     "population": i["population"],
                     "weights": i["mutator"].strategy_weights,
-                    "reputation": i["mutator"].keyword_reputation
+                    "reputation": i["mutator"].keyword_reputation,
+                    "stagnation": i["stagnation"],
+                    "best_score": i["best_score"]
                 } for i in self.islands
             ]
         }
