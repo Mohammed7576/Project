@@ -2,29 +2,54 @@ import React, { useState } from 'react';
 import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon } from 'lucide-react';
 
 export default function Sandbox() {
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState('http://localhost/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit');
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('password');
+  const [security, setSecurity] = useState('medium');
+  const [population, setPopulation] = useState(12);
+  const [generations, setGenerations] = useState(50);
   const [isAttacking, setIsAttacking] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
   const startAttack = async () => {
     if (!url) return;
     setIsAttacking(true);
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Initializing Prometheus Engine...`]);
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Target set to: ${url}`]);
+    setLogs([]);
     
+    const queryParams = new URLSearchParams({
+      url,
+      username,
+      password,
+      security,
+      population: population.toString(),
+      generations: generations.toString()
+    });
+
     try {
-      // In a real scenario, this would call /api/run-prometheus
-      // For now, we simulate the connection
-      setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Phase 1: Context Discovery active...`]);
+      const response = await fetch(`/api/run-prometheus?${queryParams.toString()}`);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n').filter(line => line.trim() !== '');
+          setLogs(prev => [...prev, ...lines]);
+        }
+      }
     } catch (error) {
-      setLogs(prev => [...prev, `[ERROR] Failed to connect to engine.`]);
+      setLogs(prev => [...prev, `[ERROR] Failed to connect to engine: ${error}`]);
+    } finally {
       setIsAttacking(false);
     }
   };
 
   const stopAttack = () => {
+    // In a real scenario, we might need an endpoint to kill the process
     setIsAttacking(false);
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Attack terminated by user.`]);
+    setLogs(prev => [...prev, `[SYSTEM] Termination signal sent.`]);
   };
 
   return (
@@ -46,7 +71,6 @@ export default function Sandbox() {
                   type="text" 
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://example.com/search.php?id=1"
                   className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg pl-10 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#10b981]/50 transition-all font-mono"
                 />
               </div>
@@ -54,12 +78,57 @@ export default function Sandbox() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Username</label>
+                <input 
+                  type="text" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Password</label>
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Security Level</label>
+              <select 
+                value={security}
+                onChange={(e) => setSecurity(e.target.value)}
+                className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="impossible">Impossible</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Population</label>
-                <input type="number" defaultValue={12} className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" />
+                <input 
+                  type="number" 
+                  value={population}
+                  onChange={(e) => setPopulation(parseInt(e.target.value))}
+                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
+                />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Generations</label>
-                <input type="number" defaultValue={50} className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" />
+                <input 
+                  type="number" 
+                  value={generations}
+                  onChange={(e) => setGenerations(parseInt(e.target.value))}
+                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
+                />
               </div>
             </div>
 
