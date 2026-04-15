@@ -4,7 +4,7 @@ import random
 import time
 
 # Ensure imports work from current directory
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
 
 from utils.http_client import HTTPClient
 from utils.experience_manager import ExperienceManager
