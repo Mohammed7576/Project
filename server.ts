@@ -15,7 +15,8 @@ import fs from "fs";
 let db: any;
 try {
   db = new Database("memory.db");
-  console.log("[DB] Database initialized successfully.");
+  db.pragma('journal_mode = WAL'); // Enable WAL mode for better concurrency
+  console.log("[DB] Database initialized successfully with WAL mode.");
 } catch (err) {
   console.error("[DB] Failed to initialize database, using in-memory fallback:", err);
   db = new Database(":memory:");

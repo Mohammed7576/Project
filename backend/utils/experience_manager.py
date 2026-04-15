@@ -9,6 +9,7 @@ class ExperienceManager:
     def _init_db(self):
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute('PRAGMA journal_mode = WAL') # Enable WAL mode
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS experience (
