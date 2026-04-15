@@ -278,10 +278,17 @@ async function startServer() {
   // API route to run Prometheus (Python script)
   app.get("/api/run-prometheus", async (req, res) => {
     try {
+      const { url, username, password, security, population, generations } = req.query;
+      
+      // Basic URL Validation
+      try {
+        new URL(url as string);
+      } catch (e) {
+        return res.status(400).send(`[ERROR] Invalid URL: ${url}`);
+      }
+
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Transfer-Encoding', 'chunked');
-
-      const { url, username, password, security, population, generations } = req.query;
       
       // Pass configuration as environment variables to the Python script
       const pythonProcess = spawn("python3", [path.join(__dirname, "backend", "main.py")], {

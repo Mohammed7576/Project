@@ -34,7 +34,11 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const startAttack = useCallback(async () => {
-    if (!url || isAttacking) return;
+    // Sanitize URL: remove leading slashes and trim whitespace
+    const sanitizedUrl = url.trim().replace(/^\/+/, '');
+    const finalUrl = sanitizedUrl.startsWith('http') ? sanitizedUrl : `http://${sanitizedUrl}`;
+    
+    if (!finalUrl || isAttacking) return;
     
     setIsAttacking(true);
     setLogs([]);
@@ -43,7 +47,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
     abortControllerRef.current = abortController;
 
     const queryParams = new URLSearchParams({
-      url,
+      url: finalUrl,
       username,
       password,
       security,
@@ -56,6 +60,11 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
         signal: abortController.signal
       });
       
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Server returned ${response.status}`);
+      }
+
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
