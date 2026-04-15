@@ -123,6 +123,18 @@ async function startServer() {
   app.post("/api/sandbox", async (req, res) => {
     const { url, method, payload, headers } = req.body;
     const startTime = Date.now();
+    
+    // Basic SSRF Protection
+    try {
+      const urlObj = new URL(url);
+      const blockedHosts = ['169.254.169.254', 'metadata.google.internal', 'localhost', '127.0.0.1'];
+      if (blockedHosts.includes(urlObj.hostname)) {
+        return res.status(403).json({ error: "Access to internal resources is prohibited." });
+      }
+    } catch (e) {
+      return res.status(400).json({ error: "Invalid URL provided." });
+    }
+
     try {
       const finalUrl = method === 'GET' && payload ? `${url}${url.includes('?') ? '&' : '?'}${payload}` : url;
       const response = await axios({
@@ -184,6 +196,25 @@ async function startServer() {
   app.get("/api/lineage", (req, res) => {
     try {
       const stmt = db.prepare("SELECT payload, parent_payload as parent, score, status FROM experience WHERE parent_payload IS NOT NULL ORDER BY timestamp DESC LIMIT 100");
+      const rows = stmt.all();
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/evolution-stats", (req, res) => {
+    try {
+      const stmt = db.prepare(`
+        SELECT 
+          strftime('%Y-%m-%d %H:%M', timestamp) as time,
+          AVG(score) as avgScore,
+          COUNT(*) as attempts
+        FROM experience 
+        GROUP BY time 
+        ORDER BY time ASC 
+        LIMIT 50
+      `);
       const rows = stmt.all();
       res.json(rows);
     } catch (err: any) {
@@ -284,6 +315,14 @@ async function startServer() {
         if (!res.writableEnded) {
           res.write(`\n[PROCESS COMPLETED WITH CODE ${code}]\n`);
           res.end();
+        }
+      });
+
+      // Kill the process if the client disconnects
+      req.on("close", () => {
+        if (pythonProcess.exitCode === null) {
+          console.log("[SYSTEM] Client disconnected. Terminating attack process...");
+          pythonProcess.kill("SIGTERM");
         }
       });
     } catch (err: any) {
