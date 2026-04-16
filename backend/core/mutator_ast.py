@@ -143,6 +143,10 @@ class ASTMutator:
 
     def _context_aware_wrap(self, payload):
         """Wraps payload based on detected context (quotes, brackets)."""
+        # Context Compatibility Matrix: Skip quotes if context is NUMERIC
+        if self.context == "NUMERIC":
+            return payload
+
         if random.random() > 0.7:
             wrappers = [
                 ("'", "'"),
@@ -192,7 +196,12 @@ class ASTMutator:
     def _context_aware_mutation(self, payload):
         mutated = str(payload)
         
-        # 0. Context-Specific Injection
+        # 0. Context-Specific Injection (Compatibility Matrix)
+        if self.context == "NUMERIC":
+            # Ensure no quotes are added in numeric context
+            mutated = mutated.replace("'", "").replace('"', "")
+            return mutated
+
         if self.context == "SINGLE_QUOTE" and not mutated.startswith("'"):
             mutated = "'" + mutated
         elif self.context == "DOUBLE_QUOTE" and not mutated.startswith('"'):

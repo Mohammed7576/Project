@@ -65,6 +65,9 @@ class IslandManager:
             elif context == "DOUBLE_QUOTE":
                 mutator.strategy_weights["context_aware"] *= 3.0
                 print(f"[*] Island {i}: Optimizing for DOUBLE_QUOTE context.", flush=True)
+            elif context == "NUMERIC":
+                mutator.strategy_weights["logical_alts"] *= 3.0
+                print(f"[*] Island {i}: Optimizing for NUMERIC context.", flush=True)
 
             # Specialization: Each island has a different initial bias
             if i == 0: # Structural Island

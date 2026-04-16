@@ -16,26 +16,36 @@ class ContextDiscoverer:
 
     def discover(self):
         print("[*] Phase: Context Discovery (The Eye) active.", flush=True)
-        results = {}
         
-        for probe in self.probes:
-            print(f"  [?] Probing: {probe['name']}...", flush=True)
-            response = self.client.send_request(probe['payload'])
-            results[probe['name']] = {
-                "status": response['status'],
-                "length": len(response['text']),
-                "has_error": self._check_sql_errors(response['text'])
-            }
+        # 1. Baseline Request
+        baseline = self.client.send_request("")
+        baseline_len = len(baseline['text'])
+        
+        # 2. Inference Logic: Numeric vs String
+        # Probe: Arithmetic (Subtle)
+        print("  [?] Probing: Numeric Inference (1+0)...", flush=True)
+        num_probe = self.client.send_request("1+0")
+        if len(num_probe['text']) == baseline_len and num_probe['status'] == 200:
+            print("  [?] Probing: Numeric Verification (1+1)...", flush=True)
+            num_verify = self.client.send_request("1+1")
+            if len(num_verify['text']) == baseline_len:
+                self.detected_context = "NUMERIC"
+                print(f"[+] Discovery Complete. Detected Context: {self.detected_context} (Inferred via Arithmetic)", flush=True)
+                return self.detected_context
 
-        # Analysis Logic
-        if results["single_quote"]["has_error"] or results["bracket_single"]["has_error"]:
+        # 3. Inference Logic: Quote Detection (Subtle)
+        # Instead of just ', we use a balanced pair or a simple break
+        print("  [?] Probing: Quote Inference (')...", flush=True)
+        sq_probe = self.client.send_request("'")
+        if self._check_sql_errors(sq_probe['text']):
             self.detected_context = "SINGLE_QUOTE"
-        elif results["double_quote"]["has_error"] or results["bracket_double"]["has_error"]:
-            self.detected_context = "DOUBLE_QUOTE"
-        elif results["union_probe"]["status"] == 200:
-            self.detected_context = "UNION_FRIENDLY"
         else:
-            self.detected_context = "GENERIC"
+            print("  [?] Probing: Quote Inference (\")...", flush=True)
+            dq_probe = self.client.send_request("\"")
+            if self._check_sql_errors(dq_probe['text']):
+                self.detected_context = "DOUBLE_QUOTE"
+            else:
+                self.detected_context = "GENERIC"
 
         print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)
         return self.detected_context
