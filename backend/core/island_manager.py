@@ -230,6 +230,11 @@ class IslandManager:
                 if refinement:
                     print(f"  [Island {island['id']}] SQL Error detected. Refinement Strategy: {refinement['strategy']}", flush=True)
                     mutator.apply_hint({"suggestion": refinement["strategy"]})
+                    # Heuristic Repair: Try to fix it and inject back
+                    fixed_payload = self.error_refiner.apply_fix(payload, refinement)
+                    if fixed_payload != payload:
+                        # Give the fixed payload a "bonus" score to encourage survival
+                        scored_population.append((fixed_payload, 0.35, None))
 
             # Similarity Penalty
             for successful_p in self.hall_of_fame:

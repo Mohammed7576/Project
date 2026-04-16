@@ -56,10 +56,8 @@ class ASTMutator:
             
             # Epsilon-Greedy Selection
             if random.random() < self.epsilon:
-                # Explore: Random choice
                 strat_name = random.choice(names)
             else:
-                # Exploit: Best performing strategy
                 current_weights = dict(self.strategy_weights)
                 if self.stealth_mode:
                     current_weights["dynamic_structural"] *= 2.0
@@ -69,6 +67,9 @@ class ASTMutator:
                 strat_name = random.choices(names, weights=weights, k=1)[0]
             
             self.last_strategy_used = strat_name
+            # Safeguard: Don't mutate if it's already "too" mutated/large
+            if len(mutated) > 500:
+                continue
             mutated = self.strategies[strat_name](mutated)
             
         return mutated
@@ -262,32 +263,29 @@ class ASTMutator:
 
     def _nested_encoding(self, payload):
         """Nested Encoding: Applies layers of encoding (URL, Hex, etc.) to parts of the payload."""
-        import base64
+        import urllib.parse
         
-        def to_hex(s):
-            return "".join([f"0x{ord(c):02x}" for c in s])
-            
         def to_url(s):
             return "".join([f"%{ord(c):02x}" for c in s])
+            
+        def double_url(s):
+            # Correct double encoding: only encode the '%' characters of the first pass
+            first_pass = to_url(s)
+            return first_pass.replace("%", "%25")
 
         # Only encode keywords or specific parts to avoid breaking SQL syntax entirely
         mutated = payload
         for kw in self.sql_keywords:
-            if kw in mutated.upper() and random.random() < 0.4:
+            if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and random.random() < 0.4:
                 # Pick a random encoding strategy
-                enc_type = random.choice(["hex", "url", "double_url", "mixed"])
-                
-                if enc_type == "hex" and kw in ["SELECT", "UNION"]:
-                    # Hex is risky for keywords, maybe just for strings? 
-                    # Let's keep it simple for now
-                    continue 
+                enc_choices = ["url", "double_url", "mixed"]
+                enc_type = random.choice(enc_choices)
                 
                 if enc_type == "url":
                     mutated = re.sub(rf'\b{kw}\b', to_url(kw), mutated, flags=re.IGNORECASE)
                 elif enc_type == "double_url":
-                    mutated = re.sub(rf'\b{kw}\b', to_url(to_url(kw)), mutated, flags=re.IGNORECASE)
+                    mutated = re.sub(rf'\b{kw}\b', double_url(kw), mutated, flags=re.IGNORECASE)
                 elif enc_type == "mixed":
-                    # Partial URL encoding
                     encoded_kw = "".join([to_url(c) if random.random() < 0.5 else c for c in kw])
                     mutated = re.sub(rf'\b{kw}\b', encoded_kw, mutated, flags=re.IGNORECASE)
                     

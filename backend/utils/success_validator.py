@@ -68,6 +68,11 @@ class SuccessValidator:
         if status_code in [403, 406, 501] or any(ind in low_body for ind in waf_indicators):
             return 0.1, "WAF_BLOCKED"
 
+        # 4. SQL Error Awareness
+        error_msg = self.get_sql_error(response_text)
+        if error_msg:
+            return 0.25, "SQL_ERROR_DETECTED"
+
         if status_code == 200 and len(response_text) > 500:
             return 0.4, "POTENTIAL_BYPASS"
             
