@@ -74,7 +74,26 @@ try {
         confidence REAL,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS blocking_rules (
+        pattern TEXT PRIMARY KEY, 
+        confidence REAL
+    );
   `);
+
+  // Seed initial blocking rules if empty
+  const rulesCount = db.prepare("SELECT COUNT(*) as count FROM blocking_rules").get().count;
+  if (rulesCount === 0) {
+    const seedRules = [
+      { pattern: "\\bSELECT\\b", confidence: 0.95 },
+      { pattern: "\\bUNION\\b", confidence: 0.92 },
+      { pattern: "/\\*.*\\*/", confidence: 0.88 },
+      { pattern: "0x[0-9a-f]+", confidence: 0.85 },
+      { pattern: "\\bSLEEP\\b", confidence: 0.98 },
+      { pattern: "OR 1=1", confidence: 0.99 }
+    ];
+    const insert = db.prepare("INSERT INTO blocking_rules (pattern, confidence) VALUES (?, ?)");
+    seedRules.forEach(r => insert.run(r.pattern, r.confidence));
+  }
 } catch (err) {
   console.error("[DB] Schema creation failed:", err);
 }
@@ -202,6 +221,17 @@ async function startServer() {
       });
       
       res.json(radarData);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API route for WAF Patterns
+  app.get("/api/waf-patterns", (req, res) => {
+    try {
+      const stmt = db.prepare("SELECT pattern, confidence FROM blocking_rules ORDER BY confidence DESC");
+      const rows = stmt.all();
+      res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

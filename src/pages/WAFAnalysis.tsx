@@ -12,12 +12,12 @@ export default function WAFAnalysis() {
   useEffect(() => {
     const fetchRules = async () => {
       try {
-        const response = await fetch('/api/swarm-radar'); // Assuming this returns blocking patterns
+        const response = await fetch('/api/waf-patterns'); 
         if (response.ok) {
           const data = await response.json();
           // Map data to rules
           setRules(data.map((d: any) => ({
-            pattern: d.pattern || d.payload,
+            pattern: d.pattern,
             confidence: d.confidence || 0.85
           })));
         }
