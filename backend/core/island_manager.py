@@ -197,13 +197,17 @@ class IslandManager:
                 continue
 
             # 1. Predictive Blocking (The Intelligent Filter)
-            blocked, reason = self.blocker.should_block(payload)
-            if blocked:
-                print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Matches known block rule: {reason}", flush=True)
-                score, status = 0.05, "PREDICTIVE_BLOCKED"
-                mutator.report_success(payload, score)
-                scored_population.append((payload, score, None))
-                continue
+            # If severely stagnated, ignore predictive blocker occasionally to force exploration against real WAF
+            ignore_blocker = (island["stagnation"] >= 5 and random.random() < 0.3)
+            
+            if not ignore_blocker:
+                blocked, reason = self.blocker.should_block(payload)
+                if blocked:
+                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
+                    score, status = 0.05, "PREDICTIVE_BLOCKED"
+                    mutator.report_success(payload, score)
+                    scored_population.append((payload, score, None))
+                    continue
 
             response = self.client.send_request(payload)
             
