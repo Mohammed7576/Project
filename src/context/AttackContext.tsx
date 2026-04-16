@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 
 interface AttackContextType {
   url: string;
@@ -32,6 +32,15 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const [logs, setLogs] = useState<string[]>([]);
   
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    fetch('/api/last-session')
+      .then(res => res.json())
+      .then(data => {
+        if (data.target_url) setUrl(data.target_url);
+      })
+      .catch(err => console.error("Failed to load last session", err));
+  }, []);
 
   const startAttack = useCallback(async () => {
     // Sanitize URL: remove leading slashes and trim whitespace

@@ -49,6 +49,7 @@ try {
     CREATE TABLE IF NOT EXISTS target_profiles (
         target_url TEXT PRIMARY KEY,
         waf_name TEXT,
+        db_type TEXT,
         blocked_chars TEXT,
         successful_recipes TEXT,
         avg_latency REAL,
@@ -73,6 +74,11 @@ try {
         message TEXT,
         confidence REAL,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS last_session (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        target_url TEXT,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS blocking_rules (
         pattern TEXT PRIMARY KEY, 
@@ -232,6 +238,27 @@ async function startServer() {
       const stmt = db.prepare("SELECT pattern, confidence FROM blocking_rules ORDER BY confidence DESC");
       const rows = stmt.all();
       res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // API route for Targets Persistence
+  app.get("/api/targets", (req, res) => {
+    try {
+      const stmt = db.prepare("SELECT * FROM target_profiles ORDER BY last_updated DESC");
+      const rows = stmt.all();
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/last-session", (req, res) => {
+    try {
+      const stmt = db.prepare("SELECT target_url FROM last_session WHERE id = 1");
+      const row = stmt.get();
+      res.json(row || { target_url: "" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

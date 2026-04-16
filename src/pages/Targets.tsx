@@ -3,9 +3,9 @@ import { Database, Plus, Trash2, ExternalLink, Shield, AlertTriangle } from 'luc
 
 interface Target {
   url: string;
-  status: string;
+  waf_name: string;
+  db_type: string;
   lastAttack: string;
-  exploitsFound: number;
 }
 
 export default function Targets() {
@@ -15,24 +15,15 @@ export default function Targets() {
   useEffect(() => {
     const fetchTargets = async () => {
       try {
-        const response = await fetch('/api/loot');
+        const response = await fetch('/api/targets');
         if (response.ok) {
           const data = await response.json();
-          // Group by URL to show unique targets
-          const uniqueTargets = data.reduce((acc: any, curr: any) => {
-            if (!acc[curr.target_url]) {
-              acc[curr.target_url] = {
-                url: curr.target_url,
-                status: 'مخترق',
-                lastAttack: curr.timestamp,
-                exploitsFound: 1
-              };
-            } else {
-              acc[curr.target_url].exploitsFound += 1;
-            }
-            return acc;
-          }, {});
-          setTargets(Object.values(uniqueTargets));
+          setTargets(data.map((d: any) => ({
+            url: d.target_url,
+            waf_name: d.waf_name,
+            db_type: d.db_type,
+            lastAttack: d.last_updated
+          })));
         }
       } catch (e) {
         console.error("Failed to fetch targets", e);
@@ -74,7 +65,8 @@ export default function Targets() {
                 </h3>
                 <div className="flex gap-3 mt-1">
                   <span className="text-[10px] font-mono text-slate-500">آخر هجوم: {new Date(target.lastAttack).toLocaleString('ar-EG')}</span>
-                  <span className="text-[10px] font-mono text-[#10b981]">الثغرات المكتشفة: {target.exploitsFound}</span>
+                  <span className="text-[10px] font-mono text-[#10b981]">DB: {target.db_type}</span>
+                  <span className="text-[10px] font-mono text-blue-400">WAF: {target.waf_name}</span>
                 </div>
               </div>
             </div>
@@ -82,7 +74,7 @@ export default function Targets() {
             <div className="flex items-center gap-4">
               <div className="text-left">
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20">
-                  {target.status}
+                  نشط
                 </span>
               </div>
               <button className="p-2 text-slate-500 hover:text-red-500 transition-colors">

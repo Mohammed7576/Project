@@ -50,11 +50,50 @@ class ExperienceManager:
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS target_profiles (
+                    target_url TEXT PRIMARY KEY,
+                    waf_name TEXT,
+                    db_type TEXT,
+                    blocked_chars TEXT,
+                    successful_recipes TEXT,
+                    avg_latency REAL,
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS last_session (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    target_url TEXT,
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             conn.commit()
             conn.close()
             self._seed_knowledge() # Seed real-world patterns
         except Exception as e:
             print(f"[!] Error initializing database: {e}")
+
+    def save_target_profile(self, target_url, waf_name="UNKNOWN", db_type="GENERIC"):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO target_profiles (target_url, waf_name, db_type, last_updated)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(target_url) DO UPDATE SET
+                    waf_name = excluded.waf_name,
+                    db_type = excluded.db_type,
+                    last_updated = CURRENT_TIMESTAMP
+            ''', (target_url, waf_name, db_type))
+            
+            # Update last session
+            cursor.execute('INSERT OR REPLACE INTO last_session (id, target_url) VALUES (1, ?)', (target_url,))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Save Profile): {e}")
 
     def save_session_state(self, target_url, state_json):
         try:

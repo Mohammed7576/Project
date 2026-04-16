@@ -38,7 +38,12 @@ def run_prometheus():
         print("[!] Failed to establish session.", flush=True)
         return
 
-    inj_type = detect_injection_type(client)
+    discovery_result = detect_injection_type(client)
+    inj_type = discovery_result.get("context", "GENERIC")
+    db_type = discovery_result.get("db_type", "GENERIC")
+    
+    # Targets Persistence
+    exp_manager.save_target_profile(client.base_url, db_type=db_type)
     
     # Load payloads
     base_payloads = [
