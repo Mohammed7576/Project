@@ -201,7 +201,7 @@ class ASTMutator:
         token_specification = [
             ('STRING',     r"'[^']*'|\"[^\"]*\""),
             ('COMMENT',    r"/\*.*?\*/|--[^\n]*"),
-            ('KEYWORD',    r"\b(?i)(SELECT|UNION|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER\s+BY|GROUP\s+BY)\b"),
+            ('KEYWORD',    r"\b(SELECT|UNION|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER\s+BY|GROUP\s+BY)\b"),
             ('NUMBER',     r"\b\d+\b"),
             ('OPERATOR',   r"<=|>=|!=|=|\+|-|\*|/|%|\|\||&&"),
             ('IDENTIFIER', r"\b[a-zA-Z_][a-zA-Z0-9_]*\b"),
@@ -210,7 +210,7 @@ class ASTMutator:
             ('MISC',       r"."),
         ]
         tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
-        get_token = re.compile(tok_regex).match
+        get_token = re.compile(tok_regex, re.IGNORECASE).match
         pos = 0
         tokens = []
         while pos < len(payload):
