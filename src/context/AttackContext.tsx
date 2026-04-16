@@ -35,7 +35,19 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
 
   const startAttack = useCallback(async () => {
     // Sanitize URL: remove leading slashes and trim whitespace
-    const sanitizedUrl = url.trim().replace(/^\/+/, '');
+    let sanitizedUrl = url.trim().replace(/^\/+/, '');
+    
+    // Fix common typos in localhost
+    const localhostTypos = ['loaclhost', 'loclahost', 'localhost', 'lcoalhost', 'localhost:3000'];
+    const lowerUrl = sanitizedUrl.toLowerCase();
+    
+    for (const typo of localhostTypos) {
+      if (lowerUrl.includes(typo) && !lowerUrl.includes('localhost')) {
+        sanitizedUrl = sanitizedUrl.replace(new RegExp(typo, 'gi'), 'localhost');
+        break;
+      }
+    }
+
     const finalUrl = sanitizedUrl.startsWith('http') ? sanitizedUrl : `http://${sanitizedUrl}`;
     
     if (!finalUrl || isAttacking) return;
