@@ -57,9 +57,9 @@ class ASTMutator:
             print("[*] Stealth Mode Active: Prioritizing evasive mutations.", flush=True)
 
         for _ in range(num_mutations):
-            # Pick strategy based on weights
+            # Pick strategy based on weights, ensuring all current strategies have a weight
             names = list(self.strategies.keys())
-            weights = [current_weights[n] for n in names]
+            weights = [current_weights.get(n, 1.0) for n in names]
             strat_name = random.choices(names, weights=weights, k=1)[0]
             
             self.last_strategy_used = strat_name
@@ -88,6 +88,9 @@ class ASTMutator:
 
         if self.last_strategy_used and score > 0.5:
             # Reward the strategy
+            if self.last_strategy_used not in self.strategy_weights:
+                self.strategy_weights[self.last_strategy_used] = 1.0
+            
             self.strategy_weights[self.last_strategy_used] += 0.1
             # Normalize to prevent runaway weights
             total = sum(self.strategy_weights.values())

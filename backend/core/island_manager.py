@@ -38,7 +38,12 @@ class IslandManager:
                 print(f"[*] Resuming from previous session (Generation {self.current_gen})", flush=True)
                 for i_data in state['islands']:
                     mutator = ASTMutator(context=context)
-                    mutator.strategy_weights = i_data['weights']
+                    # Merge weights to support new strategies in old sessions
+                    loaded_weights = i_data['weights']
+                    for k, v in loaded_weights.items():
+                        if k in mutator.strategy_weights:
+                            mutator.strategy_weights[k] = v
+                    
                     mutator.keyword_reputation = i_data['reputation']
                     self.islands.append({
                         "id": i_data['id'],
