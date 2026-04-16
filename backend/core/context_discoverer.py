@@ -48,6 +48,14 @@ class ContextDiscoverer:
                 self.detected_context = "GENERIC"
 
         print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)
+
+        # 3.5 Structural Wrapping Detection (e.g. are we inside quotes AND brackets?)
+        print("  [?] Probing: Structural Brackets inference...", flush=True)
+        bracket_probe = f"{'1' if self.detected_context == 'NUMERIC' else '1\"' if self.detected_context == 'DOUBLE_QUOTE' else '1\''})"
+        bracket_res = self.client.send_request(bracket_probe)
+        if self._check_sql_errors(bracket_res['text']) and "syntax" in bracket_res['text'].lower() and ")" in bracket_res['text'].lower():
+            self.detected_context += "_PARENTHESIS"
+            print(f"  [+] Refined Context: {self.detected_context}", flush=True)
         
         # 4. Fingerprinting Gap: DB Type Identification
         db_type = self.fingerprint_db()

