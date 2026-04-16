@@ -219,9 +219,14 @@ class IslandManager:
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
-            score, status = self.validator.validate(response['text'], response['status'])
+            score, status = self.validator.validate(response['text'], response['status'], payload=payload)
             
-            # 2. Learning from real blocks
+            # 1.2 Combat Genetic Drift: Force exploration if the island is stuck in local optima
+            # If the island only finds WAF_BYPASSED_PARTIAL, heavily penalize it if we already know this trick
+            if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
+                score *= 0.5 # Halve the score so it dies out and forces other mutations
+                status = "LOCAL_OPTIMA_PENALIZED"
+
             if score <= 0.1:
                 self.blocker.learn_from_block(payload)
             elif score >= 0.8:

