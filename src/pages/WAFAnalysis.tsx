@@ -10,12 +10,12 @@ export default function WAFAnalysis() {
   const [rules, setRules] = useState<WAFRule[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchRules = async () => {
       try {
         const response = await fetch('/api/waf-patterns'); 
-        if (response.ok) {
+        if (response.ok && isMounted) {
           const data = await response.json();
-          // Map data to rules
           setRules(data.map((d: any) => ({
             pattern: d.pattern,
             confidence: d.confidence || 0.85
@@ -25,7 +25,17 @@ export default function WAFAnalysis() {
         console.error("Failed to fetch WAF rules", e);
       }
     };
+    
+    // Initial fetch
     fetchRules();
+    
+    // Poll every 5 seconds for real-time updates
+    const intervalId = setInterval(fetchRules, 5000);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
   }, []);
 
   return (

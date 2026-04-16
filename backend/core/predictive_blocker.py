@@ -13,7 +13,8 @@ class PredictiveBlocker:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('CREATE TABLE IF NOT EXISTS blocking_rules (pattern TEXT PRIMARY KEY, confidence REAL)')
-            cursor.execute('SELECT pattern FROM blocking_rules WHERE confidence > 0.7')
+            # Lowered the threshold to 0.4 so patterns show up faster and the AI adapts quicker
+            cursor.execute('SELECT pattern FROM blocking_rules WHERE confidence > 0.4')
             self.blocked_patterns = {row[0] for row in cursor.fetchall()}
             conn.close()
         except Exception as e:
@@ -28,23 +29,50 @@ class PredictiveBlocker:
 
     def learn_from_block(self, payload):
         """Analyzes a blocked payload to extract potential blocking rules."""
-        # Simple heuristic: if a payload is blocked, its keywords are suspicious
-        keywords = ["UNION", "SELECT", "INFORMATION_SCHEMA", "SLEEP", "BENCHMARK", "GROUP_CONCAT"]
-        found_bad = []
+        # Detect more specific and dynamic patterns that caused the block
         
+        # 1. Broaden Keyword Detection
+        keywords = ["UNION", "SELECT", "INFORMATION_SCHEMA", "SLEEP", "BENCHMARK", "GROUP_CONCAT", "OR", "AND", "XOR", "ORDER BY", "CAST", "CONVERT"]
         for kw in keywords:
-            if kw in payload.upper():
-                found_bad.append(kw)
+            if re.search(rf'\b{kw}\b', payload, re.IGNORECASE):
+                # We found a matching keyword, increase confidence that it's blocked
+                self._update_rule(f"\\b{kw}\\b", 0.05)
+                
+                # Check for common keyword combinations that triggered the block
+                if " " in payload and kw in payload:
+                    parts = re.split(rf'\s+{kw}\s+', payload, maxsplit=1, flags=re.IGNORECASE)
+                    if len(parts) == 2 and parts[1]:
+                       # Record the immediate context after the keyword
+                       context = parts[1].split()[0][:10]
+                       if len(context) > 2 and context.isalnum():
+                          self._update_rule(f"\\b{kw}\\s+{context}", 0.1)
+
+        # 2. Heuristics for Structural Patterns
+        # Detect encoded characters that might be blocked
+        if "%" in payload:
+            encoded_patterns = set(re.findall(r"%[0-9a-fA-F]{2}", payload))
+            if encoded_patterns:
+                self._update_rule(r"\%[0-9A-Fa-f]{2}", 0.05 * len(encoded_patterns))
+
+        # Detect specific function calls
+        functions = set(re.findall(r"\b([a-zA-Z_]+)\s*\(", payload))
+        for func in functions:
+            if func.upper() in ["CHAR", "ASCII", "SUBSTRING", "MID", "SLEEP"]:
+                self._update_rule(f"{func}\\(", 0.1)
+
+        # 3. Detect existing known suspicious patterns
+        suspicious = [
+            (r"/\*.*\*/", 0.1),             # Inline comments
+            (r"0x[0-9a-fA-F]+", 0.1),       # Hex encoding
+            (r"\'\s*=\s*\'", 0.1),          # Trivial tautology ('=')
+            (r"\d+\s*=\s*\d+", 0.1),        # Trivial numeric tautology (1=1)
+            (r"\|\|", 0.1),                 # Logical OR alternative
+            (r"\&\&", 0.1)                  # Logical AND alternative
+        ]
         
-        if found_bad:
-            # If we found known dangerous keywords, increase their 'bad' confidence
-            self._update_rule(f"\\b{found_bad[0]}\\b", 0.1) # Increment confidence
-            
-        # Also look for suspicious character combinations
-        suspicious = [r"/\*.*\*/", r"0x[0-9a-f]+", r"char\("]
-        for pattern in suspicious:
+        for pattern, base_boost in suspicious:
             if re.search(pattern, payload, re.IGNORECASE):
-                self._update_rule(pattern, 0.1)
+                self._update_rule(pattern, base_boost)
 
     def report_success(self, payload):
         """Reduces confidence in rules that were present in a successful payload."""
