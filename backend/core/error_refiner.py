@@ -52,8 +52,8 @@ class SQLErrorRefiner:
         problem_token = fix_info.get("problem_token")
         
         if fix_type == "UNCLOSED_QUOTE":
-            if "'" in payload and not payload.endswith("--"):
-                return payload + "--"
+            if "'" in payload and not payload.endswith("-- -"):
+                return payload + "-- -"
             if '"' in payload and not payload.endswith("#"):
                 return payload + "#"
                 
