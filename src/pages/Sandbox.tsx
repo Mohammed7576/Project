@@ -28,6 +28,22 @@ export default function Sandbox() {
     }
   }, [logs]);
 
+  const resetIntelligence = async () => {
+    if (!window.confirm('هل أنت متأكد من رغبتك في إعادة ضبط ذكاء الوكيل؟ سيتم مسح جميع الخبرات المكتسبة والحمولات الناجحة.')) return;
+    
+    try {
+      const response = await fetch('/api/reset-intelligence', { method: 'POST' });
+      if (response.ok) {
+        alert('تمت إعادة ضبط ذكاء الوكيل بنجاح.');
+        window.location.reload(); // Refresh to clear local state and logs
+      } else {
+        alert('فشل في إعادة ضبط الذكاء.');
+      }
+    } catch (error) {
+      alert('خطأ في الاتصال بالخادم.');
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
       {/* Configuration Panel */}
@@ -108,7 +124,7 @@ export default function Sandbox() {
               </div>
             </div>
 
-            <div className="pt-4">
+            <div className="pt-4 space-y-3">
               {!isAttacking ? (
                 <button 
                   onClick={startAttack}
@@ -127,6 +143,14 @@ export default function Sandbox() {
                   إنهاء
                 </button>
               )}
+
+              <button 
+                onClick={resetIntelligence}
+                className="w-full bg-slate-800/50 text-slate-400 border border-slate-700 py-2 rounded-lg font-mono text-xs flex items-center justify-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-all"
+              >
+                <Zap className="w-3 h-3" />
+                إعادة ضبط ذكاء الوكيل
+              </button>
             </div>
           </div>
         </div>

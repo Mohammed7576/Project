@@ -120,6 +120,19 @@ async function startServer() {
     }
   });
 
+  app.post("/api/reset-intelligence", (req, res) => {
+    try {
+      db.prepare("DELETE FROM experience").run();
+      db.prepare("DELETE FROM exploits").run();
+      db.prepare("DELETE FROM hints").run();
+      db.prepare("DELETE FROM blocking_rules").run();
+      db.prepare("DELETE FROM session_state").run();
+      res.json({ message: "تمت إعادة ضبط ذكاء الوكيل بنجاح" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // API route for Sandbox
   app.post("/api/sandbox", async (req, res) => {
     const { url, method, payload, headers } = req.body;
@@ -365,6 +378,18 @@ async function startServer() {
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Graceful shutdown
+  const shutdown = () => {
+    console.log("[SYSTEM] Shutting down server...");
+    db.close();
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
   server.on('error', (err: any) => {
     if (err.code === 'EADDRINUSE') {
