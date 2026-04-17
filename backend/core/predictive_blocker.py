@@ -1,10 +1,15 @@
 import re
 import sqlite3
+import sys
+import os
+sys.path.append(os.path.abspath("/app/applet/backend"))
+from core.mutator_ast import ASTMutator  # Import to use Lexer
 
 class PredictiveBlocker:
     def __init__(self, db_path="memory.db"):
         self.db_path = db_path
         self.blocked_patterns = set()
+        self.mutator = ASTMutator() # Just for tokenization
         self._load_patterns()
 
     def _load_patterns(self):
@@ -21,7 +26,6 @@ class PredictiveBlocker:
             if cursor.rowcount > 0:
                 conn.commit()
 
-            # Lowered the threshold to 0.4 so patterns show up faster and the AI adapts quicker
             cursor.execute('SELECT pattern FROM blocking_rules WHERE confidence > 0.4')
             self.blocked_patterns = {row[0] for row in cursor.fetchall()}
             conn.close()
@@ -31,58 +35,48 @@ class PredictiveBlocker:
     def should_block(self, payload):
         """Checks if the payload matches any known blocking pattern."""
         for pattern in self.blocked_patterns:
-            if re.search(pattern, payload, re.IGNORECASE):
-                return True, pattern
+            try:
+                if re.search(pattern, payload, re.IGNORECASE):
+                    return True, pattern
+            except: pass
         return False, None
 
     def learn_from_block(self, payload):
-        """Analyzes a blocked payload to extract potential blocking rules."""
-        # Detect more specific and dynamic patterns that caused the block
+        """Analyzes a blocked payload using Token sequencing to extract specific WAF rules."""
+        tokens = self.mutator._tokenize(payload)
         
-        # 1. Broaden Keyword Detection
-        keywords = ["UNION", "SELECT", "INFORMATION_SCHEMA", "SLEEP", "BENCHMARK", "GROUP_CONCAT", "OR", "AND", "XOR", "ORDER BY", "CAST", "CONVERT"]
-        for kw in keywords:
-            if re.search(rf'\b{kw}\b', payload, re.IGNORECASE):
-                # Don't add isolated keywords like \bSELECT\b which are too broad
+        # We look for dangerous pairings (e.g., KEYWORD + KEYWORD or KEYWORD + SYMBOL)
+        # Instead of blocking the whole string, we block the semantic pattern that caused the WAF to trigger.
+        
+        for i in range(len(tokens) - 1):
+            tok1 = tokens[i]
+            
+            # 1. Structural Function Calls: Block the specific function structure
+            if tok1['type'] in ['KEYWORD', 'IDENTIFIER'] and tokens[i+1]['value'] == '(':
+                # Block the exact keyword + parenthesis format specifically
+                pattern = f"\\b{re.escape(tok1['value']).upper()}\\s*\\("
+                self._update_rule(pattern, 0.15)
                 
-                # Check for common keyword combinations that triggered the block
-                if " " in payload and kw in payload:
-                    parts = re.split(rf'\s+{kw}\s+', payload, maxsplit=1, flags=re.IGNORECASE)
-                    if len(parts) == 2 and parts[1]:
-                       # Record the immediate context after the keyword
-                       context = parts[1].split()[0][:10]
-                       # Avoid learning generic numbers, only learn specific words/symbols
-                       if len(context) > 2 and context.isalnum() and not context.isdigit():
-                          self._update_rule(f"\\b{kw}\\s+{context}", 0.1)
+            # 2. Syntax-Specific Injection: Find Operator + Keyword blocks
+            if tok1['type'] == 'KEYWORD':
+                # Walk ahead to find the next meaningful token (skip spaces and minor comments)
+                for j in range(i+1, min(len(tokens), i+4)):
+                    tok2 = tokens[j]
+                    if tok2['type'] in ['KEYWORD', 'OPERATOR', 'SYS_VAR']:
+                        # The WAF likely triggered on the logical jump (e.g. UNION followed by SELECT)
+                        pattern = f"\\b{re.escape(tok1['value']).upper()}\\b.*?\\b{re.escape(tok2['value']).upper()}\\b"
+                        self._update_rule(pattern, 0.1)
+                        break
 
-                # Learn keyword + symbol combinations (e.g. "SELECT(")
-                if re.search(rf'\b{kw}\s*\(', payload, re.IGNORECASE):
-                    self._update_rule(f"\\b{kw}\\s*\\(", 0.15)
+            # 3. Direct Encoding / Evasion Signatures
+            if tok1['type'] == 'HEX_BIT':
+                self._update_rule(r"0[xX][0-9a-fA-F]+", 0.1)
 
-        # 2. Heuristics for Structural Patterns
-        # Detect encoded characters that might be blocked
-        if "%" in payload:
-            encoded_patterns = set(re.findall(r"%[0-9a-fA-F]{2}", payload))
-            if encoded_patterns:
-                self._update_rule(r"\%[0-9A-Fa-f]{2}", 0.05 * len(encoded_patterns))
-
-        # Detect specific function calls
-        functions = set(re.findall(r"\b([a-zA-Z_]+)\s*\(", payload))
-        for func in functions:
-            if func.upper() in ["CHAR", "ASCII", "SUBSTRING", "MID", "SLEEP", "DATABASE", "VERSION", "USER"]:
-                self._update_rule(f"{func}\\(", 0.1)
-
-        # 3. Detect existing known suspicious patterns (with reduced confidence boost)
-        suspicious = [
-            (r"0x[0-9a-fA-F]+", 0.1),       # Hex encoding
-            (r"\'\s*=\s*\'", 0.05),         # Trivial string tautology
-            (r"\|\|", 0.05),                # Logical OR alternative
-            (r"\&\&", 0.05)                 # Logical AND alternative
-        ]
-        
-        for pattern, base_boost in suspicious:
-            if re.search(pattern, payload, re.IGNORECASE):
-                self._update_rule(pattern, base_boost)
+            if tok1['type'] == 'EXEC_COMMENT':
+                # The WAF might be blocking MySQL executable comments
+                ver_match = re.search(r"/\*!(\d{5})", tok1['value'])
+                if ver_match:
+                    self._update_rule(rf"/\*!{ver_match.group(1)}", 0.1)
 
     def report_success(self, payload):
         """Reduces confidence in rules that were present in a successful payload."""
@@ -114,14 +108,16 @@ class PredictiveBlocker:
             if row:
                 new_conf = min(1.0, row[0] + confidence_boost)
                 cursor.execute('UPDATE blocking_rules SET confidence = ? WHERE pattern = ?', (new_conf, pattern))
+                if new_conf > 0.8 and pattern not in self.blocked_patterns:
+                     print(f"[*] Blocker: Confidence peaked, rule active: {pattern}", flush=True)
             else:
-                # New rule starts with a base confidence
-                cursor.execute('INSERT INTO blocking_rules (pattern, confidence) VALUES (?, ?)', (pattern, 0.5 + confidence_boost))
+                # New rule starts with higher confidence due to syntax tree precision
+                initial_conf = 0.6 + confidence_boost
+                cursor.execute('INSERT INTO blocking_rules (pattern, confidence) VALUES (?, ?)', (pattern, initial_conf))
+                print(f"[*] AST Blocker: New semantic blocking pattern learned: {pattern} (Conf: +{initial_conf:.2f})", flush=True)
             
             conn.commit()
             conn.close()
-            if pattern not in self.blocked_patterns:
-                print(f"[*] Blocker: New blocking pattern learned: {pattern}", flush=True)
-            self._load_patterns() # Refresh
+            self._load_patterns()
         except Exception as e:
             print(f"[!] Blocker: Error updating rule: {e}")
