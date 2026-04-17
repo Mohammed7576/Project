@@ -54,8 +54,8 @@ class WAFFingerprinter:
                 "hint": "Use large junk buffers and alternative logical operators like && instead of AND."
             },
             "Imperva": {
-                "weights": {"case_swap": 2.0, "whitespace_variations": 3.0},
-                "hint": "Focus on whitespace variations and case manipulation."
+                "weights": {"case_swap": 2.0, "whitespace_variations": 3.0, "inline_comments": 4.0},
+                "hint": "Use numeric-based comments like /*1337*/ and backslash escaping for breakout."
             }
         }
         return strategies.get(waf_name, {"weights": {}, "hint": "No specific bypass strategy known. Use generic evolution."})

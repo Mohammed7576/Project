@@ -82,5 +82,17 @@ class SQLErrorRefiner:
             # The database parsed a string like 'admin' as a column because quotes were stripped.
             # To fix the SQL syntax statically when quotes are banned, we replace the specific offending "column" with a truthy number.
             return re.sub(rf'\b{re.escape(problem_token)}\b', "1", payload, flags=re.IGNORECASE)
+        
+        elif fix_type == "SYNTAX_NEAR" and problem_token:
+            # Heuristic: If we have backslash explosion (\\\\), reduce to a single one
+            if payload.count("\\") > 2:
+                # Reduce multiple leading backslashes to a single one
+                fixed = re.sub(r'^\\+', r'\\', payload)
+                if fixed != payload: return fixed
             
+            # Heuristic: If we are missing a space near the error token
+            if problem_token and problem_token in payload:
+                # Try adding a space before the token
+                return payload.replace(problem_token, " " + problem_token)
+
         return payload # Default: no change, let the AST handle it
