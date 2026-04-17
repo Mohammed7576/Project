@@ -13,10 +13,14 @@ from core.context_discoverer import ContextDiscoverer
 from utils.data_extractor import DataExtractor
 
 def detect_injection_type(client):
-    print("[*] Fingerprinting target injection type...", flush=True)
-    discoverer = ContextDiscoverer(client)
-    context = discoverer.discover()
-    return context
+    print("[*] Fingerprinting target injection type... [DISABLED BY USER]", flush=True)
+    # Passed globally due to temporary user override, but discovery is completely bypassed now.
+    # discoverer = ContextDiscoverer(client, disable_strings=True)
+    # discoverer.discover()
+    # return {"context": discoverer.detected_context, "db_type": "MySQL"}
+    
+    # Return a generic quoteless fallback context immediately without sending ANY probes.
+    return {"context": "QUOTELESS_STRING", "db_type": "MySQL"}
 
 def run_prometheus():
     print("\n" + "="*50, flush=True)

