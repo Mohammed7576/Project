@@ -44,25 +44,44 @@ class SuccessValidator:
             
         low_body = response_text.lower()
         payload_upper = payload.upper() if payload else ""
+
+        # 1. SQL Error Awareness (CHECK THIS FIRST to avoid false positives)
+        error_msg = self.get_sql_error(response_text)
         
-        # 1. Real Data Extraction (The Ultimate Goal)
+        # 2. Real Data Extraction (The Ultimate Goal)
         if re.search(self.hash_pattern, response_text):
             return 1.0, "CRITICAL_DATA_LEAKED"
             
-        if any(sig in low_body for sig in self.schema_signatures) and "UNION" in payload_upper:
-            return 0.95, "SCHEMA_EXFILTRATED"
+        # 3. WAF Detection (Behavioral) - If blocked, nothing else matters
+        waf_indicators = ["forbidden", "access denied", "waf", "security", "blocked", "captcha", "cloudflare"]
+        if status_code in [403, 406, 501] or any(ind in low_body for ind in waf_indicators):
+            return 0.1, "WAF_BLOCKED"
+
+        # If there is a SQL error, we penalize the score unless it's error-based exfiltration (not yet implemented)
+        # We process signatures AFTER checking for errors to ensure data is actually being returned, not just reflected in error
+        clean_text = response_text
+        if error_msg:
+            # Remove the error message from the text to see if signatures exist OUTSIDE the error
+            clean_text = response_text.replace(error_msg, "")
             
-        # 2. Logic Bypasses (Cap the score to avoid Genetic Drift)
-        # We don't want the AI to get obsessed with just '1=1'. We cap its score so it doesn't max out.
-        if any(sig in response_text for sig in self.basic_signatures):
+        clean_low = clean_text.lower()
+
+        # 4. Success Signatures (Only if not purely an error)
+        if any(sig in clean_low for sig in self.schema_signatures) and "UNION" in payload_upper:
+            return 0.95, "SCHEMA_EXFILTRATED"
+
+        if any(sig in clean_text for sig in self.basic_signatures):
             # Give a higher score if it actually uses UNION, otherwise cap it at 0.7 
-            # to force the AI to keep trying exfiltration techniques.
             if "UNION" in payload_upper or "SELECT" in payload_upper:
                 return 0.85, "SQL_EXECUTION_VERIFIED"
             else:
                 return 0.65, "WAF_BYPASSED_PARTIAL"
 
-        # 3. Behavioral Analysis (Comparison with Baseline)
+        # If it was an error and no signatures were found outside it, return the error score
+        if error_msg:
+            return 0.25, "SQL_ERROR_DETECTED"
+
+        # 5. Behavioral Analysis (Comparison with Baseline)
         if baseline:
             # Time-Based Analysis (Detection of Time-Based Blind SQLi)
             if latency > (baseline.get('latency', 0) + 4000): # 4s delay
@@ -72,16 +91,6 @@ class SuccessValidator:
             size_diff = abs(len(response_text) - baseline.get('size', 0))
             if size_diff > 50 and status_code == 200:
                 return 0.5, "STRUCTURAL_BEHAVIOR_CHANGE"
-
-        # 4. WAF Detection (Behavioral)
-        waf_indicators = ["forbidden", "access denied", "waf", "security", "blocked", "captcha", "cloudflare"]
-        if status_code in [403, 406, 501] or any(ind in low_body for ind in waf_indicators):
-            return 0.1, "WAF_BLOCKED"
-
-        # 5. SQL Error Awareness
-        error_msg = self.get_sql_error(response_text)
-        if error_msg:
-            return 0.25, "SQL_ERROR_DETECTED"
 
         if status_code == 200 and len(response_text) > 500:
             return 0.3, "POTENTIAL_BYPASS"
