@@ -43,8 +43,11 @@ class ASTMutator:
     def _strip_wrappers(self, payload):
         """Isolate core gene: Strip known outer wrappers and terminators before mutation."""
         clean = payload
-        # Strip front quotes/brackets
-        clean = re.sub(r"^('|''|\"|\"\)|'\))", "", clean)
+        # Strip front quotes/brackets, even if stacked (e.g. ')))) )
+        clean = re.sub(r"^['\"]?\)?\)?\)?\)?\}?\]?", "", clean).lstrip()
+        # Ensure we strip leading spaces and generic prefix junk like '))/*junk*/ 
+        clean = re.sub(r"^(?:(?:/\*.*?\*/)?[\s'\")#;]+)+", "", clean)
+        
         # Strip trailing terminators
         clean = re.sub(r"(--\s*-?|#|/\*|;%00).*$", "", clean).strip()
         return clean
@@ -190,19 +193,13 @@ class ASTMutator:
             return payload + chosen_term
             
         if self.context == "SINGLE_QUOTE":
-            if not payload.startswith("'"):
-                return "'" + payload + chosen_term
-            return payload + chosen_term
+            return "'" + payload + chosen_term
             
         if self.context == "DOUBLE_QUOTE":
-            if not payload.startswith('"'):
-                return '"' + payload + chosen_term
-            return payload + chosen_term
+            return '"' + payload + chosen_term
             
         if self.context == "SINGLE_QUOTE_PARENTHESIS":
-            if not payload.startswith("')"):
-                return "')" + payload + chosen_term
-            return payload + chosen_term
+            return "')" + payload + chosen_term
 
         # Generic Random Fallback
         if random.random() > 0.4: # Increased chance to apply wrappers in generic mode
@@ -213,9 +210,9 @@ class ASTMutator:
                 ('") ', chosen_term)
             ]
             prefix, suffix = random.choice(wrappers)
-            if not payload.startswith(prefix):
-                return prefix + payload + suffix
-        return payload
+            return prefix + payload + suffix
+            
+        return payload + chosen_term
 
     def _tokenize(self, payload):
         """A simple lexical analyzer that breaks SQL down into semantic tokens."""
