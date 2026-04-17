@@ -19,6 +19,7 @@ class SuccessValidator:
             r"the used select statements have a different number of columns",
             r"column count doesn't match",
             r"invalid column name",
+            r"unknown column",
             r"sqlstate"
         ]
         

