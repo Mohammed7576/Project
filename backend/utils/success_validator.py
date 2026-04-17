@@ -53,8 +53,24 @@ class SuccessValidator:
             return 1.0, "CRITICAL_DATA_LEAKED"
             
         # 3. WAF Detection (Behavioral) - If blocked, nothing else matters
-        waf_indicators = ["forbidden", "access denied", "waf", "security", "blocked", "captcha", "cloudflare"]
-        if status_code in [403, 406, 501] or any(ind in low_body for ind in waf_indicators):
+        # Fix: Removed generic 'security' and 'blocked' to avoid false positives in DVWA
+        waf_signatures = [
+            r"incident id:", r"support id:", r"rejected by", r"forbidden by administrative rules",
+            r"access denied", r"cloudflare", r"fortinet", r"barracuda", r"sucuri", 
+            r"modsecurity", r"akami", r"imperva", r"incapsula", r"captcha"
+        ]
+        
+        is_blocked = False
+        if status_code in [403, 406, 501, 999]:
+            is_blocked = True
+        else:
+            # Only block on 200 if we see a very high confidence WAF signature
+            for sig in waf_signatures:
+                if re.search(sig, low_body, re.IGNORECASE):
+                    is_blocked = True
+                    break
+        
+        if is_blocked:
             return 0.1, "WAF_BLOCKED"
 
         # If there is a SQL error, we penalize the score unless it's error-based exfiltration (not yet implemented)
