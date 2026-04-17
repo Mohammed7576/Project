@@ -23,6 +23,7 @@ class HTTPClient:
 
     def setup_dvwa(self, username="admin", password="password", security_level="medium"):
         """Performs login and sets security level."""
+        self.security_level = security_level.lower()
         print(f"[*] Initializing connection to {self.base_url}...")
         
         # 1. Login
@@ -57,15 +58,20 @@ class HTTPClient:
 
     def send_request(self, payload):
         """Sends the SQLi payload to the target page."""
-        # DVWA Medium SQLi uses POST
-        data = {
+        params = {
             'id': payload,
             'Submit': 'Submit'
         }
         
         try:
-            # Note: In DVWA Medium, the injection is often via POST on the SQLi page
-            response = self.session.post(self.injection_url, data=data)
+            # Dynamic method switching based on DVWA security context
+            if getattr(self, 'security_level', 'medium') == 'low':
+                # DVWA Low uses GET parameters
+                response = self.session.get(self.injection_url, params=params)
+            else:
+                # DVWA Medium uses POST body
+                response = self.session.post(self.injection_url, data=params)
+                
             return {
                 "text": response.text,
                 "status": response.status_code,

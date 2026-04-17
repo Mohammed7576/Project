@@ -8,7 +8,7 @@ from core.error_refiner import SQLErrorRefiner
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC"):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True):
         self.client = client
         self.exp_manager = exp_manager
         self.base_seeds = base_payloads
@@ -20,6 +20,7 @@ class IslandManager:
         self.discovered_niches = set()
         self.stagnation_counter = 0
         self.context = context
+        self.disable_strings = disable_strings
         self.blocker = PredictiveBlocker()
         self.fingerprinter = WAFFingerprinter()
         self.error_refiner = SQLErrorRefiner()
@@ -39,7 +40,7 @@ class IslandManager:
                 for i_data in state['islands']:
                     is_quoteless = (context == "QUOTELESS_STRING")
                     actual_context = "SINGLE_QUOTE" if is_quoteless else context
-                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=True)
+                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
                     # Merge weights to support new strategies in old sessions
                     loaded_weights = i_data['weights']
                     for k, v in loaded_weights.items():
@@ -63,8 +64,8 @@ class IslandManager:
             # If it's quoteless, we still treat the inner context as essentially string-breaking, but with backslashes
             actual_context = "SINGLE_QUOTE" if is_quoteless else context
             
-            # Setting disable_strings to True globally for now per user request
-            mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=True)
+            # Setting disable_strings dynamically based on target security
+            mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
             
             # 1. Context-Aware Initialization
             if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":

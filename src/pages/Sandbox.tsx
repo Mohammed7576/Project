@@ -3,6 +3,65 @@ import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon } fr
 import { useAttack } from '../context/AttackContext';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 
+const formatLogLine = (log: string) => {
+  if (typeof log !== 'string') return log;
+  
+  // 1. Identify context prefixes and baseline color
+  let prefix = null;
+  let content = log;
+  let baseColorClass = "text-[#10b981]/80";
+
+  if (log.includes('[ERROR]') || log.includes('[!]')) {
+    baseColorClass = "text-red-400/90";
+  }
+
+  if (log.startsWith('[*]')) {
+    prefix = <span className="text-cyan-400 font-bold ml-1.5">[*]</span>;
+    content = log.substring(3);
+  } else if (log.startsWith('[+]')) {
+    prefix = <span className="text-emerald-400 font-bold ml-1.5">[+]</span>;
+    content = log.substring(3);
+  } else if (log.startsWith('[!]')) {
+    prefix = <span className="text-red-500 font-bold ml-1.5">[!]</span>;
+    content = log.substring(3);
+  } else if (log.startsWith('[?]')) {
+    prefix = <span className="text-yellow-400 font-bold ml-1.5">[?]</span>;
+    content = log.substring(3);
+  }
+
+  // 2. Syntax highlight the remaining content
+  // SQL Keywords
+  const keywords = ['SELECT', 'UNION', 'ALL', 'OR', 'AND', 'XOR', 'WHERE', 'FROM', 'DATABASE', 'USER', 'VERSION', 'ORDER BY', 'GROUP BY', 'LIMIT', 'OFFSET', 'HAVING', 'SLEEP', 'BENCHMARK', 'CONNECTION_ID', 'LOAD_FILE'];
+  
+  // Regex to split by keywords, numbers, hex, quotes and backticks
+  const parts = content.split(/(\b(?:SELECT|UNION|ALL|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER BY|GROUP BY|LIMIT|OFFSET|HAVING|SLEEP|BENCHMARK|CONNECTION_ID|LOAD_FILE)\b|\b\d+\b|0x[0-9a-fA-F]+|'[^']*'|"[^"]*"|`[^`]*`)/gi);
+
+  return (
+    <div className={`flex flex-wrap items-center ${baseColorClass}`}>
+      <span className="text-slate-600 ml-2">&lt;</span>
+      {prefix}
+      {parts.map((part, i) => {
+        const upper = part.toUpperCase();
+        if (keywords.includes(upper)) return <span key={i} className="text-yellow-400 font-bold mx-0.5">{part}</span>;
+        if (/^\d+$/.test(part)) return <span key={i} className="text-purple-400 mx-0.5">{part}</span>;
+        if (part.startsWith('0x')) return <span key={i} className="text-orange-400 font-mono mx-0.5">{part}</span>;
+        if (part.startsWith("'") || part.startsWith('"') || part.startsWith('`')) return <span key={i} className="text-blue-300 italic mx-0.5">{part}</span>;
+        
+        // Highlight error segments
+        if (/Unknown column|syntax error|doesn't exist|failed|denied|forbidden/i.test(part)) {
+          return <span key={i} className="text-red-400 font-bold underline decoration-dotted mx-0.5">{part}</span>;
+        }
+        
+        if (/success|bypassed|confirmed/i.test(part)) {
+          return <span key={i} className="text-emerald-400 font-bold mx-0.5">{part}</span>;
+        }
+        
+        return <span key={i}>{part}</span>;
+      })}
+    </div>
+  );
+};
+
 export default function Sandbox() {
   const {
     url, setUrl,
@@ -199,9 +258,8 @@ export default function Sandbox() {
               data={logs}
               totalCount={logs.length}
               itemContent={(index, log) => (
-                <div key={index} className={`px-4 py-0.5 ${log.includes('[ERROR]') ? 'text-red-400' : 'text-[#10b981]/80'}`}>
-                  <span className="text-slate-600 ml-2">&lt;</span>
-                  {log}
+                <div key={index} className="py-0.5">
+                  {formatLogLine(log)}
                 </div>
               )}
               followOutput="smooth"
