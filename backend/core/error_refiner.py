@@ -2,30 +2,30 @@ import re
 
 class SQLErrorRefiner:
     def __init__(self):
-        # Patterns to match common SQL errors and their fixes
+        # Patterns to match common MySQL specific errors and their fixes
         self.error_fixes = [
             {
-                "pattern": r"right syntax to use near '([^']*)' at line",
+                "pattern": r"right syntax to use near '([^']*)'", # MySQL Error 1064
                 "fix_type": "SYNTAX_NEAR",
                 "strategy": "Check for unclosed quotes or parentheses near the reported area."
             },
             {
-                "pattern": r"unclosed quotation mark after the character string",
+                "pattern": r"quotes are not closed", # MySQL string unclosed
                 "fix_type": "UNCLOSED_QUOTE",
-                "strategy": "Add a closing quote or a comment character (--) to terminate the string."
+                "strategy": "Add a closing quote or a comment character (--) to terminate the MySQL string."
             },
             {
-                "pattern": r"The used SELECT statements have a different number of columns",
+                "pattern": r"different number of columns", # MySQL Error 1222
                 "fix_type": "COLUMN_MISMATCH",
                 "strategy": "Increase or decrease the number of NULLs in the UNION SELECT statement."
             },
             {
-                "pattern": r"Unknown column '([^']*)' in 'order clause'",
+                "pattern": r"Unknown column '([^']*)' in 'order clause'", # MySQL Error 1054
                 "fix_type": "ORDER_BY_ERROR",
                 "strategy": "The column index is too high. Reduce the number in ORDER BY."
             },
             {
-                "pattern": r"Operand should contain 1 column",
+                "pattern": r"Operand should contain 1 column\(s\)", # MySQL Error 1241
                 "fix_type": "SUBQUERY_COLUMNS",
                 "strategy": "Ensure subqueries only return a single column."
             }

