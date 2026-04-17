@@ -1,43 +1,56 @@
 import random
 import re
+import difflib
 
 class SuccessValidator:
     def __init__(self):
+        # Signatures that indicate reflected data (Union/Error outputs)
         self.basic_signatures = ["First name:", "Surname:", "ID:", "admin", "gordonb", "1337"]
         self.hash_pattern = r"[a-f0-9]{32}"
-        self.schema_signatures = ["table_name", "column_name", "information_schema", "users", "guest"]
-
-    def get_sql_error(self, response_text):
-        """Detects and extracts the full SQL error message for better feedback."""
-        # Common SQL error prefixes
-        error_indicators = [
-            r"you have an error in your sql syntax",
-            r"mysql_fetch_array\(\)",
-            r"native client",
-            r"unclosed quotation mark",
-            r"postgresql query failed",
-            r"the used select statements have a different number of columns",
-            r"column count doesn't match",
-            r"invalid column name",
-            r"unknown column",
-            r"sqlstate"
+        self.schema_signatures = [
+            r"table_name", r"column_name", r"information_schema", r"schema_name",
+            r"datname", r"user_tables", r"all_tab_columns", r"sysobjects"
         ]
         
-        for indicator in error_indicators:
-            # Search for the indicator and capture everything until a common terminator
-            # (newline, <br>, or closing tag)
-            pattern = rf".*?({indicator}.*?)(?:\n|<br|<\/pre|<\/div|$)"
-            match = re.search(pattern, response_text, re.IGNORECASE | re.DOTALL)
-            if match:
-                # Clean up HTML tags if any
-                error_msg = re.sub(r'<[^>]+>', '', match.group(1)).strip()
-                return error_msg
+        # sqlmap-inspired Error Signatures (Exhaustive list)
+        self.db_errors = {
+            "MySQL": [
+                r"SQL syntax.*MySQL", r"Warning.*mysql_.*", r"valid MySQL result",
+                r"MySqlClient\.", r"com\.mysql\.jdbc\.exceptions", r"Unknown column '[^']+' in 'where clause'"
+            ],
+            "PostgreSQL": [
+                r"PostgreSQL.*ERROR", r"Warning.*\Wpg_.*", r"valid PostgreSQL result",
+                r"Npgsql\.", r"PG::Error", r"ERROR:\s+column\s+\"[^\"]+\"\s+does\s+not\s+exist"
+            ],
+            "Microsoft SQL Server": [
+                r"Driver.*SQL[\-\_\s]*Server", r"OLE DB.* SQL Server", r"\bSQL Server[^;]*Driver",
+                r"Warning.*mssql_.*", r"SqlException", r"System\.Data\.SqlClient\."
+            ],
+            "Oracle": [
+                r"\bORA-\d{5}", r"Oracle error", r"Oracle.*Driver", r"Warning.*\Woci_.*",
+                r"Warning.*\Wora_.*"
+            ]
+        }
+
+    def get_sql_error(self, response_text):
+        """sqlmap-style error extraction: finds the specific error string."""
+        for db, patterns in self.db_errors.items():
+            for pattern in patterns:
+                match = re.search(rf".*?({pattern}.*?)(?:\n|<br|<\/pre|<\/div|$)", response_text, re.IGNORECASE | re.DOTALL)
+                if match:
+                    error_msg = re.sub(r'<[^>]+>', '', match.group(1)).strip()
+                    return f"[{db}] {error_msg}"
         return None
+
+    def _calculate_ratio(self, text1, text2):
+        """Returns similarity ratio between two strings (0.0 to 1.0)"""
+        if not text1 or not text2: return 0.0
+        return difflib.SequenceMatcher(None, text1, text2).quick_ratio()
 
     def validate(self, response_text, status_code, payload=None, latency=0, baseline=None):
         """
-        Behavioral Analysis: Detects success/failure not just by content, 
-        but by structural changes and timing.
+        Synthesized sqlmap-style validation core.
+        Hierarchy: 1. Full Exfiltration -> 2. Error detection -> 3. Boolean/Structural Inference -> 4. WAF Block
         """
         if not response_text:
             return 0.0, "CONNECTION_ERROR"
@@ -45,70 +58,48 @@ class SuccessValidator:
         low_body = response_text.lower()
         payload_upper = payload.upper() if payload else ""
 
-        # 1. SQL Error Awareness (CHECK THIS FIRST to avoid false positives)
-        error_msg = self.get_sql_error(response_text)
-        
-        # 2. Real Data Extraction (The Ultimate Goal)
-        if re.search(self.hash_pattern, response_text):
-            return 1.0, "CRITICAL_DATA_LEAKED"
-            
-        # 3. WAF Detection (Behavioral) - If blocked, nothing else matters
-        # Fix: Removed generic 'security' and 'blocked' to avoid false positives in DVWA
-        waf_signatures = [
-            r"incident id:", r"support id:", r"rejected by", r"forbidden by administrative rules",
-            r"access denied", r"cloudflare", r"fortinet", r"barracuda", r"sucuri", 
-            r"modsecurity", r"akami", r"imperva", r"incapsula", r"captcha"
-        ]
-        
-        is_blocked = False
-        if status_code in [403, 406, 501, 999]:
-            is_blocked = True
-        else:
-            # Only block on 200 if we see a very high confidence WAF signature
-            for sig in waf_signatures:
-                if re.search(sig, low_body, re.IGNORECASE):
-                    is_blocked = True
-                    break
-        
-        if is_blocked:
+        # 1. WAF CLUE: Early exit if explicitly blocked (WAFs often return specific codes)
+        # Using sqlmap logic: 403, 406, 501 are usually WAF/IPS fingerprints
+        waf_signatures = [r"incident id:", r"support id:", r"rejected by", r"forbidden", r"captcha"]
+        if status_code in [403, 406, 501, 999] or any(re.search(s, low_body) for s in waf_signatures):
             return 0.1, "WAF_BLOCKED"
 
-        # If there is a SQL error, we penalize the score unless it's error-based exfiltration (not yet implemented)
-        # We process signatures AFTER checking for errors to ensure data is actually being returned, not just reflected in error
-        clean_text = response_text
-        if error_msg:
-            # Remove the error message from the text to see if signatures exist OUTSIDE the error
-            clean_text = response_text.replace(error_msg, "")
+        # 2. DATA REFLECTION (UNION/ERROR-BASED)
+        # Check for MD5-like hashes (exfiltrated data)
+        if re.search(self.hash_pattern, response_text):
+            return 1.0, "EXFILTRATION_SUCCESS"
             
-        clean_low = clean_text.lower()
+        # Check for DB Schema markers
+        if any(re.search(sig, low_body) for sig in self.schema_signatures):
+            return 0.95, "DATA_LEAK_CONFIRMED"
 
-        # 4. Success Signatures (Only if not purely an error)
-        if any(sig in clean_low for sig in self.schema_signatures) and "UNION" in payload_upper:
-            return 0.95, "SCHEMA_EXFILTRATED"
-
-        if any(sig in clean_text for sig in self.basic_signatures):
-            # Give a higher score if it actually uses UNION, otherwise cap it at 0.7 
-            if "UNION" in payload_upper or "SELECT" in payload_upper:
-                return 0.85, "SQL_EXECUTION_VERIFIED"
-            else:
-                return 0.65, "WAF_BYPASSED_PARTIAL"
-
-        # If it was an error and no signatures were found outside it, return the error score
+        # 3. ERROR REFLECTION
+        error_msg = self.get_sql_error(response_text)
         if error_msg:
+            # If we see an error but it contains "admin" or sensitive data, it's a partial leak
+            if any(sig.lower() in error_msg.lower() for sig in self.basic_signatures):
+                return 0.6, "ERROR_LEAK_PARTIAL"
             return 0.25, "SQL_ERROR_DETECTED"
 
-        # 5. Behavioral Analysis (Comparison with Baseline)
-        if baseline:
-            # Time-Based Analysis (Detection of Time-Based Blind SQLi)
-            if latency > (baseline.get('latency', 0) + 4000): # 4s delay
-                return 0.80, "TIME_BASED_SUCCESS"
+        # 4. BOOLEAN-BASED BLIND (The sqlmap "Ratio" method)
+        if baseline and status_code == 200:
+            current_ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
             
-            # Structural Analysis (Detection of Boolean-Based Blind SQLi)
-            size_diff = abs(len(response_text) - baseline.get('size', 0))
-            if size_diff > 50 and status_code == 200:
-                return 0.5, "STRUCTURAL_BEHAVIOR_CHANGE"
+            # If latency is significantly high (e.g. SLEEP executed)
+            if latency > (baseline.get('latency', 0) + 4000):
+                return 0.85, "TIME_BASED_INJECTION"
 
-        if status_code == 200 and len(response_text) > 500:
-            return 0.3, "POTENTIAL_BYPASS"
-            
-        return 0.2, "INCONCLUSIVE_RESPONSE"
+            # Dynamic ratio analysis: significant content change (mimics --string/--not-string)
+            if current_ratio < 0.95:
+                # If payloads like '1 OR 1=1' generate a different ratio than baseline, it's boolean-true
+                if "1=1" in payload_upper or "TRUE" in payload_upper or "OR 1" in payload_upper:
+                    return 0.75, "BOOLEAN_INFERENCE_TRUE"
+                return 0.5, "STRUCTURAL_CHANGE"
+
+        # 5. CONTENT INFERENCE (Fallthrough)
+        if any(sig in response_text for sig in self.basic_signatures):
+            if "UNION" in payload_upper:
+                return 0.9, "UNION_SUCCESS"
+            return 0.7, "LOGIC_BYPASS_VERIFIED"
+
+        return 0.2, "INCONCLUSIVE"
