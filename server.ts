@@ -100,6 +100,17 @@ try {
     const insert = db.prepare("INSERT INTO blocking_rules (pattern, confidence) VALUES (?, ?)");
     seedRules.forEach(r => insert.run(r.pattern, r.confidence));
   }
+
+  // Migration: Add missing columns to target_profiles if missing
+  const columns = ['db_type', 'blocked_chars', 'successful_recipes', 'avg_latency'];
+  for (const col of columns) {
+    try {
+      db.prepare(`SELECT ${col} FROM target_profiles LIMIT 1`).get();
+    } catch (e) {
+      console.log(`[DB] Migration: Adding ${col} to target_profiles...`);
+      db.prepare(`ALTER TABLE target_profiles ADD COLUMN ${col} ${col === 'avg_latency' ? 'REAL' : 'TEXT'}`).run();
+    }
+  }
 } catch (err) {
   console.error("[DB] Schema creation failed:", err);
 }
