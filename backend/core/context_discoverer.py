@@ -36,6 +36,11 @@ class ContextDiscoverer:
         # Pulse 3: Baseline breakage (What errors out?)
         pulse_sq_break = self.client.send_request("'")
         
+        # Pulse 4: Quoteless Escape breakage Check (Backslash)
+        # If the backend is sanitizing ' by turning it to /, then throwing \ might escape 
+        # the developers closing quote and cause a syntax error (e.g. user = '\' ).
+        pulse_backslash_break = self.client.send_request("\\")
+        
         len_num = len(pulse_num['text'])
         len_sq = len(pulse_sq['text'])
         
@@ -48,7 +53,12 @@ class ContextDiscoverer:
         elif len_num != baseline_len and not self._check_sql_errors(pulse_num['text']):
             self.detected_context = "NUMERIC"
             
-        # Rule 3: If single quote pulse altered execution safely, context is string.
+        # Rule 3: If backslash causes an error but single quote does NOT (because quote is sanitized to / safely)
+        elif self._check_sql_errors(pulse_backslash_break['text']) and not self._check_sql_errors(pulse_sq_break['text']):
+            print("  [WARNING] Detected strict quote sanitation (likely replaced with /). Switching to QUOTELESS context.", flush=True)
+            self.detected_context = "QUOTELESS_STRING" 
+            
+        # Rule 4: If single quote pulse altered execution safely, context is string.
         elif len_sq != baseline_len and not self._check_sql_errors(pulse_sq['text']):
             self.detected_context = "SINGLE_QUOTE"
             

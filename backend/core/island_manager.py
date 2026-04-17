@@ -37,7 +37,9 @@ class IslandManager:
                 self.current_gen = state.get('gen_num', 0)
                 print(f"[*] Resuming from previous session (Generation {self.current_gen})", flush=True)
                 for i_data in state['islands']:
-                    mutator = ASTMutator(context=context)
+                    is_quoteless = (context == "QUOTELESS_STRING")
+                    actual_context = "SINGLE_QUOTE" if is_quoteless else context
+                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=True)
                     # Merge weights to support new strategies in old sessions
                     loaded_weights = i_data['weights']
                     for k, v in loaded_weights.items():
@@ -57,11 +59,17 @@ class IslandManager:
                 print(f"[!] Failed to load state: {e}. Starting fresh.", flush=True)
 
         for i in range(num_islands):
-            mutator = ASTMutator(context=context)
+            is_quoteless = (context == "QUOTELESS_STRING")
+            # If it's quoteless, we still treat the inner context as essentially string-breaking, but with backslashes
+            actual_context = "SINGLE_QUOTE" if is_quoteless else context
+            
+            # Setting disable_strings to True globally for now per user request
+            mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=True)
+            
             # 1. Context-Aware Initialization
-            if context == "SINGLE_QUOTE":
+            if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":
                 mutator.strategy_weights["context_aware"] *= 3.0
-                print(f"[*] Island {i}: Optimizing for SINGLE_QUOTE context.", flush=True)
+                print(f"[*] Island {i}: Optimizing for String contexts.", flush=True)
             elif context == "DOUBLE_QUOTE":
                 mutator.strategy_weights["context_aware"] *= 3.0
                 print(f"[*] Island {i}: Optimizing for DOUBLE_QUOTE context.", flush=True)
