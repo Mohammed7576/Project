@@ -17,9 +17,16 @@ class ExperienceManager:
                     score REAL,
                     status TEXT,
                     parent_payload TEXT,
+                    island_id INTEGER DEFAULT 1,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # Migration: Ensure island_id exists
+            try:
+                cursor.execute('SELECT island_id FROM experience LIMIT 1')
+            except sqlite3.OperationalError:
+                cursor.execute('ALTER TABLE experience ADD COLUMN island_id INTEGER DEFAULT 1')
+                conn.commit()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS exploits (
                     payload TEXT PRIMARY KEY,
@@ -59,6 +66,15 @@ class ExperienceManager:
                     successful_recipes TEXT,
                     avg_latency REAL,
                     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reputation_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    generation INTEGER,
+                    keyword TEXT,
+                    reputation REAL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             cursor.execute('''
@@ -206,14 +222,14 @@ class ExperienceManager:
             print(f"[!] Database Error (Get Hint): {e}")
             return None
 
-    def save_attempt(self, payload, score, status, parent_payload=None):
+    def save_attempt(self, payload, score, status, parent_payload=None, island_id=1):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload)
-                VALUES (?, ?, ?, ?)
-            ''', (payload, score, status, parent_payload))
+                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (payload, score, status, parent_payload, island_id))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -260,4 +276,70 @@ class ExperienceManager:
             return [r[0] for r in results]
         except Exception as e:
             print(f"[!] Database Error (Golden): {e}")
+            return []
+
+    def save_reputation_history(self, gen_num, reputation_map):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            for kw, val in reputation_map.items():
+                cursor.execute('''
+                    INSERT INTO reputation_history (generation, keyword, reputation)
+                    VALUES (?, ?, ?)
+                ''', (gen_num, kw, val))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[!] Database Error (Reputation History): {e}")
+
+    def get_payload_lineage(self, final_payload):
+        """Recursively traces the lineage of a payload back to its seed."""
+        lineage = []
+        current = final_payload
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            while current:
+                cursor.execute('SELECT payload, parent_payload, score, status, timestamp FROM experience WHERE payload = ?', (current,))
+                row = cursor.fetchone()
+                if not row: break
+                
+                lineage.append({
+                    "payload": row[0],
+                    "parent": row[1],
+                    "score": row[2],
+                    "status": row[3],
+                    "timestamp": row[4]
+                })
+                current = row[1] # Move to parent
+                if len(lineage) > 50: break # Safety break
+                
+            conn.close()
+            return list(reversed(lineage))
+        except Exception as e:
+            print(f"[!] Database Error (Lineage Retrieval): {e}")
+            return []
+
+    def get_reputation_trends(self, limit_gens=30):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT generation, keyword, reputation 
+                FROM reputation_history 
+                WHERE generation <= ?
+                ORDER BY generation ASC, keyword ASC
+            ''', (limit_gens,))
+            results = cursor.fetchall()
+            conn.close()
+            
+            # Pivot data for charting
+            trends = {}
+            for gen, kw, rep in results:
+                if gen not in trends: trends[gen] = {"generation": gen}
+                trends[gen][kw] = rep
+            return list(trends.values())
+        except Exception as e:
+            print(f"[!] Database Error (Reputation Trends): {e}")
             return []

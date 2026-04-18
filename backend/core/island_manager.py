@@ -191,6 +191,10 @@ class IslandManager:
             ]
         }
         self.exp_manager.save_session_state(self.client.base_url, json.dumps(state))
+        
+        # 4. Save Global Reputation History (from Primary Island/Average)
+        if self.islands:
+            self.exp_manager.save_reputation_history(gen_num, self.islands[0]["mutator"].keyword_reputation)
 
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
@@ -232,6 +236,7 @@ class IslandManager:
                     print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
                     score, status = 0.05, "PREDICTIVE_BLOCKED"
                     mutator.report_success(payload_str, score)
+                    self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id']) # Record the block
                     scored_population.append((genome, score, None))
                     continue
 
@@ -271,7 +276,7 @@ class IslandManager:
             
             self.session_tested.add(payload_str)
             mutator.report_success(payload_str, score)
-            self.exp_manager.save_attempt(payload_str, score, status)
+            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'])
             scored_population.append((genome, score, error_msg))
             
             if score > max_score: max_score = score

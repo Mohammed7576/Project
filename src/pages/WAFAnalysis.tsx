@@ -7,30 +7,23 @@ interface WAFRule {
 }
 
 export default function WAFAnalysis() {
-  const [rules, setRules] = useState<WAFRule[]>([]);
+  const [intel, setIntel] = useState<any>(null);
 
   useEffect(() => {
     let isMounted = true;
-    const fetchRules = async () => {
+    const fetchIntel = async () => {
       try {
-        const response = await fetch('/api/waf-patterns'); 
+        const response = await fetch('/api/waf-intelligence'); 
         if (response.ok && isMounted) {
-          const data = await response.json();
-          setRules(data.map((d: any) => ({
-            pattern: d.pattern,
-            confidence: d.confidence || 0.85
-          })));
+          setIntel(await response.json());
         }
       } catch (e) {
-        console.error("Failed to fetch WAF rules", e);
+        console.error("Failed to fetch WAF intelligence", e);
       }
     };
     
-    // Initial fetch
-    fetchRules();
-    
-    // Poll every 5 seconds for real-time updates
-    const intervalId = setInterval(fetchRules, 5000);
+    fetchIntel();
+    const intervalId = setInterval(fetchIntel, 5000);
     
     return () => {
       isMounted = false;
@@ -38,13 +31,20 @@ export default function WAFAnalysis() {
     };
   }, []);
 
+  const rules = intel?.patterns || [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white font-mono">تحليل <span className="text-[#10b981]">WAF</span></h1>
-        <div className="flex items-center gap-2 bg-[#10b981]/10 text-[#10b981] px-3 py-1 rounded border border-[#10b981]/30 text-xs font-mono">
-          <Shield className="w-3 h-3" />
-          <span>الذكاء الاصطناعي نشط</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-blue-500/10 text-blue-400 px-3 py-1 rounded border border-blue-500/30 text-[10px] font-mono">
+             <span>WAF: {intel?.waf_name}</span>
+          </div>
+          <div className="flex items-center gap-2 bg-[#10b981]/10 text-[#10b981] px-3 py-1 rounded border border-[#10b981]/30 text-[10px] font-mono">
+            <Shield className="w-3 h-3" />
+            <span>الذكاء الاصطناعي نشط</span>
+          </div>
         </div>
       </div>
 
@@ -52,7 +52,7 @@ export default function WAFAnalysis() {
         {/* Rules Table */}
         <div className="lg:col-span-2 bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg overflow-hidden">
           <div className="p-4 border-b border-[#10b981]/20 bg-black/40 flex justify-between items-center">
-            <h2 className="text-sm font-mono text-white">أنماط الحظر المكتشفة</h2>
+            <h2 className="text-sm font-mono text-white">أنماط الحظر المكتشفة حقيقياً</h2>
             <div className="flex gap-2">
               <Search className="w-4 h-4 text-slate-500" />
               <Filter className="w-4 h-4 text-slate-500" />
@@ -67,8 +67,8 @@ export default function WAFAnalysis() {
                   <th className="p-4 font-bold">الحالة</th>
                 </tr>
               </thead>
-              <tbody>
-                {rules.length > 0 ? rules.map((rule, i) => (
+              <tbody className="text-slate-300">
+                {rules.length > 0 ? rules.map((rule: any, i: number) => (
                   <tr key={i} className="border-b border-[#10b981]/5 hover:bg-[#10b981]/5 transition-colors">
                     <td className="p-4 text-slate-300 break-all">{rule.pattern}</td>
                     <td className="p-4">
@@ -88,7 +88,7 @@ export default function WAFAnalysis() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={3} className="p-12 text-center text-slate-600">لا توجد أنماط مكتشفة بعد.</td>
+                    <td colSpan={3} className="p-12 text-center text-slate-600">لا توجد أنماط محظورة تم اكتشافها حتى الآن.</td>
                   </tr>
                 )}
               </tbody>
@@ -101,34 +101,42 @@ export default function WAFAnalysis() {
           <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
             <h2 className="text-sm font-mono text-white mb-4 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-yellow-500" />
-              توصيات التجاوز
+              توصيات التجاوز الحقيقية
             </h2>
             <div className="space-y-4">
-              <div className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded">
-                <p className="text-[10px] text-yellow-500 font-bold mb-1">تنبيه: حظر UNION</p>
-                <p className="text-[10px] text-slate-400 leading-relaxed">تم اكتشاف حظر قوي لكلمة UNION. يُنصح باستخدام التعليقات المضمنة مثل /*!UNION*/ للتجاوز.</p>
-              </div>
-              <div className="p-3 bg-[#10b981]/5 border border-[#10b981]/20 rounded">
-                <p className="text-[10px] text-[#10b981] font-bold mb-1">استراتيجية مقترحة</p>
-                <p className="text-[10px] text-slate-400 leading-relaxed">استخدام ترميز URL المزدوج (Double URL Encoding) لتجاوز فلاتر الإدخال البسيطة.</p>
-              </div>
+              {intel?.recommendations?.map((rec: any, i: number) => (
+                <div key={i} className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded">
+                  <p className="text-[10px] text-yellow-500 font-bold mb-1">{rec.title}</p>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">{rec.text}</p>
+                </div>
+              ))}
             </div>
           </div>
 
           <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
-            <h2 className="text-sm font-mono text-white mb-4">إحصائيات الحماية</h2>
+            <h2 className="text-sm font-mono text-white mb-4">إحصائيات الحماية الميدانية</h2>
             <div className="space-y-3">
               <div className="flex justify-between text-[10px] font-mono">
                 <span className="text-slate-500">مستوى ذكاء WAF</span>
-                <span className="text-yellow-500">متوسط</span>
+                <span className="text-yellow-500">{intel?.stats?.intelligenceLevel || "تحليل..."}</span>
               </div>
               <div className="flex justify-between text-[10px] font-mono">
                 <span className="text-slate-500">دقة التنبؤ</span>
-                <span className="text-[#10b981]">89.4%</span>
+                <span className="text-[#10b981]">{intel?.stats?.predictionAccuracy || "0%"}</span>
               </div>
               <div className="flex justify-between text-[10px] font-mono">
                 <span className="text-slate-500">الأنماط التي تم تجاوزها</span>
-                <span className="text-blue-400">42</span>
+                <span className="text-blue-400">{intel?.stats?.bypassedPatterns || 0}</span>
+              </div>
+              <div className="mt-4 pt-4 border-t border-[#10b981]/10">
+                <div className="text-[9px] text-slate-500 font-mono mb-1">الأحرف المحظورة المكتشفة:</div>
+                <div className="flex flex-wrap gap-1">
+                  {intel?.blocked_chars?.split(',').map((char: string, i: number) => (
+                    <span key={i} className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-[10px] font-mono">
+                      {char.trim()}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
