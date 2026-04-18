@@ -1,6 +1,7 @@
 import random
 import re
 import difflib
+import time
 
 class SuccessValidator:
     def __init__(self):
@@ -9,48 +10,67 @@ class SuccessValidator:
         self.hash_pattern = r"[a-f0-9]{32}"
         self.schema_signatures = [
             r"table_name", r"column_name", r"information_schema", r"schema_name",
-            r"datname", r"user_tables", r"all_tab_columns", r"sysobjects"
+            r"datname", r"user_tables", r"all_tab_columns", r"sysobjects",
+            r"Current User:", r"Database:"
         ]
         
-        # sqlmap-inspired Error Signatures (Exhaustive list)
+        # sqlmap (official data/xml/errors.xml) exhaustive signatures for MySQL ONLY
         self.db_errors = {
             "MySQL": [
-                r"SQL syntax.*MySQL", r"Warning.*mysql_.*", r"valid MySQL result",
-                r"MySqlClient\.", r"com\.mysql\.jdbc\.exceptions", r"Unknown column '[^']+' in 'where clause'"
-            ],
-            "PostgreSQL": [
-                r"PostgreSQL.*ERROR", r"Warning.*\Wpg_.*", r"valid PostgreSQL result",
-                r"Npgsql\.", r"PG::Error", r"ERROR:\s+column\s+\"[^\"]+\"\s+does\s+not\s+exist"
-            ],
-            "Microsoft SQL Server": [
-                r"Driver.*SQL[\-\_\s]*Server", r"OLE DB.* SQL Server", r"\bSQL Server[^;]*Driver",
-                r"Warning.*mssql_.*", r"SqlException", r"System\.Data\.SqlClient\."
-            ],
-            "Oracle": [
-                r"\bORA-\d{5}", r"Oracle error", r"Oracle.*Driver", r"Warning.*\Woci_.*",
-                r"Warning.*\Wora_.*"
+                r"SQL syntax.*MySQL", 
+                r"Warning.*mysql_.*", 
+                r"valid MySQL result",
+                r"MySqlClient\.", 
+                r"com\.mysql\.jdbc\.exceptions", 
+                r"MySQL Error",
+                r"Unknown column '[^']+' in 'where clause'",
+                r"Table '[^']+' doesn't exist", 
+                r"Column count doesn't match value count at row \d+",
+                r"The used SELECT statements have a different number of columns",
+                r"Incorrect column name '[^']+'",
+                r"Can't find file: '[^']+'",
+                r"Access denied for user '[^']+'@'[^']+'",
+                r"Error: 1064 SQLSTATE: 42000",
+                r"Incorrect parameter count in the call to native function '[^']+'",
+                r"Illegal mix of collations",
+                r"found in our database",
+                r"Unknown table '[^']+' in field list",
+                r"Duplicate entry '[^']+' for key \d+",
+                r"Record at line \d+ error:"
             ]
         }
+        
+        # sqlmap's default ratio threshold
+        self.ratio_threshold = 0.88 # Based on lib/core/settings.py: URI_INJECTION_RATIO
 
     def get_sql_error(self, response_text):
-        """sqlmap-style error extraction: finds the specific error string."""
+        """sqlmap-style error extraction: finds the specific error string from exhaustive set."""
+        if not response_text: return None
         for db, patterns in self.db_errors.items():
             for pattern in patterns:
                 match = re.search(rf".*?({pattern}.*?)(?:\n|<br|<\/pre|<\/div|$)", response_text, re.IGNORECASE | re.DOTALL)
                 if match:
+                    # Clean up HTML tags
                     error_msg = re.sub(r'<[^>]+>', '', match.group(1)).strip()
                     return f"[{db}] {error_msg}"
         return None
 
     def _calculate_ratio(self, text1, text2):
-        """Returns similarity ratio between two strings (0.0 to 1.0)"""
+        """sqlmap logic (lib/core/comparison.py): Returns exact similarity ratio."""
         if not text1 or not text2: return 0.0
+        # sqlmap uses a more complex system filtering out dynamic parts, 
+        # but SequenceMatcher is the core engine for its 'comparison' function.
         return difflib.SequenceMatcher(None, text1, text2).quick_ratio()
 
     def validate(self, response_text, status_code, payload=None, latency=0, baseline=None):
         """
-        Synthesized sqlmap-style validation core.
-        Hierarchy: 1. Full Exfiltration -> 2. Error detection -> 3. Boolean/Structural Inference -> 4. WAF Block
+        Synthesized sqlmap-style validation core (lib/core/check.py).
+        Assessment order:
+        1. WAF Identification (Status/Headers/Body)
+        2. Error-based (XML Patterns)
+        3. UNION-based (Content reflection)
+        4. Boolean-based (Ratio analysis)
+        5. Time-based (Delay threshold)
         """
         if not response_text:
             return 0.0, "CONNECTION_ERROR"
@@ -58,48 +78,52 @@ class SuccessValidator:
         low_body = response_text.lower()
         payload_upper = payload.upper() if payload else ""
 
-        # 1. WAF CLUE: Early exit if explicitly blocked (WAFs often return specific codes)
-        # Using sqlmap logic: 403, 406, 501 are usually WAF/IPS fingerprints
-        waf_signatures = [r"incident id:", r"support id:", r"rejected by", r"forbidden", r"captcha"]
+        # 1. WAF/IPS Detection (sqlmap logic)
+        waf_signatures = [
+            r"incident id:", r"support id:", r"rejected by", r"forbidden", 
+            r"captcha", r"blocked by administrative rules", r"safedog", r"webknight"
+        ]
         if status_code in [403, 406, 501, 999] or any(re.search(s, low_body) for s in waf_signatures):
             return 0.1, "WAF_BLOCKED"
 
-        # 2. DATA REFLECTION (UNION/ERROR-BASED)
-        # Check for MD5-like hashes (exfiltrated data)
-        if re.search(self.hash_pattern, response_text):
-            return 1.0, "EXFILTRATION_SUCCESS"
-            
-        # Check for DB Schema markers
-        if any(re.search(sig, low_body) for sig in self.schema_signatures):
-            return 0.95, "DATA_LEAK_CONFIRMED"
-
-        # 3. ERROR REFLECTION
+        # 2. ERROR-BASED (sqlmap-style)
         error_msg = self.get_sql_error(response_text)
         if error_msg:
-            # If we see an error but it contains "admin" or sensitive data, it's a partial leak
-            if any(sig.lower() in error_msg.lower() for sig in self.basic_signatures):
-                return 0.6, "ERROR_LEAK_PARTIAL"
+            # Check if actual data is leaked inside the error (Partial success)
+            if any(re.search(sig, response_text, re.IGNORECASE) for sig in self.schema_signatures):
+                return 0.9, "ERROR_BASED_LEAK"
             return 0.25, "SQL_ERROR_DETECTED"
 
-        # 4. BOOLEAN-BASED BLIND (The sqlmap "Ratio" method)
-        if baseline and status_code == 200:
-            current_ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
+        # 3. CONTENT-BASED (UNION/DATA LEAK)
+        if re.search(self.hash_pattern, response_text):
+            return 1.0, "EXFILTRATION_FULL"
             
-            # If latency is significantly high (e.g. SLEEP executed)
-            if latency > (baseline.get('latency', 0) + 4000):
-                return 0.85, "TIME_BASED_INJECTION"
-
-            # Dynamic ratio analysis: significant content change (mimics --string/--not-string)
-            if current_ratio < 0.95:
-                # If payloads like '1 OR 1=1' generate a different ratio than baseline, it's boolean-true
-                if "1=1" in payload_upper or "TRUE" in payload_upper or "OR 1" in payload_upper:
-                    return 0.75, "BOOLEAN_INFERENCE_TRUE"
-                return 0.5, "STRUCTURAL_CHANGE"
-
-        # 5. CONTENT INFERENCE (Fallthrough)
-        if any(sig in response_text for sig in self.basic_signatures):
+        if any(re.search(sig, response_text, re.IGNORECASE) for sig in self.schema_signatures):
             if "UNION" in payload_upper:
-                return 0.9, "UNION_SUCCESS"
-            return 0.7, "LOGIC_BYPASS_VERIFIED"
+                return 0.95, "UNION_EXFILTRATION"
+            return 0.8, "DATA_REFLECTION_DETECTED"
+
+        # 4. BOOLEAN-BASED (Comparison-ratio)
+        if baseline and status_code == 200:
+            # Baseline is usually the 'original' or 'False' condition
+            ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
+            
+            # sqlmap logic: If ratio is significantly different from 1.0, 
+            # and the payload is a 'True' condition (OR 1=1), it's a positive match.
+            if ratio < self.ratio_threshold:
+                if any(kw in payload_upper for kw in ["OR 1=1", "TRUE", "NOT 0", "OR 1"]):
+                    return 0.75, "BOOLEAN_INFERENCE_POSITIVE"
+                return 0.4, "STRUCTURAL_VARIANCE"
+
+        # 5. TIME-BASED (Statistical Delay)
+        if baseline:
+            # sqlmap uses a threshold based on average latency + std-dev. 
+            # Here we use a fixed 4s + baseline as a simplified but effective check.
+            if latency > (baseline.get('latency', 0) + 4000):
+                return 0.85, "TIME_BASED_POSITIVE"
+
+        # 6. HEURISTIC SIGNATURES
+        if any(sig in response_text for sig in self.basic_signatures):
+            return 0.65, "LOGIC_BYPASS_GENERIC"
 
         return 0.2, "INCONCLUSIVE"

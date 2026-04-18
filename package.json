@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^1.50.1",
     "axios": "^1.14.0",
     "better-sqlite3": "^12.9.0",
     "clsx": "^2.1.1",

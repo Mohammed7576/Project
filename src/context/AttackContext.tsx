@@ -15,6 +15,10 @@ interface AttackContextType {
   setGenerations: (generations: number) => void;
   isAttacking: boolean;
   logs: string[];
+  learningLogs: string[];
+  successLogs: string[];
+  systemLogs: string[];
+  currentGeneration: number;
   startAttack: () => Promise<void>;
   stopAttack: () => void;
 }
@@ -30,6 +34,10 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const [generations, setGenerations] = useState(30);
   const [isAttacking, setIsAttacking] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const [learningLogs, setLearningLogs] = useState<string[]>([]);
+  const [successLogs, setSuccessLogs] = useState<string[]>([]);
+  const [systemLogs, setSystemLogs] = useState<string[]>([]);
+  const [currentGeneration, setCurrentGeneration] = useState(0);
   
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -63,6 +71,10 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
     
     setIsAttacking(true);
     setLogs([]);
+    setLearningLogs([]);
+    setSuccessLogs([]);
+    setSystemLogs([]);
+    setCurrentGeneration(0);
     
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -97,6 +109,21 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split('\n').filter(line => line.trim() !== '');
           
+          lines.forEach(line => {
+            // Categorization logic
+            if (line.includes('[*] AST Blocker') || line.includes('[?] Probing') || line.includes('Discovery Complete')) {
+              setLearningLogs(prev => [...prev.slice(-199), line]);
+            } else if (line.includes('SQL_EXECUTION_VERIFIED') || line.includes('SUCCESS') || line.includes('EXFILTRATION')) {
+              setSuccessLogs(prev => [...prev.slice(-199), line]);
+            } else if (line.includes('[+] Generation')) {
+              const genMatch = line.match(/Generation (\d+)/);
+              if (genMatch) setCurrentGeneration(parseInt(genMatch[1]));
+              setSystemLogs(prev => [...prev.slice(-199), line]);
+            } else {
+              setSystemLogs(prev => [...prev.slice(-199), line]);
+            }
+          });
+
           setLogs(prev => {
             const newLogs = [...prev, ...lines];
             // Keep only last 500 lines to save memory/CPU
@@ -106,9 +133,13 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        setLogs(prev => [...prev, `[SYSTEM] Attack aborted by user.`]);
+        const msg = `[SYSTEM] Attack aborted by user.`;
+        setSystemLogs(prev => [...prev, msg]);
+        setLogs(prev => [...prev, msg]);
       } else {
-        setLogs(prev => [...prev, `[ERROR] Failed to connect to engine: ${error}`]);
+        const msg = `[ERROR] Failed to connect to engine: ${error}`;
+        setSystemLogs(prev => [...prev, msg]);
+        setLogs(prev => [...prev, msg]);
       }
     } finally {
       setIsAttacking(false);
@@ -133,6 +164,10 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       generations, setGenerations,
       isAttacking,
       logs,
+      learningLogs,
+      successLogs,
+      systemLogs,
+      currentGeneration,
       startAttack,
       stopAttack
     }}>

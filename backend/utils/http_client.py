@@ -56,6 +56,33 @@ class HTTPClient:
         self.session.post(self.security_url, data=security_data)
         return True
 
+    def fetch_base_payloads(self):
+        """Fetches seeded payloads from the server's database API."""
+        try:
+            # The Prometheus server is at localhost:3000
+            res = requests.get("http://localhost:3000/api/base-payloads", timeout=5)
+            if res.status_code == 200:
+                return res.json()
+        except Exception as e:
+            print(f"[!] Warning: Could not fetch base payloads from DB: {e}")
+        return []
+
+    def semantic_search(self, payload, k=5):
+        """Fetches semantically similar payloads using the Vector Database API."""
+        try:
+            # Note: The actual embedding must be provided by the server/frontend.
+            # Here we just pass the text and let the server handle the embedding if possible,
+            # but our server API expects the embedding. 
+            # In AI Studio, we can't easily generate embeddings in Python without heavy libs.
+            # So we rely on the server having a 'search-by-text' which first embeds then searches.
+            # Let's add that to server.ts
+            res = requests.post("http://localhost:3000/api/semantic/search-text", json={"content": payload, "k": k}, timeout=5)
+            if res.status_code == 200:
+                return res.json()
+        except Exception as e:
+            pass
+        return []
+
     def send_request(self, payload):
         """Sends the SQLi payload to the target page."""
         params = {

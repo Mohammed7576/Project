@@ -2,6 +2,7 @@ import random
 import time
 import json
 from core.mutator_ast import ASTMutator
+from core.payload_genome import PayloadGenome
 from core.predictive_blocker import PredictiveBlocker
 from core.waf_fingerprinter import WAFFingerprinter
 from core.error_refiner import SQLErrorRefiner
@@ -48,10 +49,19 @@ class IslandManager:
                             mutator.strategy_weights[k] = v
                     
                     mutator.keyword_reputation = i_data['reputation']
+                    
+                    # Population is now a list of dicts (genomes)
+                    pop = []
+                    for p in i_data['population']:
+                        if isinstance(p, dict) and "core" in p:
+                            pop.append(PayloadGenome.from_dict(p))
+                        elif isinstance(p, str):
+                            pop.append(PayloadGenome.from_string(p))
+                            
                     self.islands.append({
                         "id": i_data['id'],
                         "mutator": mutator,
-                        "population": i_data['population'],
+                        "population": pop,
                         "stagnation": i_data.get('stagnation', 0),
                         "best_score": i_data.get('best_score', 0)
                     })
@@ -91,7 +101,10 @@ class IslandManager:
             # Initialize population for this island
             golden_seeds = self.exp_manager.get_golden_payloads(limit=10)
             combined_seeds = golden_seeds + base_payloads
-            pop = random.sample(combined_seeds, min(len(combined_seeds), self.island_pop_size))
+            pop_strings = random.sample(combined_seeds, min(len(combined_seeds), self.island_pop_size))
+            
+            # Convert strings to structured Genomes
+            pop = [PayloadGenome.from_string(s) for s in pop_strings]
             
             self.islands.append({
                 "id": i,
@@ -163,7 +176,7 @@ class IslandManager:
             "islands": [
                 {
                     "id": i["id"],
-                    "population": i["population"],
+                    "population": [p.to_dict() for p in i["population"]],
                     "weights": i["mutator"].strategy_weights,
                     "reputation": i["mutator"].keyword_reputation,
                     "stagnation": i["stagnation"],
@@ -176,17 +189,14 @@ class IslandManager:
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
     def _evolve_island(self, island, gen_num):
-        pop_data = island["population"]
+        pop = island["population"] # List of PayloadGenome objects
         mutator = island["mutator"]
         scored_population = []
         max_score = 0
         
-        # Extract payloads for processing
-        pop = [p["payload"] if isinstance(p, dict) else p for p in pop_data]
-        parents = {p["payload"]: p["parent"] for p in pop_data if isinstance(p, dict)}
-
-        # Calculate diversity for this island
-        unique_payloads = len(set(pop))
+        # Calculate diversity
+        pop_str_hashes = [p.render() for p in pop]
+        unique_payloads = len(set(pop_str_hashes))
         diversity_ratio = unique_payloads / len(pop) if pop else 0
 
         # Dynamic Mutation Intensity for this island
@@ -198,11 +208,12 @@ class IslandManager:
         if mutation_intensity >= 3:
             print(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}", flush=True)
 
-        for i, payload in enumerate(pop):
-            if payload in self.hall_of_fame: continue
+        for i, genome in enumerate(pop):
+            payload_str = genome.render()
+            if payload_str in self.hall_of_fame: continue
             
             # 0. Avoid repeating successful payloads in the same session
-            if payload in self.session_tested:
+            if payload_str in self.session_tested:
                 continue
 
             # 1. Predictive Blocking (The Intelligent Filter)
@@ -210,15 +221,15 @@ class IslandManager:
             ignore_blocker = (island["stagnation"] >= 5 and random.random() < 0.3)
             
             if not ignore_blocker:
-                blocked, reason = self.blocker.should_block(payload)
+                blocked, reason = self.blocker.should_block(payload_str)
                 if blocked:
                     print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
                     score, status = 0.05, "PREDICTIVE_BLOCKED"
-                    mutator.report_success(payload, score)
-                    scored_population.append((payload, score, None))
+                    mutator.report_success(payload_str, score)
+                    scored_population.append((genome, score, None))
                     continue
 
-            response = self.client.send_request(payload)
+            response = self.client.send_request(payload_str)
             
             # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
             if i == 0:
@@ -228,70 +239,51 @@ class IslandManager:
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
-            score, status = self.validator.validate(response['text'], response['status'], payload=payload)
+            score, status = self.validator.validate(response['text'], response['status'], payload=payload_str)
             
-            # 1.2 Combat Genetic Drift: Force exploration if the island is stuck in local optima
-            # If the island only finds WAF_BYPASSED_PARTIAL, heavily penalize it if we already know this trick
+            # 1.2 Combat Genetic Drift
             if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
-                score *= 0.5 # Halve the score so it dies out and forces other mutations
+                score *= 0.5 
                 status = "LOCAL_OPTIMA_PENALIZED"
 
             if score <= 0.1:
-                self.blocker.learn_from_block(payload)
+                self.blocker.learn_from_block(payload_str)
             elif score >= 0.8:
-                self.blocker.report_success(payload)
+                self.blocker.report_success(payload_str)
 
-            # 3. SQL Error Refinement
+            # 3. SQL Error Refinement (Implicitly handled by AST mutations in next gen)
             error_msg = self.validator.get_sql_error(response['text'])
-            if error_msg:
-                refinement = self.error_refiner.refine(payload, error_msg)
-                if refinement:
-                    print(f"  [Island {island['id']}] SQL Error detected. Refinement Strategy: {refinement['strategy']}", flush=True)
-                    mutator.apply_hint({"suggestion": refinement["strategy"]})
-                    # Heuristic Repair: Try to fix it and inject back
-                    fixed_payload = self.error_refiner.apply_fix(payload, refinement)
-                    if fixed_payload != payload:
-                        # Give the fixed payload a "bonus" score to encourage survival
-                        scored_population.append((fixed_payload, 0.35, None))
-
+            
             # Similarity Penalty
             for successful_p in self.hall_of_fame:
-                if self._calculate_similarity(payload, successful_p) > 0.8:
+                if self._calculate_similarity(payload_str, successful_p) > 0.8:
                     score *= 0.5
                     status = f"BIASED_{status}"
                     break
 
-            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: {payload[:30]}... [{score:.2f} | {status}]", flush=True)
+            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: {payload_str[:30]}... [{score:.2f} | {status}]", flush=True)
             
-            parent = parents.get(payload)
-            self.exp_manager.save_attempt(payload, score, status, parent_payload=parent)
-            mutator.report_success(payload, score)
-            scored_population.append((payload, score, error_msg))
+            self.session_tested.add(payload_str)
+            mutator.report_success(payload_str, score)
+            self.exp_manager.save_attempt(payload_str, score, status)
+            scored_population.append((genome, score, error_msg))
             
-            if score >= 0.9:
-                self.session_tested.add(payload)
-
             if score > max_score: max_score = score
             
-            # Multi-Success Awareness
-            if score >= 0.9 and payload not in self.hall_of_fame:
-                if status not in self.discovered_niches:
-                    print(f"[!!!] NEW EXPLOIT TYPE (Island {island['id']}): {status} | {payload}", flush=True)
-                    self.discovered_niches.add(status)
-                    self.hall_of_fame.append(payload)
-                    self.exp_manager.save_exploit(payload, status)
-                elif score >= 1.0:
-                    self.hall_of_fame.append(payload)
-                    self.exp_manager.save_exploit(payload, "PERFECT_MATCH")
+            # Track discoveries
+            if score >= 0.3:
+                self.discovered_niches.add(f"{status}_{payload_str}")
+                if score >= 0.7 and payload_str not in self.hall_of_fame:
+                    self.hall_of_fame.append(payload_str)
+                    self.exp_manager.save_exploit(payload_str, status)
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)
-        elites = [p[0] for p in scored_population[:max(1, int(self.island_pop_size * 0.2))]]
-        survivors = [p for p in scored_population if p[1] >= 0.15]
+        elites = [p[0] for p in scored_population[:2] if p[1] > 0.2]
+        survivors = [p for p in scored_population if p[1] > 0.1]
         
         island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
-        
-        return {"max_score": max_score}
+        return {"max_score": max_score, "diversity": diversity_ratio}
 
     def _migrate(self):
         """Copies the best payload from each island to the next one in the ring."""
@@ -313,43 +305,71 @@ class IslandManager:
         
         # Elites stay as they are
         for e in elites:
-            if e not in seen_payloads:
-                next_gen.append({"payload": e, "parent": e})
-                seen_payloads.add(e)
+            # e is a PayloadGenome object
+            payload_str = e.render()
+            if payload_str not in seen_payloads:
+                next_gen.append(e)
+                seen_payloads.add(payload_str)
 
         if not survivors:
             seeds = random.sample(self.base_seeds, min(len(self.base_seeds), self.island_pop_size))
-            return [{"payload": s, "parent": None} for s in seeds]
+            return [PayloadGenome.from_string(s) for s in seeds]
 
         attempts = 0
         while len(next_gen) < self.island_pop_size and attempts < 100:
             attempts += 1
             rand_val = random.random()
             
-            if rand_val < 0.15: # Diversity: Random Seed
-                s = random.choice(self.base_seeds)
-                if s not in seen_payloads:
-                    next_gen.append({"payload": s, "parent": None})
-                    seen_payloads.add(s)
-            elif rand_val < 0.4 and len(survivors) >= 2: # Crossover
+            if rand_val < 0.15: # Diversity: Semantic Seed from Memory
+                # Try to get a semantically similar payload from history for the best current survivor
+                semantic_seed_str = None
+                if survivors:
+                    best_survivor_genome = survivors[0][0]
+                    results = self.client.semantic_search(best_survivor_genome.render(), k=3)
+                    if results:
+                        semantic_seed_str = random.choice(results).get('content')
+                
+                s_str = semantic_seed_str if semantic_seed_str else random.choice(self.base_seeds)
+                s_genome = PayloadGenome.from_string(s_str)
+                if s_str not in seen_payloads:
+                    next_gen.append(s_genome)
+                    seen_payloads.add(s_str)
+            elif rand_val < 0.4 and len(survivors) >= 2: # Crossover: Hybridize Bypasses
                 p1, p2 = random.sample(survivors, 2)
-                child = self._crossover(p1[0], p2[0])
-                mutated = mutator.mutate(child, intensity=intensity)
-                if mutated not in seen_payloads:
-                    next_gen.append({"payload": mutated, "parent": p1[0]})
-                    seen_payloads.add(mutated)
+                # p1[0] and p2[0] are PayloadGenome objects
+                child1, child2 = PayloadGenome.crossover(p1[0], p2[0])
+                
+                # Pick one and mutate slightly
+                child = random.choice([child1, child2])
+                child.mutate(mutator) # Mutation uses AST
+                
+                child_str = child.render()
+                if child_str not in seen_payloads:
+                    next_gen.append(child)
+                    seen_payloads.add(child_str)
             else: # Mutation
-                parent_data = random.choice(survivors)
-                child = mutator.mutate(parent_data[0], error_msg=parent_data[2], intensity=intensity)
-                if child not in seen_payloads:
-                    next_gen.append({"payload": child, "parent": parent_data[0]})
-                    seen_payloads.add(child)
+                parent_genome, score, error = random.choice(survivors)
+                # Clone and mutate
+                child = PayloadGenome(
+                    attack_type=parent_genome.attack_type,
+                    prefix=parent_genome.prefix,
+                    core=parent_genome.core,
+                    bypasses=list(parent_genome.bypasses),
+                    terminator=parent_genome.terminator
+                )
+                child.mutate(mutator) # Deep mutation
+                
+                child_str = child.render()
+                if child_str not in seen_payloads:
+                    next_gen.append(child)
+                    seen_payloads.add(child_str)
         
-        # Emergency Fill: If uniqueness guard is too strict, fill with slightly mutated seeds
+        # Emergency Fill: If uniqueness guard is too strict
         while len(next_gen) < self.island_pop_size:
-             s = random.choice(self.base_seeds)
-             m = mutator.mutate(s, intensity=intensity + 2)
-             next_gen.append({"payload": m, "parent": None})
+             s_str = random.choice(self.base_seeds)
+             s_genome = PayloadGenome.from_string(s_str)
+             s_genome.mutate(mutator)
+             next_gen.append(s_genome)
 
         return next_gen
 

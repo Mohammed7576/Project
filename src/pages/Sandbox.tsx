@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon } from 'lucide-react';
+import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon, Activity } from 'lucide-react';
 import { useAttack } from '../context/AttackContext';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 
@@ -72,20 +72,35 @@ export default function Sandbox() {
     generations, setGenerations,
     isAttacking,
     logs,
+    learningLogs,
+    successLogs,
+    systemLogs,
+    currentGeneration,
     startAttack,
     stopAttack
   } = useAttack();
 
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const learningRef = useRef<VirtuosoHandle>(null);
+  const successRef = useRef<VirtuosoHandle>(null);
+  const systemRef = useRef<VirtuosoHandle>(null);
 
   useEffect(() => {
-    if (virtuosoRef.current && logs.length > 0) {
-      virtuosoRef.current.scrollToIndex({
-        index: logs.length - 1,
-        behavior: 'smooth'
-      });
+    if (learningRef.current && learningLogs.length > 0) {
+      learningRef.current.scrollToIndex({ index: learningLogs.length - 1, behavior: 'auto' });
     }
-  }, [logs]);
+  }, [learningLogs]);
+
+  useEffect(() => {
+    if (successRef.current && successLogs.length > 0) {
+      successRef.current.scrollToIndex({ index: successLogs.length - 1, behavior: 'auto' });
+    }
+  }, [successLogs]);
+
+  useEffect(() => {
+    if (systemRef.current && systemLogs.length > 0) {
+      systemRef.current.scrollToIndex({ index: systemLogs.length - 1, behavior: 'auto' });
+    }
+  }, [systemLogs]);
 
   const resetIntelligence = async () => {
     if (!window.confirm('هل أنت متأكد من رغبتك في إعادة ضبط ذكاء الوكيل؟ سيتم مسح جميع الخبرات المكتسبة والحمولات الناجحة.')) return;
@@ -104,176 +119,169 @@ export default function Sandbox() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-      {/* Configuration Panel */}
-      <div className="lg:col-span-1 space-y-6">
-        <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
-          <h2 className="text-lg font-mono text-white mb-4 flex items-center">
-            <Target className="w-5 h-5 ml-2 text-[#10b981]" />
-            إعدادات الهجوم
-          </h2>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">رابط الهدف</label>
-              <div className="relative">
-                <Globe className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input 
-                  type="text" 
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg pr-10 pl-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#10b981]/50 transition-all font-mono"
-                />
-              </div>
-            </div>
+    <div className="flex flex-col h-full space-y-6">
+      {/* Header Info */}
+      <div className="flex items-center justify-between bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-4">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-[#10b981]" />
+            <span className="text-xs font-mono text-slate-400">الحالة:</span>
+            <span className={`text-xs font-mono font-bold ${isAttacking ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {isAttacking ? 'نشط (Attacking)' : 'متوقف (Idle)'}
+            </span>
+          </div>
+          <div className="w-px h-4 bg-slate-800" />
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-yellow-400" />
+            <span className="text-xs font-mono text-slate-400">الجيل الحالي:</span>
+            <span className="text-xs font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded leading-none">
+              G-{currentGeneration}
+            </span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {!isAttacking ? (
+            <button 
+              onClick={startAttack}
+              disabled={!url}
+              className="bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/30 px-6 py-1.5 rounded font-mono text-xs font-bold hover:bg-[#10b981]/20 transition-all flex items-center gap-2"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              تشغيل
+            </button>
+          ) : (
+            <button 
+              onClick={stopAttack}
+              className="bg-red-500/10 text-red-500 border border-red-500/30 px-6 py-1.5 rounded font-mono text-xs font-bold hover:bg-red-500/20 transition-all flex items-center gap-2"
+            >
+              <Square className="w-3 h-3 fill-current" />
+              إيقاف
+            </button>
+          )}
+        </div>
+      </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">اسم المستخدم</label>
-                <input 
-                  type="text" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">كلمة المرور</label>
-                <input 
-                  type="password" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">مستوى الحماية</label>
-              <select 
-                value={security}
-                onChange={(e) => setSecurity(e.target.value)}
-                className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono"
-              >
-                <option value="low">منخفض (Low)</option>
-                <option value="medium">متوسط (Medium)</option>
-                <option value="high">عالي (High)</option>
-                <option value="impossible">مستحيل (Impossible)</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">حجم المجتمع</label>
-                <input 
-                  type="number" 
-                  value={population}
-                  onChange={(e) => setPopulation(parseInt(e.target.value))}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
-                />
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
+        {/* Row 1: Config & Success */}
+        <div className="lg:col-span-1 flex flex-col space-y-4 h-full">
+          <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 flex flex-col h-full overflow-hidden">
+            <h2 className="text-xs font-mono text-white mb-4 flex items-center shrink-0">
+              <Target className="w-4 h-4 ml-2 text-[#10b981]" />
+              إعدادات المختبر
+            </h2>
+            <div className="space-y-4 overflow-y-auto pr-1">
+              <ConfigInput label="Target URL" value={url} onChange={setUrl} icon={Globe} />
+              <div className="grid grid-cols-2 gap-3">
+                <ConfigInput label="User" value={username} onChange={setUsername} />
+                <ConfigInput label="Pass" value={password} onChange={setPassword} type="password" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">عدد الأجيال</label>
-                <input 
-                  type="number" 
-                  value={generations}
-                  onChange={(e) => setGenerations(parseInt(e.target.value))}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none font-mono" 
-                />
-              </div>
-            </div>
-
-            <div className="pt-4 space-y-3">
-              {!isAttacking ? (
-                <button 
-                  onClick={startAttack}
-                  disabled={!url}
-                  className="w-full bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/30 py-3 rounded-lg font-mono font-bold flex items-center justify-center gap-2 hover:bg-[#10b981]/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed group shadow-[0_0_15px_rgba(16,185,129,0.1)]"
+                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Security</label>
+                <select 
+                  value={security} 
+                  onChange={(e) => setSecurity(e.target.value)}
+                  className="w-full bg-black/40 border border-[#10b981]/20 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none font-mono"
                 >
-                  <Play className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" />
-                  بدء الهجوم
-                </button>
-              ) : (
-                <button 
-                  onClick={stopAttack}
-                  className="w-full bg-red-500/10 text-red-500 border border-red-500/30 py-3 rounded-lg font-mono font-bold flex items-center justify-center gap-2 hover:bg-red-500/20 transition-all group"
-                >
-                  <Square className="w-4 h-4 fill-current" />
-                  إنهاء
-                </button>
-              )}
-
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="impossible">Impossible</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <ConfigInput label="Pop" value={population.toString()} onChange={(v) => setPopulation(parseInt(v) || 1)} type="number" />
+                <ConfigInput label="Gens" value={generations.toString()} onChange={(v) => setGenerations(parseInt(v) || 1)} type="number" />
+              </div>
               <button 
                 onClick={resetIntelligence}
-                className="w-full bg-slate-800/50 text-slate-400 border border-slate-700 py-2 rounded-lg font-mono text-xs flex items-center justify-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-all"
+                className="w-full bg-slate-800/50 text-slate-400 border border-slate-700 py-1.5 rounded font-mono text-[10px] flex items-center justify-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-all"
               >
                 <Zap className="w-3 h-3" />
-                إعادة ضبط ذكاء الوكيل
+                إعادة ضبط الذكاء
               </button>
             </div>
           </div>
         </div>
 
-        <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
-          <h2 className="text-sm font-mono text-white mb-4 flex items-center">
-            <Shield className="w-4 h-4 ml-2 text-[#10b981]" />
-            استراتيجيات التجاوز
-          </h2>
-          <div className="space-y-2">
-            {[
-              { en: 'AST Mutation', ar: 'طفرة AST' },
-              { en: 'Genetic Crossover', ar: 'التداخل الجيني' },
-              { en: 'WAF Fingerprinting', ar: 'بصمة WAF' },
-              { en: 'Context Awareness', ar: 'الوعي بالسياق' }
-            ].map(s => (
-              <div key={s.en} className="flex items-center justify-between text-xs font-mono py-1 border-b border-[#10b981]/5">
-                <span className="text-slate-400">{s.ar}</span>
-                <span className="text-[#10b981]">مفعل</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Terminal / Logs Panel */}
-      <div className="lg:col-span-2 flex flex-col bg-black border border-[#10b981]/20 rounded-lg overflow-hidden">
-        <div className="bg-[#0a0a0a] border-b border-[#10b981]/20 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center space-x-2 space-x-reverse">
-            <TerminalIcon className="w-4 h-4 text-[#10b981]" />
-            <span className="text-xs font-mono text-slate-400">Prometheus_Console v1.0.4</span>
-          </div>
-          <div className="flex space-x-1.5 space-x-reverse">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-500/20 border border-red-500/40"></div>
-            <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20 border border-yellow-500/40"></div>
-            <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/40"></div>
-          </div>
-        </div>
-        
-        <div className="flex-1 font-mono text-xs custom-scrollbar bg-[#050505]">
-          {logs.length === 0 ? (
-            <div className="p-4 text-slate-600 italic">في انتظار تشغيل النظام...</div>
-          ) : (
-            <Virtuoso
-              ref={virtuosoRef}
-              data={logs}
-              totalCount={logs.length}
-              itemContent={(index, log) => (
-                <div key={index} className="py-0.5">
-                  {formatLogLine(log)}
-                </div>
-              )}
-              followOutput="smooth"
-              style={{ height: '100%' }}
+        {/* Learning Logs */}
+        <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+          <ConsoleBox 
+            title="سجلات تعلم الوكيل (RL Learning)" 
+            icon={Zap} 
+            data={learningLogs} 
+            ref={learningRef}
+            className="border-yellow-400/20"
+            iconColor="text-yellow-400"
+          />
+          <ConsoleBox 
+            title="الحمولات الناجحة (Success Lab)" 
+            icon={Play} 
+            data={successLogs} 
+            ref={successRef}
+            className="border-emerald-400/20"
+            iconColor="text-emerald-400"
+          />
+          <div className="md:col-span-2">
+            <ConsoleBox 
+              title="سجلات النظام والمحاولات (System Engine)" 
+              icon={TerminalIcon} 
+              data={systemLogs} 
+              ref={systemRef}
+              className="border-blue-400/20"
+              iconColor="text-blue-400"
             />
-          )}
-          {isAttacking && logs.length > 0 && (
-            <div className="px-4 py-1 text-[#10b981]">
-              <span className="text-slate-600 ml-2">&lt;</span>
-              جاري تنفيذ دورات التطور...
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+function ConfigInput({ label, value, onChange, icon: Icon, type = "text" }: any) {
+  return (
+    <div>
+      <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</label>
+      <div className="relative">
+        {Icon && <Icon className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />}
+        <input 
+          type={type} 
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full bg-black/40 border border-[#10b981]/20 rounded ${Icon ? 'pr-7' : 'px-2'} py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono transition-all`}
+        />
+      </div>
+    </div>
+  );
+}
+
+const ConsoleBox = React.forwardRef(({ title, icon: Icon, data, className, iconColor }: any, ref: any) => {
+  return (
+    <div className={`flex flex-col bg-black/80 border rounded-lg overflow-hidden h-[300px] ${className}`}>
+      <div className="bg-[#0a0a0a] border-b border-white/5 px-3 py-1.5 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <Icon className={`w-3 h-3 ${iconColor}`} />
+          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">{title}</span>
+        </div>
+        <div className="text-[9px] font-mono text-slate-600 bg-black/40 px-1.5 rounded">{data.length} pts</div>
+      </div>
+      <div className="flex-1 font-mono text-[9px] custom-scrollbar bg-[rgba(5,5,5,0.8)] overflow-hidden">
+        {data.length === 0 ? (
+          <div className="p-3 text-slate-700 italic">في انتظار البيانات...</div>
+        ) : (
+          <Virtuoso
+            ref={ref}
+            data={data}
+            totalCount={data.length}
+            itemContent={(index, log) => (
+              <div key={index} className="px-3 py-0.5 border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                {formatLogLine(log)}
+              </div>
+            )}
+            followOutput="smooth"
+            style={{ height: '100%' }}
+          />
+        )}
+      </div>
+    </div>
+  );
+});

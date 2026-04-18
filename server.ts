@@ -84,7 +84,43 @@ try {
         pattern TEXT PRIMARY KEY, 
         confidence REAL
     );
+    CREATE TABLE IF NOT EXISTS base_payloads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payload TEXT NOT NULL,
+        category TEXT,
+        db_type TEXT DEFAULT 'GENERIC'
+    );
+    CREATE TABLE IF NOT EXISTS semantic_vectors (
+        content_hash TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        embedding_json TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  // Seed initial payloads if empty
+  const payloadCount = db.prepare("SELECT COUNT(*) as count FROM base_payloads").get().count;
+  if (payloadCount === 0) {
+    const seedPayloads = [
+      { p: "1 OR 1=1", c: 'AUTH_BYPASS' },
+      { p: "admin' --", c: 'AUTH_BYPASS' },
+      { p: "' OR '1'='1", c: 'AUTH_BYPASS' },
+      { p: "1 UNION SELECT 1,2,3", c: 'UNION' },
+      { p: "1 UNION SELECT NULL,NULL,NULL", c: 'UNION' },
+      { p: "1 UNION SELECT @@version,database(),user()", c: 'UNION', db: 'MySQL' },
+      { p: "1 AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,(SELECT DATABASE()),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)", c: 'ERROR', db: 'MySQL' },
+      { p: "1 AND SLEEP(5)", c: 'BLIND_TIME', db: 'MySQL' },
+      { p: "1/*!50000UNION*//*!50000SELECT*/1,2", c: 'WAF_BYPASS' },
+      { p: "1 || 2=2", c: 'AUTH_BYPASS' },
+      { p: "1 OR TRUE", c: 'AUTH_BYPASS' },
+      { p: "1 XOR 1=2", c: 'AUTH_BYPASS' },
+      { p: "1' UNION SELECT 1,2#", c: 'UNION', db: 'MySQL' },
+      { p: "1' AND 1=1#", c: 'BOOLEAN', db: 'MySQL' },
+      { p: "' OR 1 REGEXP '.*'", c: 'BYPASS' }
+    ];
+    const insert = db.prepare("INSERT INTO base_payloads (payload, category, db_type) VALUES (?, ?, ?)");
+    seedPayloads.forEach(item => insert.run(item.p, item.c, item.db || 'GENERIC'));
+  }
 
   // Seed initial blocking rules if empty
   const rulesCount = db.prepare("SELECT COUNT(*) as count FROM blocking_rules").get().count;
@@ -255,6 +291,49 @@ async function startServer() {
   });
 
   // API route for Targets Persistence
+  app.get("/api/base-payloads", (req, res) => {
+    try {
+      const stmt = db.prepare("SELECT payload FROM base_payloads");
+      const rows = stmt.all();
+      res.json(rows.map((r: any) => r.payload));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Local Intelligence API (Offline Similarity)
+  app.post("/api/semantic/search-text", (req, res) => {
+    try {
+      const { content, k = 5 } = req.body;
+      const allPayloads = db.prepare("SELECT payload FROM base_payloads").all();
+      const experience = db.prepare("SELECT payload FROM experience").all();
+      const uniquePool = Array.from(new Set([
+        ...allPayloads.map((p: any) => p.payload),
+        ...experience.map((p: any) => p.payload)
+      ]));
+
+      const jaccardSimilarity = (s1: string, s2: string) => {
+        const set1 = new Set(s1.toLowerCase().split(''));
+        const set2 = new Set(s2.toLowerCase().split(''));
+        const intersection = new Set([...set1].filter(x => set2.has(x)));
+        const union = new Set([...set1, ...set2]);
+        return intersection.size / union.size;
+      };
+
+      const results = uniquePool.map(p => ({
+        content: p,
+        score: jaccardSimilarity(content, p)
+      }))
+      .sort((a, b) => b.score - a.score)
+      .filter(r => r.score > 0.3) // Only keep somewhat relevant matches
+      .slice(0, k);
+
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/targets", (req, res) => {
     try {
       const stmt = db.prepare("SELECT * FROM target_profiles ORDER BY last_updated DESC");
