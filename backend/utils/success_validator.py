@@ -90,8 +90,9 @@ class SuccessValidator:
 
         # 0.1 UNION REFLECTION DETECTION (Context-Aware Bridgehead)
         if payload and "UNION" in payload_upper and "SELECT" in payload_upper:
-            # Extract numbers used in SELECT (e.g., 1, 2 from UNION SELECT 1,2)
-            scouts = re.findall(r"(?<=,|^|\s)(\d+)(?=,|$|\s)", payload)
+            # Safely extract numbers (e.g., 1, 2 from UNION SELECT 1,2)
+            # Using \b to avoid variable-width lookbehind issues
+            scouts = re.findall(r"\b(\d+)\b", payload)
             scouts = [s for s in scouts if len(s) < 3] # Only focus on small scout numbers
             
             if scouts:
