@@ -80,6 +80,7 @@ class SuccessValidator:
             
         low_body = response_text.lower()
         payload_upper = payload.upper() if payload else ""
+        payload_lower = payload.lower() if payload else ""
 
         # -1. BASELINE COMPARISON (Critical fix for the user's observation)
         # If the response is nearly identical to the normal (non-attack) page, 
@@ -90,17 +91,40 @@ class SuccessValidator:
             if ratio > 0.98:
                 return 0.2, "NO_DATA_VARIATION"
 
-        # 0. SENSITIVE DATA DETECTION (Focus on Passwords and NEW reflecting data)
+        # 0. ERROR-BASED DETECTION (Priority Shift: Catch syntax errors before false successes)
+        error_msg = self.get_sql_error(response_text)
+        if error_msg:
+            # Check if actual data is leaked inside the error (not just reflecting the payload)
+            for sig in self.schema_signatures:
+                if re.search(sig, response_text, re.IGNORECASE):
+                    # Ensure the signature is NOT just a reflection of the payload
+                    if sig.lower() not in payload_lower:
+                        return 0.95, "ERROR_SUCCESS_DATA_LEAK"
+            
+            # DIAGNOSTIC SUCCESS: Column mismatch, Order By, or Unknown Column discovery signal
+            low_err = error_msg.lower()
+            if "different number of columns" in low_err or "order clause" in low_err or "unknown column" in low_err:
+                return 0.85, "DIAGNOSTIC_SUCCESS_SIGNAL"
+
+            return 0.2, "SQL_SYNTAX_ERROR"
+
+        # 1. SENSITIVE DATA DETECTION (Focus on Passwords and NEW reflecting data)
         # We only care if these signatures appear and WERE NOT already in the baseline
         baseline_text = baseline.get('text', '').lower() if baseline else ""
         
         found_sensitive = False
         if re.search(self.hash_pattern, response_text):
-            found_sensitive = True
+            # Verify it's not the reflection of the regex payload itself
+            if self.hash_pattern.lower() not in payload_lower:
+                found_sensitive = True
         else:
             for sig in self.password_signatures:
                 # Check if it exists in response but NOT in baseline (or count increased)
                 if re.search(sig, low_body):
+                    # IGNORE REFLECTION: If the signature is literally in our payload, it's a false positive
+                    if sig.lower() in payload_lower:
+                        continue
+
                     if not re.search(sig, baseline_text) or response_text.lower().count(sig.lower()) > baseline_text.count(sig.lower()):
                         found_sensitive = True
                         break
@@ -148,19 +172,6 @@ class SuccessValidator:
             # Special case: check if we bypassed it but it still returned 200 with data
             return 0.1, "WAF_BLOCKED"
 
-        # 3. ERROR-BASED (The 'admin--' scenario - Treated as a diagnostic failure)
-        error_msg = self.get_sql_error(response_text)
-        if error_msg:
-            # Check if actual data is leaked inside the error
-            if any(re.search(sig, response_text, re.IGNORECASE) for sig in self.schema_signatures):
-                return 0.95, "ERROR_SUCCESS_DATA_LEAK"
-            
-            # DIAGNOSTIC SUCCESS: Column mismatch or Order By discovery signal
-            if "different number of columns" in error_msg.lower() or "order clause" in error_msg.lower():
-                return 0.85, "DIAGNOSTIC_SUCCESS_COLUMN_DISCOVERY"
-
-            # Simple SQL error without data exfiltration is a failure/scout info
-            return 0.2, "SQL_SYNTAX_ERROR" # Lowered significantly from 0.8
 
         # 4. CONTENT-BASED (UNION/DATA LEAK)
         if re.search(self.hash_pattern, response_text):

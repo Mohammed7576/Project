@@ -21,7 +21,7 @@ class ASTMutator:
             "context_aware": self._context_aware_mutation,
             "directed_bypass": self._directed_keyword_mutation,
             "micro_fragmentation": self._micro_fragmentation,
-            "nested_encoding": self._nested_encoding,
+            "nested_encoding": self._single_layer_encoding,
             "dynamic_structural": self._dynamic_structural_mutation,
             "upgrade_to_exfil": self._upgrade_to_exfil,
             "semantic_mutation": self._semantic_symbol_mutation,
@@ -553,33 +553,19 @@ class ASTMutator:
         
         return fragmented
 
-    def _nested_encoding(self, payload):
-        """Nested Encoding: Applies layers of encoding (URL, Hex, etc.) to parts of the payload."""
+    def _single_layer_encoding(self, payload):
+        """Single Layer Encoding: Applies at most one pass of URL encoding to keywords."""
         import urllib.parse
         
         def to_url(s):
             return "".join([f"%{ord(c):02x}" for c in s])
-            
-        def double_url(s):
-            # Correct double encoding: only encode the '%' characters of the first pass
-            first_pass = to_url(s)
-            return first_pass.replace("%", "%25")
 
         # Only encode keywords or specific parts to avoid breaking SQL syntax entirely
         mutated = payload
         for kw in self.sql_keywords:
             if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and random.random() < 0.4:
-                # Pick a random encoding strategy
-                enc_choices = ["url", "double_url", "mixed"]
-                enc_type = random.choice(enc_choices)
-                
-                if enc_type == "url":
-                    mutated = re.sub(rf'\b{kw}\b', to_url(kw), mutated, flags=re.IGNORECASE)
-                elif enc_type == "double_url":
-                    mutated = re.sub(rf'\b{kw}\b', double_url(kw), mutated, flags=re.IGNORECASE)
-                elif enc_type == "mixed":
-                    encoded_kw = "".join([to_url(c) if random.random() < 0.5 else c for c in kw])
-                    mutated = re.sub(rf'\b{kw}\b', encoded_kw, mutated, flags=re.IGNORECASE)
+                # Strictly single URL encoding as per user request
+                mutated = re.sub(rf'\b{kw}\b', to_url(kw), mutated, flags=re.IGNORECASE)
                     
         return mutated
 
