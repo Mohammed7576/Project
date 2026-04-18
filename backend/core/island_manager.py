@@ -90,14 +90,19 @@ class IslandManager:
                 print(f"[*] Island {i}: Optimizing for NUMERIC context.", flush=True)
 
             # Specialization: Each island has a different initial bias
-            if i == 0: # Structural Island
+            if i == 0: # Structural Island (Expert in Extraction)
                 mutator.strategy_weights["logical_alts"] *= 2.0
-                mutator.strategy_weights["union_balance"] *= 2.0
-            elif i == 1: # Bypass Island
+                mutator.strategy_weights["union_balance"] *= 5.0
+                mutator.strategy_weights["column_discovery"] *= 3.0
+                mutator.strategy_weights["upgrade_to_exfil"] *= 3.0
+            elif i == 1: # Bypass Island (Expert in WAF evasion)
                 mutator.strategy_weights["inline_comments"] *= 2.0
                 mutator.strategy_weights["junk_fill"] *= 2.0
-            else: # Context Island
+                mutator.strategy_weights["micro_fragmentation"] *= 2.0
+            else: # Inference Island (Expert in Blind/Time attacks)
+                mutator.strategy_weights["blind_inference"] *= 5.0
                 mutator.strategy_weights["context_aware"] *= 2.0
+                mutator.strategy_weights["dynamic_structural"] *= 2.0
 
             # Initialize population for this island
             golden_seeds = self.exp_manager.get_golden_payloads(limit=10)

@@ -155,6 +155,10 @@ class SuccessValidator:
             if any(re.search(sig, response_text, re.IGNORECASE) for sig in self.schema_signatures):
                 return 0.95, "ERROR_SUCCESS_DATA_LEAK"
             
+            # DIAGNOSTIC SUCCESS: Column mismatch or Order By discovery signal
+            if "different number of columns" in error_msg.lower() or "order clause" in error_msg.lower():
+                return 0.85, "DIAGNOSTIC_SUCCESS_COLUMN_DISCOVERY"
+
             # Simple SQL error without data exfiltration is a failure/scout info
             return 0.2, "SQL_SYNTAX_ERROR" # Lowered significantly from 0.8
 

