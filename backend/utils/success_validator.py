@@ -70,19 +70,25 @@ class SuccessValidator:
         """
         Synthesized sqlmap-style validation core (lib/core/check.py).
         Assessment order:
+        -1. BASELINE COMPARISON (Preventing Fails from 1 XOR 1=2 types)
         0. PASSWORDS & HASHES (Critical Objective)
         1. MASS DUMP DETECTION (Highest Priority for '1 OR true')
-        2. WAF Identification (Status/Headers/Body)
-        3. Error-based (XML Patterns)
-        4. UNION-based (Content reflection)
-        5. Boolean-based (Ratio analysis)
-        6. Time-based (Delay threshold)
+        ...
         """
         if not response_text:
             return 0.0, "CONNECTION_ERROR"
             
         low_body = response_text.lower()
         payload_upper = payload.upper() if payload else ""
+
+        # -1. BASELINE COMPARISON (Critical fix for the user's observation)
+        # If the response is nearly identical to the normal (non-attack) page, 
+        # then the payload didn't actually "bypass" or "leak" anything new.
+        if baseline and status_code == 200:
+            ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
+            # Over 98% similarity means it's essentially the same page
+            if ratio > 0.98:
+                return 0.2, "NO_DATA_VARIATION"
 
         # 0. SENSITIVE DATA DETECTION (Focus on Passwords)
         if re.search(self.hash_pattern, response_text) or any(re.search(sig, low_body) for sig in self.password_signatures):

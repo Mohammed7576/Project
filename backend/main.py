@@ -87,10 +87,8 @@ def run_prometheus():
                 print(f"\n[!!!] NEW EXPLOIT DISCOVERED: {payload}", flush=True)
                 successful_payloads.add(payload)
             
-            # If we have enough unique successes, we can stop early or keep going
-            if len(successful_payloads) >= 3:
-                print(f"\n[*] Target saturated with {len(successful_payloads)} unique exploits. Finalizing.", flush=True)
-                break
+            # We don't stop early anymore. We continue to find MORE and BETTER exploits (like passwords)
+            # as requested by the user.
     
     if successful_payloads:
         print("\n" + "*"*60, flush=True)
