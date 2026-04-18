@@ -1,11 +1,10 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Terminal, Activity, Database, ShieldAlert, Settings, Cpu, DatabaseZap } from 'lucide-react';
+import { Terminal, Activity, Database, ShieldAlert, Settings, Cpu } from 'lucide-react';
 
 const navItems = [
   { name: 'لوحة التحكم', path: '/', icon: Activity },
   { name: 'المختبر', path: '/sandbox', icon: Terminal },
-  { name: 'المختبر الثاني (Extraction)', path: '/extra-lab', icon: DatabaseZap },
   { name: 'الأهداف', path: '/targets', icon: Database },
   { name: 'تحليل WAF', path: '/waf', icon: ShieldAlert },
   { name: 'الإعدادات', path: '/settings', icon: Settings },
