@@ -1,13 +1,10 @@
 import os
 import sys
 import threading
-from dotenv import load_dotenv
 from core.exfiltration_lab import ExfiltrationLab
 
 # Ensure we are in the backend directory context
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-load_dotenv()
 
 def run_standalone_extraction():
     """
