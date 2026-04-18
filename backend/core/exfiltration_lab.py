@@ -1,7 +1,7 @@
 import re
 import time
 import random
-from utils.http_client import SQLiClient
+from utils.http_client import HTTPClient
 from utils.success_validator import SuccessValidator
 
 class ExfiltrationLab:
@@ -9,9 +9,9 @@ class ExfiltrationLab:
     A completely independent "Second Lab" specialized strictly in Data Extraction.
     It operates as a sequential exploitation machine, moving from discovery to full dump.
     """
-    def __init__(self, target_url, login_url, username, password, security_level="medium"):
-        self.client = SQLiClient(target_url, login_url)
-        self.client.login(username, password, security_level)
+    def __init__(self, base_url, username, password, security_level="medium"):
+        self.client = HTTPClient(base_url)
+        self.client.setup_dvwa(username, password, security_level)
         self.validator = SuccessValidator()
         
         self.column_count = 0

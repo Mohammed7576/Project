@@ -11,8 +11,7 @@ def run_standalone_extraction():
     Triggers the Second Lab: The Extraction Specialist.
     This lab is completely independent of the evolutionary archipelago.
     """
-    TARGET_URL = "http://localhost:3000/dvwa/vulnerabilities/sqli/"
-    LOGIN_URL = "http://localhost:3000/dvwa/login.php"
+    BASE_URL = "http://localhost:3000/dvwa/"
     USERNAME = "admin"
     PASSWORD = "password" # DVWA Default
     SECURITY = "medium"
@@ -20,7 +19,7 @@ def run_standalone_extraction():
     print("\n[SYSTEM] INITIALIZING INDEPENDENT EXTRACTION LAB...")
     print("[SYSTEM] No connection to Main Archipelago. Specialization: Data Theft Only.")
     
-    lab = ExfiltrationLab(TARGET_URL, LOGIN_URL, USERNAME, PASSWORD, SECURITY)
+    lab = ExfiltrationLab(BASE_URL, USERNAME, PASSWORD, SECURITY)
     try:
         lab.run()
     except Exception as e:
