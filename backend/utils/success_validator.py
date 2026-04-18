@@ -21,12 +21,13 @@ class SuccessValidator:
         # sqlmap (official data/xml/errors.xml) exhaustive signatures for MySQL ONLY
         self.db_errors = {
             "MySQL": [
-                r"SQL syntax.*MySQL", 
+                r"SQL syntax.*(?:MySQL|MariaDB)", 
                 r"Warning.*mysql_.*", 
                 r"valid MySQL result",
                 r"MySqlClient\.", 
                 r"com\.mysql\.jdbc\.exceptions", 
                 r"MySQL Error",
+                r"MariaDB Error",
                 r"Unknown column '[^']+' in 'where clause'",
                 r"Table '[^']+' doesn't exist", 
                 r"Column count doesn't match value count at row \d+",
@@ -101,10 +102,29 @@ class SuccessValidator:
                     if sig.lower() not in payload_lower:
                         return 0.95, "ERROR_SUCCESS_DATA_LEAK"
             
-            # DIAGNOSTIC SUCCESS: Column mismatch, Order By, or Unknown Column discovery signal
+            # DIAGNOSTIC SUCCESS: Column mismatch or Order By discovery signal
             low_err = error_msg.lower()
-            if "different number of columns" in low_err or "order clause" in low_err or "unknown column" in low_err:
-                return 0.85, "DIAGNOSTIC_SUCCESS_SIGNAL"
+            if "different number of columns" in low_err:
+                return 0.85, "SIGNAL_COLUMN_MISMATCH"
+            
+            if "order clause" in low_err:
+                return 0.85, "SIGNAL_ORDER_BY_LIMIT"
+                
+            if "unknown column" in low_err:
+                # Capture the column name in the error (usually inside '...')
+                match = re.search(r"unknown column '([^']*)'", low_err)
+                if match:
+                    discovered_col = match.group(1).lower()
+                    # If the "unknown column" is just our payload reflecting back, it's a FAIL.
+                    if discovered_col in payload_lower:
+                        return 0.2, "SQL_SYNTAX_ERROR_SELF_INDUCED"
+                    else:
+                        # We actually leaked a real column name from the schema! High value.
+                        return 0.85, "SIGNAL_LEAKED_COLUMN"
+                # If we couldn't parse the column but it says unknown column, it's still interesting 
+                # but only if not clearly self-induced via simpler check
+                if not any(p_part in low_err for p_part in payload_lower.split() if len(p_part) > 3):
+                    return 0.85, "SIGNAL_UNKNOWN_COLUMN_GENERIC"
 
             return 0.2, "SQL_SYNTAX_ERROR"
 
