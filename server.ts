@@ -502,6 +502,50 @@ async function startServer() {
     }
   });
 
+  // NEW: Dedicated route for the Second Lab (Extraction Specialist)
+  app.get("/api/run-exfiltration-lab", async (req, res) => {
+    try {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+      
+      const pythonProcess = spawn("python3", [path.join(__dirname, "backend", "run_exfiltration_lab.py")]);
+
+      pythonProcess.on("error", (err) => {
+        console.error("Failed to start exfiltration lab:", err);
+        if (!res.writableEnded) {
+          res.write(`[ERROR] Failed to start Extractor Lab: ${err.message}\n`);
+          res.end();
+        }
+      });
+
+      pythonProcess.stdout.on("data", (data) => {
+        if (!res.writableEnded) res.write(data);
+      });
+
+      pythonProcess.stderr.on("data", (data) => {
+        if (!res.writableEnded) res.write(`[ERROR] ${data}`);
+      });
+
+      pythonProcess.on("close", (code) => {
+        if (!res.writableEnded) {
+          res.write(`\n[EXTRACTOR LAB COMPLETED WITH CODE ${code}]\n`);
+          res.end();
+        }
+      });
+
+      req.on("close", () => {
+        if (pythonProcess.exitCode === null) {
+          pythonProcess.kill("SIGTERM");
+        }
+      });
+    } catch (err: any) {
+      if (!res.writableEnded) {
+        res.status(500).write(`[CRITICAL ERROR] ${err.message}\n`);
+        res.end();
+      }
+    }
+  });
+
   // API 404 handler - MUST be after all other API routes
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `Route ${req.method} ${req.path} not found` });
