@@ -90,8 +90,22 @@ class SuccessValidator:
             if ratio > 0.98:
                 return 0.2, "NO_DATA_VARIATION"
 
-        # 0. SENSITIVE DATA DETECTION (Focus on Passwords)
-        if re.search(self.hash_pattern, response_text) or any(re.search(sig, low_body) for sig in self.password_signatures):
+        # 0. SENSITIVE DATA DETECTION (Focus on Passwords and NEW reflecting data)
+        # We only care if these signatures appear and WERE NOT already in the baseline
+        baseline_text = baseline.get('text', '').lower() if baseline else ""
+        
+        found_sensitive = False
+        if re.search(self.hash_pattern, response_text):
+            found_sensitive = True
+        else:
+            for sig in self.password_signatures:
+                # Check if it exists in response but NOT in baseline (or count increased)
+                if re.search(sig, low_body):
+                    if not re.search(sig, baseline_text) or response_text.lower().count(sig.lower()) > baseline_text.count(sig.lower()):
+                        found_sensitive = True
+                        break
+        
+        if found_sensitive:
             return 1.0, "EXFILTRATION_SENSITIVE"
 
         # 0.1 UNION REFLECTION DETECTION (Context-Aware Bridgehead)

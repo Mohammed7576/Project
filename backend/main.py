@@ -68,7 +68,20 @@ def run_prometheus():
             "1' AND 1=1#", "1' AND SLEEP(5)#"
         ])
 
-    island = IslandManager(client, base_payloads, exp_manager, population_size=pop_size, context=inj_type, disable_strings=disable_quotes)
+    # المرحلة ٤: التقاط "الخط الأساسي" (Baseline)
+    # نستخدم رقم "1" كمرجع لأنه يعيد بيانات الأدمن بشكل شرعي، وذلك لمنع النتائج الكاذبة.
+    print("[*] Capturing Baseline (Normal request for '1')...", flush=True)
+    baseline_response = client.send_request("1")
+
+    island = IslandManager(
+        client, 
+        base_payloads, 
+        exp_manager, 
+        population_size=pop_size, 
+        context=inj_type, 
+        disable_strings=disable_quotes,
+        baseline=baseline_response
+    )
     
     start_gen = island.current_gen
     max_generations = start_gen + max_gens

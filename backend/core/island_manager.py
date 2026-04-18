@@ -9,8 +9,9 @@ from core.error_refiner import SQLErrorRefiner
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None):
         self.client = client
+        self.baseline = baseline
         self.exp_manager = exp_manager
         self.base_seeds = base_payloads
         self.num_islands = num_islands
@@ -239,7 +240,7 @@ class IslandManager:
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
-            score, status = self.validator.validate(response['text'], response['status'], payload=payload_str)
+            score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, baseline=self.baseline)
             
             # 1.2 Combat Genetic Drift
             if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
