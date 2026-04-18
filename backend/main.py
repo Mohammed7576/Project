@@ -12,17 +12,6 @@ from core.island_manager import IslandManager
 from core.context_discoverer import ContextDiscoverer
 from utils.data_extractor import DataExtractor
 
-def detect_injection_type(client, target_security="medium"):
-    if target_security == "low":
-        print("[*] Security level is LOW. Enabling full Context Discovery...", flush=True)
-        discoverer = ContextDiscoverer(client, disable_strings=False)
-        discoverer.discover()
-        return {"context": discoverer.detected_context, "db_type": "MySQL"}
-    
-    print("[*] Fingerprinting target injection type... [RESTRICTED MODE]", flush=True)
-    # Return a generic quoteless fallback context immediately without sending ANY probes if not low.
-    return {"context": "QUOTELESS_STRING", "db_type": "MySQL"}
-
 def run_prometheus():
     print("\n" + "="*50, flush=True)
     print("--- [ القيادة والسيطرة: وحدة الهجوم Initialized ] ---", flush=True)
@@ -34,21 +23,24 @@ def run_prometheus():
     
     target_user = os.getenv("TARGET_USER", "admin")
     target_pass = os.getenv("TARGET_PASS", "password")
-    target_security = os.getenv("TARGET_SECURITY", "medium")
+    
+    # Force medium security as requested by user workflow
+    target_security = "medium" 
     
     pop_size = int(os.getenv("POPULATION_SIZE", "12"))
     max_gens = int(os.getenv("MAX_GENERATIONS", "30"))
 
+    # المرحلة 1 و 2: تسجيل الدخول وضبط الحماية
     if not client.setup_dvwa(username=target_user, password=target_pass, security_level=target_security):
         print("[!] Failed to establish session.", flush=True)
         return
 
-    discovery_result = detect_injection_type(client, target_security=target_security)
-    inj_type = discovery_result.get("context", "GENERIC")
-    db_type = discovery_result.get("db_type", "GENERIC")
+    # المرحلة 3: التوجه للحقن (تعيين الإعدادات مباشرة بدون استكشاف)
+    inj_type = "QUOTELESS_STRING" # Default for Medium
+    db_type = "MySQL"
+    disable_quotes = True 
     
-    # Global flag based on security level
-    disable_quotes = (target_security != "low")
+    print(f"[*] Targeting SQL Injection with Direct POST Mode (Security: {target_security})", flush=True)
     
     # Targets Persistence
     exp_manager.save_target_profile(client.base_url, db_type=db_type)
