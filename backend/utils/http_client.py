@@ -6,6 +6,11 @@ class HTTPClient:
     def __init__(self, base_url="http://localhost/"):
         self.base_url = base_url.rstrip('/') + '/'
         self.session = requests.Session()
+        
+        # Guard against base_url being a specific file
+        if "login.php" in self.base_url:
+            self.base_url = self.base_url.replace("login.php", "").rstrip('/') + '/'
+
         self.login_url = f"{self.base_url}login.php"
         self.security_url = f"{self.base_url}security.php"
         self.injection_url = f"{self.base_url}vulnerabilities/sqli/"

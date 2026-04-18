@@ -28,7 +28,7 @@ class SuccessValidator:
                 r"com\.mysql\.jdbc\.exceptions", 
                 r"MySQL Error",
                 r"MariaDB Error",
-                r"Unknown column '[^']+' in 'where clause'",
+                r"Unknown column '[^']+' in '(?:where|order|group) clause'",
                 r"Table '[^']+' doesn't exist", 
                 r"Column count doesn't match value count at row \d+",
                 r"The used SELECT statements have a different number of columns",
