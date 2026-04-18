@@ -88,6 +88,29 @@ class SuccessValidator:
         if re.search(self.hash_pattern, response_text) or any(re.search(sig, low_body) for sig in self.password_signatures):
             return 1.0, "EXFILTRATION_SENSITIVE"
 
+        # 0.1 UNION REFLECTION DETECTION (Context-Aware Bridgehead)
+        if payload and "UNION" in payload_upper and "SELECT" in payload_upper:
+            # Extract numbers used in SELECT (e.g., 1, 2 from UNION SELECT 1,2)
+            scouts = re.findall(r"(?<=,|^|\s)(\d+)(?=,|$|\s)", payload)
+            scouts = [s for s in scouts if len(s) < 3] # Only focus on small scout numbers
+            
+            if scouts:
+                matches = 0
+                for s in scouts[:3]: # Check the first 3 columns
+                    # Comprehensive Check: Number must appear after a label or inside specific tags (pre, td, div, span)
+                    patterns = [
+                        rf"(?:[:=|>])\s*{s}\s*(?:<|$)",  # After :, =, or > and followed by < or end
+                        rf"<(pre|td|span|div)[^>]*>\s*{s}\s*</\1>", # Inside specific tags
+                        rf"\b{s}\b(?=\s*<br)",           # Specifically for <br /> trailing reflection
+                        rf">\s*{s}\s*<"                  # Pure tag content reflection
+                    ]
+                    if any(re.search(p, response_text, re.IGNORECASE) for p in patterns):
+                        matches += 1
+                
+                if matches >= 1:
+                    # If we see at least one reflected column in a safe context
+                    return 0.98, "UNION_REFLECTION_VERIFIED"
+
         # 1. MASS DUMP DETECTION (Highest Priority for '1 OR true')
         # If we see many occurrences of data signatures, it's a successful dump
         sig_matches = sum(1 for sig in self.basic_signatures if response_text.count(sig) > 2)
