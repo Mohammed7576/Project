@@ -18,6 +18,8 @@ class ExperienceManager:
                     status TEXT,
                     parent_payload TEXT,
                     island_id INTEGER DEFAULT 1,
+                    generation_num INTEGER DEFAULT 1,
+                    error_msg TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -26,6 +28,20 @@ class ExperienceManager:
                 cursor.execute('SELECT island_id FROM experience LIMIT 1')
             except sqlite3.OperationalError:
                 cursor.execute('ALTER TABLE experience ADD COLUMN island_id INTEGER DEFAULT 1')
+                conn.commit()
+            
+            # Migration: Ensure generation_num exists
+            try:
+                cursor.execute('SELECT generation_num FROM experience LIMIT 1')
+            except sqlite3.OperationalError:
+                cursor.execute('ALTER TABLE experience ADD COLUMN generation_num INTEGER DEFAULT 1')
+                conn.commit()
+
+            # Migration: Ensure error_msg exists
+            try:
+                cursor.execute('SELECT error_msg FROM experience LIMIT 1')
+            except sqlite3.OperationalError:
+                cursor.execute('ALTER TABLE experience ADD COLUMN error_msg TEXT')
                 conn.commit()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS exploits (
@@ -222,14 +238,14 @@ class ExperienceManager:
             print(f"[!] Database Error (Get Hint): {e}")
             return None
 
-    def save_attempt(self, payload, score, status, parent_payload=None, island_id=1):
+    def save_attempt(self, payload, score, status, parent_payload=None, island_id=1, generation_num=1, error_msg=None):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (payload, score, status, parent_payload, island_id))
+                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg))
             conn.commit()
             conn.close()
         except Exception as e:

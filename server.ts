@@ -249,10 +249,10 @@ async function startServer() {
       // Try to select island_id, fallback to 1 if column doesn't exist yet
       let rows: any[] = [];
       try {
-        const stmt = db.prepare("SELECT payload, score, island_id FROM experience ORDER BY timestamp DESC LIMIT 100");
+        const stmt = db.prepare("SELECT payload, score, island_id, generation_num FROM experience ORDER BY timestamp DESC LIMIT 100");
         rows = stmt.all();
       } catch (e) {
-        const stmt = db.prepare("SELECT payload, score, 1 as island_id FROM experience ORDER BY timestamp DESC LIMIT 100");
+        const stmt = db.prepare("SELECT payload, score, 1 as island_id, 1 as generation_num FROM experience ORDER BY timestamp DESC LIMIT 100");
         rows = stmt.all();
       }
       
@@ -270,6 +270,7 @@ async function startServer() {
           y: row.score * 100, // Success Rate (0-100)
           z: Math.max(Math.min(payloadStr.length, 200), 20), // Size (Payload length, clamped for visual)
           island: row.island_id || 1, // Default to 1 if 0
+          generation: row.generation_num || 1
         };
       });
       
@@ -449,72 +450,60 @@ async function startServer() {
     }
   });
 
-  // Enhanced Strategic Metrics for detailed logs
+  // Enhanced Strategic Metrics grouped by 5 generations
   app.get("/api/strategic-metrics", (req, res) => {
     try {
-      const populationSize = 25; 
-      const limit = 50 * populationSize;
-      
       const stmt = db.prepare(`
         SELECT 
-          score,
-          status,
-          island_id,
-          timestamp
+          ((generation_num - 1) / 5) + 1 as group_id,
+          AVG(score) as avgFitness,
+          SUM(CASE WHEN score >= 0.8 THEN 1 ELSE 0 END) as success,
+          SUM(CASE WHEN status = 'PREDICTIVE_BLOCKED' THEN 1 ELSE 0 END) as predictive,
+          SUM(CASE WHEN score <= 0.1 OR status = 'WAF_BLOCKED' THEN 1 ELSE 0 END) as blocked,
+          COUNT(*) as total,
+          MIN(timestamp) as timestamp
         FROM experience 
-        ORDER BY timestamp ASC 
-        LIMIT ?
+        GROUP BY group_id
+        ORDER BY group_id ASC
       `);
-      const rawData = stmt.all(limit);
+      const groupData = stmt.all();
       
-      const generations: any[] = [];
-      for (let i = 0; i < rawData.length; i += populationSize) {
-        const generationSlice = rawData.slice(i, i + populationSize);
-        if (generationSlice.length === 0) break;
-        
-        const genNum = Math.floor(i / populationSize) + 1;
-        
-        // Response Code Mapping (Exact matching for logs)
-        const counts = { 'success': 0, 'blocked': 0, 'error': 0, 'predictive': 0 };
-        generationSlice.forEach(row => {
-          if (row.score >= 0.8) counts['success']++;
-          else if (row.status === 'PREDICTIVE_BLOCKED') counts['predictive']++;
-          else if (row.score <= 0.1 || row.status === 'WAF_BLOCKED') counts['blocked']++;
-          else counts['error']++;
+      const islandStmt = db.prepare(`
+        SELECT 
+          ((generation_num - 1) / 5) + 1 as group_id,
+          island_id,
+          AVG(score) as island_avg
+        FROM experience
+        GROUP BY group_id, island_id
+      `);
+      const islandData = islandStmt.all();
+      
+      const generations = groupData.map(group => {
+        const islands: any = { island1: 0, island2: 0, island3: 0 };
+        islandData.filter(i => i.group_id === group.group_id).forEach(i => {
+          islands[`island${i.island_id || 1}`] = i.island_avg * 100;
         });
         
-        const islandFitness = { island1: 0, island2: 0, island3: 0 };
-        const islandCounts = { island1: 0, island2: 0, island3: 0 };
-        
-        generationSlice.forEach(row => {
-          const key = `island${row.island_id || 1}` as keyof typeof islandFitness;
-          islandFitness[key] += row.score;
-          islandCounts[key]++;
-        });
-        
-        generations.push({
-          generation: genNum,
-          timestamp: generationSlice[0].timestamp,
+        return {
+          generation: group.group_id,
+          label: `GEN ${(group.group_id - 1) * 5 + 1}-${group.group_id * 5}`,
+          timestamp: group.timestamp,
           counts: {
-            '200': counts.success,
-            '403': counts.blocked,
-            '500': counts.error,
-            'predictive': counts.predictive
+            '200': group.success,
+            '403': group.blocked,
+            '500': group.total - (group.success + group.blocked + group.predictive),
+            'predictive': group.predictive
           },
-          avgFitness: generationSlice.reduce((acc, r) => acc + r.score, 0) / generationSlice.length,
+          avgFitness: group.avgFitness,
           codes: {
-            '200': (counts.success / generationSlice.length) * 100,
-            '403': (counts.blocked / generationSlice.length) * 100,
-            '500': (counts.error / generationSlice.length) * 100,
-            'predictive': (counts.predictive / generationSlice.length) * 100
+            '200': (group.success / group.total) * 100,
+            '403': (group.blocked / group.total) * 100,
+            '500': ((group.total - (group.success + group.blocked + group.predictive)) / group.total) * 100,
+            'predictive': (group.predictive / group.total) * 100
           },
-          islands: {
-            island1: islandCounts.island1 > 0 ? (islandFitness.island1 / islandCounts.island1) * 100 : 0,
-            island2: islandCounts.island2 > 0 ? (islandFitness.island2 / islandCounts.island2) * 100 : 0,
-            island3: islandCounts.island3 > 0 ? (islandFitness.island3 / islandCounts.island3) * 100 : 0
-          }
-        });
-      }
+          islands
+        };
+      });
       
       res.json(generations);
     } catch (err: any) {
@@ -551,6 +540,17 @@ async function startServer() {
           formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
         }
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // NEW: SQL Errors list
+  app.get("/api/sql-errors", (req, res) => {
+    try {
+      const stmt = db.prepare("SELECT payload, error_msg, timestamp FROM experience WHERE error_msg IS NOT NULL AND error_msg != '' ORDER BY timestamp DESC LIMIT 50");
+      const rows = stmt.all();
+      res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

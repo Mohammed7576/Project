@@ -276,7 +276,7 @@ class IslandManager:
             
             self.session_tested.add(payload_str)
             mutator.report_success(payload_str, score)
-            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'])
+            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg)
             scored_population.append((genome, score, error_msg))
             
             if score > max_score: max_score = score

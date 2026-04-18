@@ -29,6 +29,10 @@ class ASTMutator:
         }
         # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
+        # Priority Boost: Union and Column Discovery (Strategic User Request)
+        self.strategy_weights["union_balance"] = 5.0
+        self.strategy_weights["column_discovery"] = 5.0
+        
         # Gene Credit Assignment: Track reputation of each keyword
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
         self.last_strategy_used = None
