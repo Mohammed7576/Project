@@ -7,6 +7,10 @@ class SuccessValidator:
     def __init__(self):
         # Signatures that indicate reflected data (Union/Error outputs)
         self.basic_signatures = ["First name:", "Surname:", "ID:", "admin", "gordonb", "1337"]
+        self.password_signatures = [
+            r"password", r"passwd", r"key", r"secret", r"hash", r"token", 
+            r"credential", r"login_password", r"user_password"
+        ]
         self.hash_pattern = r"[a-f0-9]{32}"
         self.schema_signatures = [
             r"table_name", r"column_name", r"information_schema", r"schema_name",
@@ -66,11 +70,13 @@ class SuccessValidator:
         """
         Synthesized sqlmap-style validation core (lib/core/check.py).
         Assessment order:
-        1. WAF Identification (Status/Headers/Body)
-        2. Error-based (XML Patterns)
-        3. UNION-based (Content reflection)
-        4. Boolean-based (Ratio analysis)
-        5. Time-based (Delay threshold)
+        0. PASSWORDS & HASHES (Critical Objective)
+        1. MASS DUMP DETECTION (Highest Priority for '1 OR true')
+        2. WAF Identification (Status/Headers/Body)
+        3. Error-based (XML Patterns)
+        4. UNION-based (Content reflection)
+        5. Boolean-based (Ratio analysis)
+        6. Time-based (Delay threshold)
         """
         if not response_text:
             return 0.0, "CONNECTION_ERROR"
@@ -78,23 +84,37 @@ class SuccessValidator:
         low_body = response_text.lower()
         payload_upper = payload.upper() if payload else ""
 
-        # 1. WAF/IPS Detection (sqlmap logic)
+        # 0. SENSITIVE DATA DETECTION (Focus on Passwords)
+        if re.search(self.hash_pattern, response_text) or any(re.search(sig, low_body) for sig in self.password_signatures):
+            return 1.0, "EXFILTRATION_SENSITIVE"
+
+        # 1. MASS DUMP DETECTION (Highest Priority for '1 OR true')
+        # If we see many occurrences of data signatures, it's a successful dump
+        sig_matches = sum(1 for sig in self.basic_signatures if response_text.count(sig) > 2)
+        if sig_matches >= 2 or response_text.count("ID:") > 5:
+            return 1.0, "SUCCESS_MASS_DATA_DUMP"
+
+        # 2. WAF/IPS Detection (sqlmap logic)
         waf_signatures = [
-            r"incident id:", r"support id:", r"rejected by", r"forbidden", 
+            r"incident id:", r"support id:", r"rejected by", 
             r"captcha", r"blocked by administrative rules", r"safedog", r"webknight"
         ]
-        if status_code in [403, 406, 501, 999] or any(re.search(s, low_body) for s in waf_signatures):
+        
+        if (status_code in [403, 406, 501, 999] or any(re.search(s, low_body) for s in waf_signatures)):
+            # Special case: check if we bypassed it but it still returned 200 with data
             return 0.1, "WAF_BLOCKED"
 
-        # 2. ERROR-BASED (sqlmap-style)
+        # 3. ERROR-BASED (The 'admin--' scenario - Treated as a diagnostic failure)
         error_msg = self.get_sql_error(response_text)
         if error_msg:
-            # Check if actual data is leaked inside the error (Partial success)
+            # Check if actual data is leaked inside the error
             if any(re.search(sig, response_text, re.IGNORECASE) for sig in self.schema_signatures):
-                return 0.9, "ERROR_BASED_LEAK"
-            return 0.25, "SQL_ERROR_DETECTED"
+                return 0.95, "ERROR_SUCCESS_DATA_LEAK"
+            
+            # Simple SQL error without data exfiltration is a failure/scout info
+            return 0.2, "SQL_SYNTAX_ERROR" # Lowered significantly from 0.8
 
-        # 3. CONTENT-BASED (UNION/DATA LEAK)
+        # 4. CONTENT-BASED (UNION/DATA LEAK)
         if re.search(self.hash_pattern, response_text):
             return 1.0, "EXFILTRATION_FULL"
             
