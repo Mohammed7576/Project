@@ -63,6 +63,7 @@ const formatLogLine = (log: string) => {
 };
 
 export default function Sandbox() {
+  console.log("[SANDBOX] Attempting to use AttackContext...");
   const {
     url, setUrl,
     username, setUsername,

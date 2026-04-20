@@ -6,6 +6,7 @@ import { AttackProvider } from './context/AttackContext.tsx';
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
+  console.log("[MAIN] Rendering root with AttackProvider...");
   createRoot(rootElement).render(
     <StrictMode>
       <AttackProvider>

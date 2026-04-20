@@ -27,7 +27,9 @@ interface AttackContextType {
 
 const AttackContext = createContext<AttackContextType | undefined>(undefined);
 
+console.log("[CONTEXT] Initializing AttackProvider...");
 export function AttackProvider({ children }: { children: React.ReactNode }) {
+  console.log("[CONTEXT] AttackProvider mounting...");
   const [url, setUrl] = useState('http://localhost/');
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('password');
@@ -184,6 +186,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
 export function useAttack() {
   const context = useContext(AttackContext);
   if (context === undefined) {
+    console.error("[CONTEXT] useAttack called OUTSIDE of AttackProvider!");
     throw new Error('useAttack must be used within an AttackProvider');
   }
   return context;

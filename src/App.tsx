@@ -8,6 +8,7 @@ import WAFAnalysis from './pages/WAFAnalysis';
 import PlaceholderPage from './pages/PlaceholderPage';
 
 export default function App() {
+  console.log("[APP] Rendering App component...");
   return (
     <BrowserRouter>
       <Routes>
