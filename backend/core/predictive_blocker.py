@@ -12,15 +12,15 @@ class PredictiveBlocker:
         self.db_path = db_path
         self.blocked_patterns = set()
         self.mutator = ASTMutator() # Just for tokenization
-        self._load_patterns()
+        self.load_patterns()
 
     def _get_conn(self):
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         return self._conn
 
-    def _load_patterns(self):
-        """Loads known blocking patterns from the database."""
+    def load_patterns(self):
+        """Loads known blocking patterns from the database into memory."""
         try:
             conn = self._get_conn()
             cursor = conn.cursor()
@@ -99,7 +99,7 @@ class PredictiveBlocker:
                     conn.commit()
                 except Exception as e:
                     print(f"[!] Blocker: Error reducing confidence: {e}")
-        self._load_patterns() # Refresh local set
+        self.load_patterns() # Refresh local set
 
     def _update_rule(self, pattern, confidence_boost):
         try:
@@ -120,6 +120,6 @@ class PredictiveBlocker:
                 print(f"[*] AST Blocker: New semantic blocking pattern learned: {pattern} (Conf: +{initial_conf:.2f})", flush=True)
             
             conn.commit()
-            self._load_patterns()
+            self.load_patterns()
         except Exception as e:
             print(f"[!] Blocker: Error updating rule: {e}")

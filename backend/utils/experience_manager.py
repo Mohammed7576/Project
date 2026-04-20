@@ -18,10 +18,38 @@ class ExperienceManager:
 
     def _get_conn(self):
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            # Added timeout=30 to handle concurrent writes from multiple islands
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
             self._conn.execute('PRAGMA journal_mode = WAL')
             self._conn.execute('PRAGMA synchronous = NORMAL')
+            self._conn.execute('PRAGMA cache_size = -2000') # 2MB cache
         return self._conn
+
+    def prune_vulnerability_data(self, min_score=0.1, max_age_hours=2):
+        """
+        Smart Pruning: Removes low-score, non-parent payloads that are older than max_age_hours.
+        This keeps the database performant and prevents multi-threaded locking issues
+        during long-running evolutions.
+        """
+        try:
+            conn = self._get_conn()
+            cursor = conn.cursor()
+            # Delete payloads that:
+            # 1. Have very low scores
+            # 2. Are NOT parents of any other payload (to maintain lineage)
+            # 3. Are not tagged as REAL_WORLD seeds
+            cursor.execute('''
+                DELETE FROM experience 
+                WHERE score < ? 
+                AND status NOT LIKE 'REAL_WORLD%'
+                AND payload NOT IN (SELECT DISTINCT parent_payload FROM experience WHERE parent_payload IS NOT NULL)
+                AND timestamp < datetime('now', '-' || ? || ' hours')
+            ''', (min_score, max_age_hours))
+            conn.commit()
+            if cursor.rowcount > 0:
+                print(f"[*] Memory: Smart Pruning cleared {cursor.rowcount} redundant records.", flush=True)
+        except Exception as e:
+            print(f"[!] Memory: Pruning error: {e}")
 
     def _init_db(self):
         try:
