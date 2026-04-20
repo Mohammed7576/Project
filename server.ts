@@ -464,7 +464,7 @@ async function startServer() {
       const { targetName } = req.query;
       let query = `
         SELECT 
-          strftime('%Y-%m-%d %H:%M', timestamp) as time,
+          strftime('%Y-%m-%d %H:%M:%S', timestamp) as time,
           COALESCE(AVG(score), 0) as avgScore,
           COUNT(*) as attempts
         FROM experience 

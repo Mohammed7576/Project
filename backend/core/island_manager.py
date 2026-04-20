@@ -239,7 +239,7 @@ class IslandManager:
                     print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
                     score, status = 0.05, "PREDICTIVE_BLOCKED"
                     mutator.report_success(payload_str, score)
-                    self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], target_name=self.target_name) # Record the block
+                    self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], target_name=self.target_name, parent_payload=genome.parent_payload) # Record the block
                     scored_population.append((genome, score, None))
                     continue
 
@@ -279,7 +279,7 @@ class IslandManager:
             
             self.session_tested.add(payload_str)
             mutator.report_success(payload_str, score)
-            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name)
+            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
             scored_population.append((genome, score, error_msg))
             
             if score > max_score: max_score = score
@@ -355,6 +355,7 @@ class IslandManager:
                 
                 # Pick one and mutate slightly
                 child = random.choice([child1, child2])
+                child.parent_payload = p1[0].render() # Track parent (P1 for now)
                 child.mutate(mutator) # Mutation uses AST
                 
                 child_str = child.render()
@@ -369,7 +370,8 @@ class IslandManager:
                     prefix=parent_genome.prefix,
                     core=parent_genome.core,
                     bypasses=list(parent_genome.bypasses),
-                    terminator=parent_genome.terminator
+                    terminator=parent_genome.terminator,
+                    parent_payload=parent_genome.render() # Capture ancestor
                 )
                 child.mutate(mutator) # Deep mutation
                 

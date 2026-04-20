@@ -8,12 +8,13 @@ class PayloadGenome:
     Root: Attack Type (UNION, ERROR, BLIND, etc.)
     Branches: Prefix, Core Logic, Bypass Techniques, Terminator.
     """
-    def __init__(self, attack_type="GENERIC", prefix="", core="", bypasses=None, terminator=""):
+    def __init__(self, attack_type="GENERIC", prefix="", core="", bypasses=None, terminator="", parent_payload=None):
         self.attack_type = attack_type
         self.prefix = prefix
         self.core = core
         self.bypasses = bypasses or []  # List of bypass technique names/objects
         self.terminator = terminator
+        self.parent_payload = parent_payload
         self.grammar = GrammarEngine()
         
     @classmethod
@@ -137,7 +138,8 @@ class PayloadGenome:
             "prefix": self.prefix,
             "core": self.core,
             "bypasses": self.bypasses,
-            "terminator": self.terminator
+            "terminator": self.terminator,
+            "parent_payload": self.parent_payload
         }
 
     @classmethod
@@ -148,5 +150,6 @@ class PayloadGenome:
             prefix=data.get("prefix", ""),
             core=data.get("core", ""),
             bypasses=data.get("bypasses", []),
-            terminator=data.get("terminator", "")
+            terminator=data.get("terminator", ""),
+            parent_payload=data.get("parent_payload")
         )

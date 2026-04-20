@@ -119,6 +119,12 @@ export default function Dashboard() {
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
+    
+    // Auto-select sections if target is provided
+    if (targetName && activeSections.length === 0) {
+      setActiveSections(['OVERVIEW', 'EVOLUTION', 'EXPLOITS', 'SWARM']);
+    }
+    
     return () => clearInterval(interval);
   }, [targetName]);
 
