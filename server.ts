@@ -286,8 +286,10 @@ async function startServer() {
           x: complexity,
           y: row.score * 100, // Success Rate (0-100)
           z: Math.max(Math.min(payloadStr.length, 200), 20), // Size (Payload length, clamped for visual)
-          island: row.island_id || 1, // Default to 1 if 0
-          generation: row.generation_num || 1
+          island_id: row.island_id || 1, 
+          generation: row.generation_num || 1,
+          payload: payloadStr,
+          score: row.score
         };
       });
       
@@ -463,7 +465,7 @@ async function startServer() {
       let query = `
         SELECT 
           strftime('%Y-%m-%d %H:%M', timestamp) as time,
-          AVG(score) as avgScore,
+          COALESCE(AVG(score), 0) as avgScore,
           COUNT(*) as attempts
         FROM experience 
       `;
@@ -499,7 +501,7 @@ async function startServer() {
       const stmt = db.prepare(`
         SELECT 
           ((generation_num - 1) / 5) + 1 as group_id,
-          AVG(score) as avgFitness,
+          COALESCE(AVG(score), 0) as avgFitness,
           SUM(CASE WHEN score >= 0.8 THEN 1 ELSE 0 END) as success,
           SUM(CASE WHEN status = 'PREDICTIVE_BLOCKED' THEN 1 ELSE 0 END) as predictive,
           SUM(CASE WHEN score <= 0.1 OR status = 'WAF_BLOCKED' THEN 1 ELSE 0 END) as blocked,
@@ -545,10 +547,10 @@ async function startServer() {
           },
           avgFitness: group.avgFitness,
           codes: {
-            '200': (group.success / group.total) * 100,
-            '403': (group.blocked / group.total) * 100,
-            '500': ((group.total - (group.success + group.blocked + group.predictive)) / group.total) * 100,
-            'predictive': (group.predictive / group.total) * 100
+            '200': group.total > 0 ? (group.success / group.total) * 100 : 0,
+            '403': group.total > 0 ? (group.blocked / group.total) * 100 : 0,
+            '500': group.total > 0 ? ((group.total - (group.success + group.blocked + group.predictive)) / group.total) * 100 : 0,
+            'predictive': group.total > 0 ? (group.predictive / group.total) * 100 : 0
           },
           islands
         };
@@ -621,35 +623,38 @@ async function startServer() {
     }
   });
 
+  const getLineageTrace = (payload: string) => {
+    const lineage: any[] = [];
+    let currentPayload = payload;
+    
+    while (currentPayload) {
+      const row = db.prepare("SELECT payload, parent_payload, score, status, timestamp FROM experience WHERE payload = ?").get(currentPayload);
+      if (!row) break;
+      lineage.push(row);
+      currentPayload = row.parent_payload;
+      if (lineage.length > 50) break;
+    }
+    return lineage.reverse();
+  };
+
   // NEW: Qualitative Data - Payload Lineage
-  app.get("/api/payload-lineage", async (req, res) => {
+  app.get("/api/payload-lineage", (req, res) => {
     try {
       const { payload } = req.query;
       if (!payload) return res.status(400).json({ error: "Missing payload parameter" });
       
-      const lineage = await axios.get(`http://localhost:3000/api/internal/lineage?payload=${encodeURIComponent(payload as string)}`);
-      res.json(lineage.data);
+      const lineage = getLineageTrace(payload as string);
+      res.json(lineage);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  // Internal route to interact with Python logic via shell or direct DB access
+  // Internal route kept for backward compatibility if needed, but updated to use shared logic
   app.get("/api/internal/lineage", (req, res) => {
     const { payload } = req.query;
     try {
-      const stmt = db.prepare("SELECT * FROM experience WHERE payload = ?");
-      let lineage: any[] = [];
-      let currentPayload = payload as string;
-      
-      while (currentPayload) {
-        const row = db.prepare("SELECT payload, parent_payload, score, status, timestamp FROM experience WHERE payload = ?").get(currentPayload);
-        if (!row) break;
-        lineage.push(row);
-        currentPayload = row.parent_payload;
-        if (lineage.length > 50) break;
-      }
-      res.json(lineage.reverse());
+      res.json(getLineageTrace(payload as string));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

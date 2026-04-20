@@ -341,7 +341,7 @@ export default function Dashboard() {
                     <div className="h-[200px] overflow-y-auto custom-scrollbar pr-2">
                        {radarPoints.length > 0 ? radarPoints.slice(0, 15).map((p, i) => (
                          <div key={i} className="flex justify-between text-[8px] font-mono p-1.5 bg-black/40 rounded-sm border-r-2 border-emerald-500/30 mb-1">
-                           <span className="text-blue-500 opacity-60">岛{p.island_id}</span>
+                           <span className="text-blue-500 opacity-60">جزيرة {p.island_id}</span>
                            <code className="text-slate-400 truncate max-w-[100px]">{p.payload}</code>
                            <span className="text-[#10b981]">{(p.score * 100).toFixed(0)}%</span>
                          </div>
