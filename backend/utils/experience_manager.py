@@ -2,14 +2,30 @@ import sqlite3
 import os
 
 class ExperienceManager:
+    _instance = None
+    _conn = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(ExperienceManager, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, db_path="memory.db"):
-        self.db_path = db_path
-        self._init_db()
+        if not hasattr(self, 'initialized'):
+            self.db_path = db_path
+            self._init_db()
+            self.initialized = True
+
+    def _get_conn(self):
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn.execute('PRAGMA journal_mode = WAL')
+            self._conn.execute('PRAGMA synchronous = NORMAL')
+        return self._conn
 
     def _init_db(self):
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.execute('PRAGMA journal_mode = WAL') # Enable WAL mode
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS experience (
@@ -132,16 +148,15 @@ class ExperienceManager:
                     target_url TEXT,
                     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            ''')
+            ''');
             conn.commit()
-            conn.close()
             self._seed_knowledge() # Seed real-world patterns
         except Exception as e:
             print(f"[!] Error initializing database: {e}")
 
     def save_target_profile(self, target_url, waf_name="UNKNOWN", db_type="GENERIC", target_name="default"):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO targets (name, url) VALUES (?, ?)
@@ -160,30 +175,27 @@ class ExperienceManager:
             cursor.execute('INSERT OR REPLACE INTO last_session (id, target_url) VALUES (1, ?)', (target_url,))
             
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[!] Database Error (Save Profile): {e}")
 
     def save_session_state(self, target_url, state_json):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO session_state (target_url, state_json, timestamp)
                 VALUES (?, ?, CURRENT_TIMESTAMP)
             ''', (target_url, state_json))
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[!] Database Error (Save State): {e}")
 
     def load_session_state(self, target_url):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('SELECT state_json FROM session_state WHERE target_url = ?', (target_url,))
             result = cursor.fetchone()
-            conn.close()
             return result[0] if result else None
         except Exception as e:
             print(f"[!] Database Error (Load State): {e}")
@@ -192,7 +204,7 @@ class ExperienceManager:
     def get_lineage(self, limit=50):
         """Retrieves parent-child relationships for visualization."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT payload, parent_payload, score, status 
@@ -201,7 +213,6 @@ class ExperienceManager:
                 ORDER BY timestamp DESC LIMIT ?
             ''', (limit,))
             results = cursor.fetchall()
-            conn.close()
             return [{"payload": r[0], "parent": r[1], "score": r[2], "status": r[3]} for r in results]
         except Exception as e:
             print(f"[!] Database Error (Lineage): {e}")
@@ -224,7 +235,7 @@ class ExperienceManager:
             ("SLEEP(5) /* or SLEEP(5) or \"*/", "REAL_WORLD_POLYGLOT")
         ]
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             for p, t in payloads:
                 cursor.execute('''
@@ -232,26 +243,24 @@ class ExperienceManager:
                     VALUES (?, ?, ?)
                 ''', (p, 0.85, t))
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[!] Error seeding knowledge: {e}")
 
     def save_hint(self, strategy, target_keyword, suggestion):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO hints (strategy, target_keyword, suggestion)
                 VALUES (?, ?, ?)
             ''', (strategy, target_keyword, suggestion))
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[!] Database Error (Save Hint): {e}")
 
     def get_latest_hint(self):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, strategy, target_keyword, suggestion FROM hints 
@@ -263,13 +272,11 @@ class ExperienceManager:
                 # Mark as consumed
                 cursor.execute('UPDATE hints SET consumed = 1 WHERE id = ?', (result[0],))
                 conn.commit()
-                conn.close()
                 return {
                     "strategy": result[1],
                     "target_keyword": result[2],
                     "suggestion": result[3]
                 }
-            conn.close()
             return None
         except Exception as e:
             print(f"[!] Database Error (Get Hint): {e}")
@@ -277,37 +284,34 @@ class ExperienceManager:
 
     def save_attempt(self, payload, score, status, parent_payload=None, island_id=1, generation_num=1, error_msg=None, target_name="default"):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[!] Database Error (Save): {e}")
 
     def save_exploit(self, payload, exploit_type, target_name="default"):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR IGNORE INTO exploits (payload, type, target_name)
                 VALUES (?, ?, ?)
             ''', (payload, exploit_type, target_name))
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[!] Database Error (Exploit): {e}")
 
     def get_all_exploits(self):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('SELECT payload, type FROM exploits ORDER BY timestamp DESC')
             results = cursor.fetchall()
-            conn.close()
             return results
         except Exception as e:
             print(f"[!] Database Error (Get Exploits): {e}")
@@ -316,7 +320,7 @@ class ExperienceManager:
     def get_golden_payloads(self, limit=5):
         """Retrieves the most successful payloads from previous sessions."""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT payload FROM experience 
@@ -325,7 +329,6 @@ class ExperienceManager:
                 LIMIT ?
             ''', (limit,))
             results = cursor.fetchall()
-            conn.close()
             return [r[0] for r in results]
         except Exception as e:
             print(f"[!] Database Error (Golden): {e}")
@@ -333,7 +336,7 @@ class ExperienceManager:
 
     def save_reputation_history(self, gen_num, reputation_map, target_name="default"):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             for kw, val in reputation_map.items():
                 cursor.execute('''
@@ -341,7 +344,6 @@ class ExperienceManager:
                     VALUES (?, ?, ?, ?)
                 ''', (gen_num, kw, val, target_name))
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"[!] Database Error (Reputation History): {e}")
 
@@ -350,7 +352,7 @@ class ExperienceManager:
         lineage = []
         current = final_payload
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             
             while current:
@@ -368,7 +370,6 @@ class ExperienceManager:
                 current = row[1] # Move to parent
                 if len(lineage) > 50: break # Safety break
                 
-            conn.close()
             return list(reversed(lineage))
         except Exception as e:
             print(f"[!] Database Error (Lineage Retrieval): {e}")
@@ -376,7 +377,7 @@ class ExperienceManager:
 
     def get_reputation_trends(self, limit_gens=30):
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT generation, keyword, reputation 
@@ -385,7 +386,6 @@ class ExperienceManager:
                 ORDER BY generation ASC, keyword ASC
             ''', (limit_gens,))
             results = cursor.fetchall()
-            conn.close()
             
             # Pivot data for charting
             trends = {}
