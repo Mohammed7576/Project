@@ -255,14 +255,22 @@ async function startServer() {
   // API route for Swarm Radar Data
   app.get("/api/swarm-radar", (req, res) => {
     try {
+      const { targetName } = req.query;
+      let whereClause = "";
+      let params: any[] = [];
+      if (targetName) {
+        whereClause = " WHERE target_name = ? ";
+        params.push(targetName);
+      }
+
       // Try to select island_id, fallback to 1 if column doesn't exist yet
       let rows: any[] = [];
       try {
-        const stmt = db.prepare("SELECT payload, score, island_id, generation_num FROM experience ORDER BY timestamp DESC LIMIT 100");
-        rows = stmt.all();
+        const stmt = db.prepare(`SELECT payload, score, island_id, generation_num FROM experience ${whereClause} ORDER BY timestamp DESC LIMIT 100`);
+        rows = stmt.all(...params);
       } catch (e) {
-        const stmt = db.prepare("SELECT payload, score, 1 as island_id, 1 as generation_num FROM experience ORDER BY timestamp DESC LIMIT 100");
-        rows = stmt.all();
+        const stmt = db.prepare(`SELECT payload, score, 1 as island_id, 1 as generation_num FROM experience ${whereClause} ORDER BY timestamp DESC LIMIT 100`);
+        rows = stmt.all(...params);
       }
       
       const radarData = rows.map(row => {
@@ -451,17 +459,26 @@ async function startServer() {
 
   app.get("/api/evolution-stats", (req, res) => {
     try {
-      const stmt = db.prepare(`
+      const { targetName } = req.query;
+      let query = `
         SELECT 
           strftime('%Y-%m-%d %H:%M', timestamp) as time,
           AVG(score) as avgScore,
           COUNT(*) as attempts
         FROM experience 
+      `;
+      let params: any[] = [];
+      if (targetName) {
+        query += " WHERE target_name = ? ";
+        params.push(targetName);
+      }
+      query += `
         GROUP BY time 
         ORDER BY time ASC 
         LIMIT 50
-      `);
-      const rows = stmt.all();
+      `;
+      const stmt = db.prepare(query);
+      const rows = stmt.all(...params);
       res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -471,6 +488,14 @@ async function startServer() {
   // Enhanced Strategic Metrics grouped by 5 generations
   app.get("/api/strategic-metrics", (req, res) => {
     try {
+      const { targetName } = req.query;
+      let whereClause = "";
+      let params: any[] = [];
+      if (targetName) {
+        whereClause = " WHERE target_name = ? ";
+        params.push(targetName);
+      }
+
       const stmt = db.prepare(`
         SELECT 
           ((generation_num - 1) / 5) + 1 as group_id,
@@ -481,10 +506,11 @@ async function startServer() {
           COUNT(*) as total,
           MIN(timestamp) as timestamp
         FROM experience 
+        ${whereClause}
         GROUP BY group_id
         ORDER BY group_id ASC
       `);
-      const groupData = stmt.all();
+      const groupData = stmt.all(...params);
       
       const islandStmt = db.prepare(`
         SELECT 
@@ -492,14 +518,19 @@ async function startServer() {
           island_id,
           AVG(score) as island_avg
         FROM experience
+        ${whereClause}
         GROUP BY group_id, island_id
       `);
-      const islandData = islandStmt.all();
+      const islandData = islandStmt.all(...params);
+      const isZeroIndexed = islandData.some((i: any) => i.island_id === 0);
       
       const generations = groupData.map(group => {
         const islands: any = { island1: 0, island2: 0, island3: 0 };
         islandData.filter(i => i.group_id === group.group_id).forEach(i => {
-          islands[`island${i.island_id || 1}`] = i.island_avg * 100;
+          const displayId = isZeroIndexed ? i.island_id + 1 : i.island_id;
+          if (displayId >= 1 && displayId <= 3) {
+            islands[`island${displayId}`] = i.island_avg * 100;
+          }
         });
         
         return {
@@ -532,16 +563,24 @@ async function startServer() {
   // NEW: Convergence and Blocker Stats
   app.get("/api/convergence-stats", (req, res) => {
     try {
+      const { targetName } = req.query;
+      let whereClause = "";
+      let params: any[] = [];
+      if (targetName) {
+        whereClause = " WHERE target_name = ? ";
+        params.push(targetName);
+      }
+
       // 1. Predictive Blocker Stats
-      const blockerStmt = db.prepare("SELECT COUNT(*) as count FROM experience WHERE status = 'PREDICTIVE_BLOCKED'");
-      const blockedCount = blockerStmt.get().count;
+      const blockerStmt = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} status = 'PREDICTIVE_BLOCKED'`);
+      const blockedCount = blockerStmt.get(...params).count;
 
       // 2. Convergence Time
-      const startTimeStmt = db.prepare("SELECT MIN(timestamp) as time FROM experience");
-      const firstSuccessStmt = db.prepare("SELECT MIN(timestamp) as time FROM experience WHERE score >= 0.8");
+      const startTimeStmt = db.prepare(`SELECT MIN(timestamp) as time FROM experience ${whereClause}`);
+      const firstSuccessStmt = db.prepare(`SELECT MIN(timestamp) as time FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} score >= 0.8`);
       
-      const startTime = startTimeStmt.get().time;
-      const successTime = firstSuccessStmt.get().time;
+      const startTime = startTimeStmt.get(...params).time;
+      const successTime = firstSuccessStmt.get(...params).time;
 
       let convergenceSeconds = 0;
       if (startTime && successTime) {
@@ -566,8 +605,16 @@ async function startServer() {
   // NEW: SQL Errors list
   app.get("/api/sql-errors", (req, res) => {
     try {
-      const stmt = db.prepare("SELECT payload, error_msg, timestamp FROM experience WHERE error_msg IS NOT NULL AND error_msg != '' ORDER BY timestamp DESC LIMIT 50");
-      const rows = stmt.all();
+      const { targetName } = req.query;
+      let query = "SELECT payload, error_msg, timestamp FROM experience WHERE error_msg IS NOT NULL AND error_msg != '' ";
+      let params: any[] = [];
+      if (targetName) {
+        query += " AND target_name = ? ";
+        params.push(targetName);
+      }
+      query += " ORDER BY timestamp DESC LIMIT 50 ";
+      const stmt = db.prepare(query);
+      const rows = stmt.all(...params);
       res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -611,11 +658,15 @@ async function startServer() {
   // NEW: Qualitative Data - Keyword Reputation Map
   app.get("/api/reputation-trends", (req, res) => {
     try {
-      const rows = db.prepare(`
-        SELECT generation, keyword, reputation 
-        FROM reputation_history 
-        ORDER BY generation ASC, keyword ASC
-      `).all();
+      const { targetName } = req.query;
+      let query = "SELECT generation, keyword, reputation FROM reputation_history ";
+      let params: any[] = [];
+      if (targetName) {
+        query += " WHERE target_name = ? ";
+        params.push(targetName);
+      }
+      query += " ORDER BY generation ASC, keyword ASC ";
+      const rows = db.prepare(query).all(...params);
       
       const trends: any = {};
       rows.forEach((row: any) => {
@@ -672,8 +723,16 @@ async function startServer() {
   // API route to get all saved exploits
   app.get("/api/exploits", (req, res) => {
     try {
-      const stmt = db.prepare("SELECT payload, type, timestamp FROM exploits ORDER BY timestamp DESC");
-      const rows = stmt.all();
+      const { targetName } = req.query;
+      let query = "SELECT payload, type, timestamp FROM exploits ";
+      let params: any[] = [];
+      if (targetName) {
+        query += " WHERE target_name = ? ";
+        params.push(targetName);
+      }
+      query += " ORDER BY timestamp DESC ";
+      const stmt = db.prepare(query);
+      const rows = stmt.all(...params);
       res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

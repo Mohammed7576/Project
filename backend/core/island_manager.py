@@ -72,6 +72,7 @@ class IslandManager:
                 print(f"[!] Failed to load state: {e}. Starting fresh.", flush=True)
 
         for i in range(num_islands):
+            island_id = i + 1
             is_quoteless = (context == "QUOTELESS_STRING")
             # If it's quoteless, we still treat the inner context as essentially string-breaking, but with backslashes
             actual_context = "SINGLE_QUOTE" if is_quoteless else context
@@ -82,25 +83,26 @@ class IslandManager:
             # 1. Context-Aware Initialization
             if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":
                 mutator.strategy_weights["context_aware"] *= 3.0
-                print(f"[*] Island {i}: Optimizing for String contexts.", flush=True)
+                print(f"[*] Island {island_id}: Optimizing for String contexts.", flush=True)
             elif context == "DOUBLE_QUOTE":
                 mutator.strategy_weights["context_aware"] *= 3.0
-                print(f"[*] Island {i}: Optimizing for DOUBLE_QUOTE context.", flush=True)
+                print(f"[*] Island {island_id}: Optimizing for DOUBLE_QUOTE context.", flush=True)
             elif context == "NUMERIC":
                 mutator.strategy_weights["logical_alts"] *= 3.0
-                print(f"[*] Island {i}: Optimizing for NUMERIC context.", flush=True)
+                print(f"[*] Island {island_id}: Optimizing for NUMERIC context.", flush=True)
 
             # Specialization: Each island has a different initial bias
-            if i == 0: # Structural Island (Expert in Extraction)
+            # Mapping to Dashboard: 1: Inference, 2: Bypass, 3: Extraction
+            if island_id == 3: # Structural Island (Expert in Extraction)
                 mutator.strategy_weights["logical_alts"] *= 2.0
                 mutator.strategy_weights["union_balance"] *= 5.0
                 mutator.strategy_weights["column_discovery"] *= 3.0
                 mutator.strategy_weights["upgrade_to_exfil"] *= 3.0
-            elif i == 1: # Bypass Island (Expert in WAF evasion)
+            elif island_id == 2: # Bypass Island (Expert in WAF evasion)
                 mutator.strategy_weights["inline_comments"] *= 2.0
                 mutator.strategy_weights["junk_fill"] *= 2.0
                 mutator.strategy_weights["micro_fragmentation"] *= 2.0
-            else: # Inference Island (Expert in Blind/Time attacks)
+            else: # island_id == 1: Inference Island (Expert in Blind/Time attacks)
                 mutator.strategy_weights["blind_inference"] *= 5.0
                 mutator.strategy_weights["context_aware"] *= 2.0
                 mutator.strategy_weights["dynamic_structural"] *= 2.0
@@ -114,7 +116,7 @@ class IslandManager:
             pop = [PayloadGenome.from_string(s) for s in pop_strings]
             
             self.islands.append({
-                "id": i,
+                "id": island_id,
                 "population": pop,
                 "mutator": mutator,
                 "stagnation": 0,

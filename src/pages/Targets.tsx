@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Plus, Trash2, ExternalLink, Shield, AlertTriangle } from 'lucide-react';
+import { Database, Plus, Trash2, ExternalLink, Shield, AlertTriangle, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface Target {
   url: string;
@@ -11,6 +12,7 @@ interface Target {
 export default function Targets() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [newUrl, setNewUrl] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchTargets = async () => {
@@ -31,6 +33,10 @@ export default function Targets() {
     };
     fetchTargets();
   }, []);
+
+  const handleTargetClick = (url: string) => {
+    navigate(`/dashboard?target=${encodeURIComponent(url)}`);
+  };
 
   return (
     <div className="space-y-6">
@@ -54,12 +60,12 @@ export default function Targets() {
       <div className="grid grid-cols-1 gap-4">
         {targets.length > 0 ? targets.map((target, i) => (
           <div key={i} className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-4 flex items-center justify-between hover:border-[#10b981]/40 transition-all group">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-lg bg-[#10b981]/10 flex items-center justify-center">
+            <div className="flex items-center gap-4 cursor-pointer" onClick={() => handleTargetClick(target.url)}>
+              <div className="w-10 h-10 rounded-lg bg-[#10b981]/10 flex items-center justify-center group-hover:bg-[#10b981]/20 transition-colors">
                 <Shield className="w-5 h-5 text-[#10b981]" />
               </div>
               <div>
-                <h3 className="text-sm font-mono text-white flex items-center gap-2">
+                <h3 className="text-sm font-mono text-white flex items-center gap-2 group-hover:text-[#10b981] transition-colors">
                   {target.url}
                   <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" />
                 </h3>
@@ -72,11 +78,13 @@ export default function Targets() {
             </div>
             
             <div className="flex items-center gap-4">
-              <div className="text-left">
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20">
-                  نشط
-                </span>
-              </div>
+              <button 
+                onClick={() => handleTargetClick(target.url)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded text-[10px] font-bold bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20 hover:bg-[#10b981]/20 transition-all"
+              >
+                <Eye className="w-3 h-3" />
+                تحليل البيانات
+              </button>
               <button className="p-2 text-slate-500 hover:text-red-500 transition-colors">
                 <Trash2 className="w-4 h-4" />
               </button>
