@@ -6,23 +6,16 @@ sys.path.append(os.path.abspath("/app/applet/backend"))
 from core.mutator_ast import ASTMutator  # Import to use Lexer
 
 class PredictiveBlocker:
-    _conn = None
-
     def __init__(self, db_path="memory.db"):
         self.db_path = db_path
         self.blocked_patterns = set()
         self.mutator = ASTMutator() # Just for tokenization
-        self.load_patterns()
+        self._load_patterns()
 
-    def _get_conn(self):
-        if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
-        return self._conn
-
-    def load_patterns(self):
-        """Loads known blocking patterns from the database into memory."""
+    def _load_patterns(self):
+        """Loads known blocking patterns from the database."""
         try:
-            conn = self._get_conn()
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('CREATE TABLE IF NOT EXISTS blocking_rules (pattern TEXT PRIMARY KEY, confidence REAL)')
             
@@ -35,6 +28,7 @@ class PredictiveBlocker:
 
             cursor.execute('SELECT pattern FROM blocking_rules WHERE confidence > 0.4')
             self.blocked_patterns = {row[0] for row in cursor.fetchall()}
+            conn.close()
         except Exception as e:
             print(f"[!] Blocker: Error loading patterns: {e}")
 
@@ -86,24 +80,27 @@ class PredictiveBlocker:
 
     def report_success(self, payload):
         """Reduces confidence in rules that were present in a successful payload."""
+        to_remove = []
         for pattern in self.blocked_patterns:
             if re.search(pattern, payload, re.IGNORECASE):
                 # Reduce confidence
                 try:
-                    conn = self._get_conn()
+                    conn = sqlite3.connect(self.db_path)
                     cursor = conn.cursor()
                     cursor.execute('UPDATE blocking_rules SET confidence = confidence - 0.2 WHERE pattern = ?', (pattern,))
                     cursor.execute('DELETE FROM blocking_rules WHERE confidence < 0.3')
                     if cursor.rowcount > 0:
                         print(f"[*] Blocker: Rule '{pattern}' confidence reduced/removed due to success.", flush=True)
                     conn.commit()
+                    conn.close()
+                    # We'll reload patterns next time or just remove from set
                 except Exception as e:
                     print(f"[!] Blocker: Error reducing confidence: {e}")
-        self.load_patterns() # Refresh local set
+        self._load_patterns() # Refresh local set
 
     def _update_rule(self, pattern, confidence_boost):
         try:
-            conn = self._get_conn()
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             # Check if exists
             cursor.execute('SELECT confidence FROM blocking_rules WHERE pattern = ?', (pattern,))
@@ -120,6 +117,7 @@ class PredictiveBlocker:
                 print(f"[*] AST Blocker: New semantic blocking pattern learned: {pattern} (Conf: +{initial_conf:.2f})", flush=True)
             
             conn.commit()
-            self.load_patterns()
+            conn.close()
+            self._load_patterns()
         except Exception as e:
             print(f"[!] Blocker: Error updating rule: {e}")

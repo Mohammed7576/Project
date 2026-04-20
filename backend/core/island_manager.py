@@ -135,8 +135,7 @@ class IslandManager:
     def evolve_generation(self, gen_num):
         global_max_score = 0
         
-        # 0. Sync Knowledge: Force reload of predictive patterns and AI hints
-        self.blocker.load_patterns()
+        # 0. Poll for AI Hints from SQLite
         hints = self.exp_manager.get_latest_hint()
         if hints:
             print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
@@ -199,9 +198,6 @@ class IslandManager:
         # 4. Save Global Reputation History (from Primary Island/Average)
         if self.islands:
             self.exp_manager.save_reputation_history(gen_num, self.islands[0]["mutator"].keyword_reputation, target_name=self.target_name)
-
-        # 5. Smart Pruning: Clean up redundant low-score data to keep database fast
-        self.exp_manager.prune_vulnerability_data()
 
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
