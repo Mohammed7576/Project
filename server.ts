@@ -30,13 +30,22 @@ try {
         score REAL,
         status TEXT,
         parent_payload TEXT,
-        island_id INTEGER DEFAULT 0,
+        island_id INTEGER DEFAULT 1,
+        generation_num INTEGER DEFAULT 1,
+        error_msg TEXT,
+        target_name TEXT DEFAULT 'default',
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS exploits (
         payload TEXT PRIMARY KEY,
         type TEXT,
+        target_name TEXT DEFAULT 'default',
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS targets (
+        name TEXT PRIMARY KEY,
+        url TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS hints (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -401,6 +410,15 @@ async function startServer() {
     }
   });
 
+  app.get("/api/targets/list", (req, res) => {
+    try {
+      const rows = db.prepare("SELECT * FROM targets ORDER BY created_at DESC").all();
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/targets", (req, res) => {
     try {
       const stmt = db.prepare("SELECT * FROM target_profiles ORDER BY last_updated DESC");
@@ -666,7 +684,7 @@ async function startServer() {
   // API route to run Prometheus (Python script)
   app.get("/api/run-prometheus", async (req, res) => {
     try {
-      const { url, username, password, security, population, generations } = req.query;
+      const { url, username, password, security, population, generations, targetName } = req.query;
       
       // Basic URL Validation
       try {
@@ -687,7 +705,8 @@ async function startServer() {
           TARGET_PASS: password as string,
           TARGET_SECURITY: security as string,
           POPULATION_SIZE: population as string,
-          MAX_GENERATIONS: generations as string
+          MAX_GENERATIONS: generations as string,
+          TARGET_NAME: (targetName as string) || 'default'
         }
       });
 

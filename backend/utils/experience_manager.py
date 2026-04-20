@@ -20,6 +20,7 @@ class ExperienceManager:
                     island_id INTEGER DEFAULT 1,
                     generation_num INTEGER DEFAULT 1,
                     error_msg TEXT,
+                    target_name TEXT DEFAULT 'default',
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -43,13 +44,29 @@ class ExperienceManager:
             except sqlite3.OperationalError:
                 cursor.execute('ALTER TABLE experience ADD COLUMN error_msg TEXT')
                 conn.commit()
+
+            # Migration: Ensure target_name exists
+            try:
+                cursor.execute('SELECT target_name FROM experience LIMIT 1')
+            except sqlite3.OperationalError:
+                cursor.execute('ALTER TABLE experience ADD COLUMN target_name TEXT DEFAULT "default"')
+                conn.commit()
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS exploits (
                     payload TEXT PRIMARY KEY,
                     type TEXT,
+                    target_name TEXT DEFAULT 'default',
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # Migration: Ensure target_name exists in exploits
+            try:
+                cursor.execute('SELECT target_name FROM exploits LIMIT 1')
+            except sqlite3.OperationalError:
+                cursor.execute('ALTER TABLE exploits ADD COLUMN target_name TEXT DEFAULT "default"')
+                conn.commit()
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS hints (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,14 +102,30 @@ class ExperienceManager:
                 )
             ''')
             cursor.execute('''
+                CREATE TABLE IF NOT EXISTS targets (
+                    name TEXT PRIMARY KEY,
+                    url TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS reputation_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     generation INTEGER,
                     keyword TEXT,
                     reputation REAL,
+                    target_name TEXT DEFAULT 'default',
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Migration: Ensure target_name exists in reputation_history
+            try:
+                cursor.execute('SELECT target_name FROM reputation_history LIMIT 1')
+            except sqlite3.OperationalError:
+                cursor.execute('ALTER TABLE reputation_history ADD COLUMN target_name TEXT DEFAULT "default"')
+                conn.commit()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS last_session (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -106,10 +139,14 @@ class ExperienceManager:
         except Exception as e:
             print(f"[!] Error initializing database: {e}")
 
-    def save_target_profile(self, target_url, waf_name="UNKNOWN", db_type="GENERIC"):
+    def save_target_profile(self, target_url, waf_name="UNKNOWN", db_type="GENERIC", target_name="default"):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO targets (name, url) VALUES (?, ?)
+            ''', (target_name, target_url))
+            
             cursor.execute('''
                 INSERT INTO target_profiles (target_url, waf_name, db_type, last_updated)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
@@ -238,27 +275,27 @@ class ExperienceManager:
             print(f"[!] Database Error (Get Hint): {e}")
             return None
 
-    def save_attempt(self, payload, score, status, parent_payload=None, island_id=1, generation_num=1, error_msg=None):
+    def save_attempt(self, payload, score, status, parent_payload=None, island_id=1, generation_num=1, error_msg=None, target_name="default"):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg))
+                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
             conn.commit()
             conn.close()
         except Exception as e:
             print(f"[!] Database Error (Save): {e}")
 
-    def save_exploit(self, payload, exploit_type):
+    def save_exploit(self, payload, exploit_type, target_name="default"):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR IGNORE INTO exploits (payload, type)
-                VALUES (?, ?)
-            ''', (payload, exploit_type))
+                INSERT OR IGNORE INTO exploits (payload, type, target_name)
+                VALUES (?, ?, ?)
+            ''', (payload, exploit_type, target_name))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -294,15 +331,15 @@ class ExperienceManager:
             print(f"[!] Database Error (Golden): {e}")
             return []
 
-    def save_reputation_history(self, gen_num, reputation_map):
+    def save_reputation_history(self, gen_num, reputation_map, target_name="default"):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             for kw, val in reputation_map.items():
                 cursor.execute('''
-                    INSERT INTO reputation_history (generation, keyword, reputation)
-                    VALUES (?, ?, ?)
-                ''', (gen_num, kw, val))
+                    INSERT INTO reputation_history (generation, keyword, reputation, target_name)
+                    VALUES (?, ?, ?, ?)
+                ''', (gen_num, kw, val, target_name))
             conn.commit()
             conn.close()
         except Exception as e:

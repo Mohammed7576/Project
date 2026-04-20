@@ -70,6 +70,7 @@ export default function Sandbox() {
     security, setSecurity,
     population, setPopulation,
     generations, setGenerations,
+    targetName, setTargetName,
     isAttacking,
     logs,
     learningLogs,
@@ -161,26 +162,27 @@ export default function Sandbox() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
         {/* Row 1: Config & Success */}
-        <div className="lg:col-span-1 flex flex-col space-y-4 h-full">
-          <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 flex flex-col h-full overflow-hidden">
-            <h2 className="text-xs font-mono text-white mb-4 flex items-center shrink-0">
+        <div className="lg:col-span-3 flex flex-col space-y-4 h-full">
+          <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 flex flex-col h-full overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+            <h2 className="text-[10px] font-mono text-white mb-6 flex items-center shrink-0 uppercase tracking-widest border-b border-[#10b981]/10 pb-3">
               <Target className="w-4 h-4 ml-2 text-[#10b981]" />
-              إعدادات المختبر
+              إعدادات المختبر (LAB CONTROLS)
             </h2>
-            <div className="space-y-4 overflow-y-auto pr-1">
+            <div className="space-y-5 overflow-y-auto pr-1 custom-scrollbar">
+              <ConfigInput label="Target Name (Persistence ID)" value={targetName} onChange={setTargetName} icon={Activity} />
               <ConfigInput label="Target URL" value={url} onChange={setUrl} icon={Globe} />
               <div className="grid grid-cols-2 gap-3">
                 <ConfigInput label="User" value={username} onChange={setUsername} />
                 <ConfigInput label="Pass" value={password} onChange={setPassword} type="password" />
               </div>
               <div>
-                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Security</label>
+                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 leading-none">Security Level</label>
                 <select 
                   value={security} 
                   onChange={(e) => setSecurity(e.target.value)}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none font-mono"
+                  className="w-full bg-black/40 border border-[#10b981]/20 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono transition-all"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -189,28 +191,30 @@ export default function Sandbox() {
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <ConfigInput label="Pop" value={population.toString()} onChange={(v) => setPopulation(parseInt(v) || 1)} type="number" />
-                <ConfigInput label="Gens" value={generations.toString()} onChange={(v) => setGenerations(parseInt(v) || 1)} type="number" />
+                <ConfigInput label="Population" value={population.toString()} onChange={(v) => setPopulation(parseInt(v) || 1)} type="number" />
+                <ConfigInput label="Generations" value={generations.toString()} onChange={(v) => setGenerations(parseInt(v) || 1)} type="number" />
               </div>
-              <button 
-                onClick={resetIntelligence}
-                className="w-full bg-slate-800/50 text-slate-400 border border-slate-700 py-1.5 rounded font-mono text-[10px] flex items-center justify-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-all"
-              >
-                <Zap className="w-3 h-3" />
-                إعادة ضبط الذكاء
-              </button>
+              <div className="pt-4 mt-auto">
+                <button 
+                  onClick={resetIntelligence}
+                  className="w-full bg-slate-800/30 text-slate-500 border border-slate-700/50 py-2 rounded font-mono text-[10px] flex items-center justify-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-all uppercase tracking-widest"
+                >
+                  <Zap className="w-3 h-3" />
+                  إعادة ضبط الذكاء
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Learning Logs */}
-        <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+        <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-4 h-full overflow-hidden">
           <ConsoleBox 
             title="سجلات تعلم الوكيل (RL Learning)" 
             icon={Zap} 
             data={learningLogs} 
             ref={learningRef}
-            className="border-yellow-400/20"
+            className="border-yellow-400/10 lg:h-full"
             iconColor="text-yellow-400"
           />
           <ConsoleBox 
@@ -218,16 +222,16 @@ export default function Sandbox() {
             icon={Play} 
             data={successLogs} 
             ref={successRef}
-            className="border-emerald-400/20"
+            className="border-emerald-400/10 lg:h-full"
             iconColor="text-emerald-400"
           />
-          <div className="md:col-span-2">
+          <div className="md:col-span-2 h-full lg:h-[45%]">
             <ConsoleBox 
               title="سجلات النظام والمحاولات (System Engine)" 
               icon={TerminalIcon} 
               data={systemLogs} 
               ref={systemRef}
-              className="border-blue-400/20"
+              className="border-blue-400/10 h-full"
               iconColor="text-blue-400"
             />
           </div>

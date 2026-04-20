@@ -13,6 +13,8 @@ interface AttackContextType {
   setPopulation: (population: number) => void;
   generations: number;
   setGenerations: (generations: number) => void;
+  targetName: string;
+  setTargetName: (name: string) => void;
   isAttacking: boolean;
   logs: string[];
   learningLogs: string[];
@@ -32,6 +34,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const [security, setSecurity] = useState('medium');
   const [population, setPopulation] = useState(12);
   const [generations, setGenerations] = useState(30);
+  const [targetName, setTargetName] = useState('dvwa_lab');
   const [isAttacking, setIsAttacking] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [learningLogs, setLearningLogs] = useState<string[]>([]);
@@ -85,7 +88,8 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       password,
       security,
       population: population.toString(),
-      generations: generations.toString()
+      generations: generations.toString(),
+      targetName
     });
 
     try {
@@ -162,6 +166,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       security, setSecurity,
       population, setPopulation,
       generations, setGenerations,
+      targetName, setTargetName,
       isAttacking,
       logs,
       learningLogs,

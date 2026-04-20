@@ -45,13 +45,29 @@ export default function Sidebar() {
       </nav>
 
       {/* System Status */}
-      <div className="p-4 border-t border-[#10b981]/20">
-        <div className="flex items-center justify-between text-xs font-mono mb-2">
-          <span className="text-slate-400">حالة النظام</span>
-          <span className="text-[#10b981]">متصل</span>
+      <div className="p-4 border-t border-[#10b981]/10 space-y-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[9px] font-mono tracking-widest leading-none">
+            <span className="text-slate-500 uppercase">System Uptime</span>
+            <span className="text-[#10b981]">14:02:11</span>
+          </div>
+          <div className="flex items-center justify-between text-[9px] font-mono tracking-widest leading-none">
+            <span className="text-slate-500 uppercase">Core Load</span>
+            <span className="text-blue-400">12.4%</span>
+          </div>
         </div>
-        <div className="w-full bg-slate-800 rounded-full h-1.5">
-          <div className="bg-[#10b981] h-1.5 rounded-full w-full"></div>
+        
+        <div className="pt-2">
+          <div className="flex items-center justify-between text-xs font-mono mb-2">
+            <span className="text-slate-400">حالة النظام</span>
+            <span className="text-[#10b981] flex items-center gap-1.5 uppercase font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
+              ONLINE
+            </span>
+          </div>
+          <div className="w-full bg-[#10b981]/10 rounded-full h-1 overflow-hidden">
+            <div className="bg-[#10b981] h-full rounded-full w-4/5 shadow-[0_0_8px_#10b981]"></div>
+          </div>
         </div>
       </div>
     </aside>

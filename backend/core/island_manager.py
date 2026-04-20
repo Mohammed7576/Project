@@ -9,10 +9,11 @@ from core.error_refiner import SQLErrorRefiner
 from utils.success_validator import SuccessValidator
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default"):
         self.client = client
         self.baseline = baseline
         self.exp_manager = exp_manager
+        self.target_name = target_name
         self.base_seeds = base_payloads
         self.num_islands = num_islands
         self.island_pop_size = population_size // num_islands
@@ -194,7 +195,7 @@ class IslandManager:
         
         # 4. Save Global Reputation History (from Primary Island/Average)
         if self.islands:
-            self.exp_manager.save_reputation_history(gen_num, self.islands[0]["mutator"].keyword_reputation)
+            self.exp_manager.save_reputation_history(gen_num, self.islands[0]["mutator"].keyword_reputation, target_name=self.target_name)
 
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
@@ -236,7 +237,7 @@ class IslandManager:
                     print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
                     score, status = 0.05, "PREDICTIVE_BLOCKED"
                     mutator.report_success(payload_str, score)
-                    self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id']) # Record the block
+                    self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], target_name=self.target_name) # Record the block
                     scored_population.append((genome, score, None))
                     continue
 
@@ -276,7 +277,7 @@ class IslandManager:
             
             self.session_tested.add(payload_str)
             mutator.report_success(payload_str, score)
-            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg)
+            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name)
             scored_population.append((genome, score, error_msg))
             
             if score > max_score: max_score = score
@@ -286,7 +287,7 @@ class IslandManager:
                 self.discovered_niches.add(f"{status}_{payload_str}")
                 if score >= 0.7 and payload_str not in self.hall_of_fame:
                     self.hall_of_fame.append(payload_str)
-                    self.exp_manager.save_exploit(payload_str, status)
+                    self.exp_manager.save_exploit(payload_str, status, target_name=self.target_name)
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)
