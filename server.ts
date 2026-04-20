@@ -14,12 +14,13 @@ import fs from "fs";
 // Initialize database with error handling
 let db: any;
 try {
-  db = new Database("memory.db");
+  // Added timeout to prevent "database is locked" during concurrent Python writes
+  db = new Database("memory.db", { timeout: 30000 });
   db.pragma('journal_mode = WAL'); // Enable WAL mode for better concurrency
-  console.log("[DB] Database initialized successfully with WAL mode.");
+  console.log("[DB] Database initialized successfully with WAL mode and 30s timeout.");
 } catch (err) {
   console.error("[DB] Failed to initialize database, using in-memory fallback:", err);
-  db = new Database(":memory:");
+  db = new Database(":memory:", { timeout: 30000 });
 }
 
 // Create tables if they don't exist

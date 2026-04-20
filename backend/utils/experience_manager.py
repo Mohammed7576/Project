@@ -313,6 +313,8 @@ class ExperienceManager:
     def save_attempt(self, payload, score, status, parent_payload=None, island_id=1, generation_num=1, error_msg=None, target_name="default"):
         try:
             conn = self._get_conn()
+            # Use IMMEDIATE transaction to prevent deadlocks between writers
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name)
@@ -320,11 +322,15 @@ class ExperienceManager:
             ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
             conn.commit()
         except Exception as e:
+            # Important: rollback if the transaction failed to keep the DB clean
+            try: self._conn.rollback() 
+            except: pass
             print(f"[!] Database Error (Save): {e}")
 
     def save_exploit(self, payload, exploit_type, target_name="default"):
         try:
             conn = self._get_conn()
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR IGNORE INTO exploits (payload, type, target_name)
@@ -332,6 +338,8 @@ class ExperienceManager:
             ''', (payload, exploit_type, target_name))
             conn.commit()
         except Exception as e:
+            try: self._conn.rollback()
+            except: pass
             print(f"[!] Database Error (Exploit): {e}")
 
     def get_all_exploits(self):
