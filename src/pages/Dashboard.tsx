@@ -243,10 +243,10 @@ export default function Dashboard() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.3} />
-                      <XAxis dataKey="time" stroke="#475569" fontSize={10} tickFormatter={(str) => { try { return str.split(' ')[1]; } catch(e) { return str; } }} />
+                      <XAxis dataKey="time" stroke="#475569" fontSize={10} tickFormatter={(str) => { try { return str.split(' ')[1] || str; } catch(e) { return str; } }} />
                       <YAxis stroke="#475569" fontSize={10} domain={[0, 1]} />
                       <Tooltip contentStyle={{ backgroundColor: '#050505', border: '1px solid #10b98133', borderRadius: '4px', fontSize: '10px' }} />
-                      <Area type="monotone" dataKey="avgScore" stroke="#10b981" fillOpacity={1} fill="url(#colorScore)" strokeWidth={3} />
+                      <Area type="monotone" dataKey="avgScore" stroke="#10b981" fillOpacity={1} fill="url(#colorScore)" strokeWidth={3} dot={{ r: 2, fill: '#10b981' }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -333,9 +333,9 @@ export default function Dashboard() {
                           <XAxis dataKey="label" stroke="#475569" fontSize={8} />
                           <YAxis stroke="#475569" fontSize={8} unit="%" domain={[0, 100]} />
                           <Tooltip contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #10b98133', fontSize: '10px' }} />
-                          <Line type="monotone" dataKey="islands.island1" stroke="#10b981" strokeWidth={2} dot={false} name="Inference" />
-                          <Line type="monotone" dataKey="islands.island2" stroke="#3b82f6" strokeWidth={2} dot={false} name="Bypass" />
-                          <Line type="monotone" dataKey="islands.island3" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Extraction" />
+                          <Line type="monotone" dataKey="islands.island1" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} name="Inference" />
+                          <Line type="monotone" dataKey="islands.island2" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} name="Bypass" />
+                          <Line type="monotone" dataKey="islands.island3" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} name="Extraction" />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>

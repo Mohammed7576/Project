@@ -500,7 +500,7 @@ async function startServer() {
 
       const stmt = db.prepare(`
         SELECT 
-          ((generation_num - 1) / 5) + 1 as group_id,
+          generation_num as group_id,
           COALESCE(AVG(score), 0) as avgFitness,
           SUM(CASE WHEN score >= 0.8 THEN 1 ELSE 0 END) as success,
           SUM(CASE WHEN status = 'PREDICTIVE_BLOCKED' THEN 1 ELSE 0 END) as predictive,
@@ -516,7 +516,7 @@ async function startServer() {
       
       const islandStmt = db.prepare(`
         SELECT 
-          ((generation_num - 1) / 5) + 1 as group_id,
+          generation_num as group_id,
           island_id,
           AVG(score) as island_avg
         FROM experience
@@ -537,7 +537,7 @@ async function startServer() {
         
         return {
           generation: group.group_id,
-          label: `GEN ${(group.group_id - 1) * 5 + 1}-${group.group_id * 5}`,
+          label: `GEN ${group.group_id}`,
           timestamp: group.timestamp,
           counts: {
             '200': group.success,

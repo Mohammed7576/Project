@@ -82,6 +82,17 @@ export default function Sandbox() {
     stopAttack
   } = useAttack();
 
+  const [windowVisibility, setWindowVisibility] = React.useState({
+    CONTROLS: true,
+    LEARNING: true,
+    SUCCESS: true,
+    ENGINE: true
+  });
+
+  const toggleWindow = (win: keyof typeof windowVisibility) => {
+    setWindowVisibility(prev => ({ ...prev, [win]: !prev[win] }));
+  };
+
   const learningRef = useRef<VirtuosoHandle>(null);
   const successRef = useRef<VirtuosoHandle>(null);
   const systemRef = useRef<VirtuosoHandle>(null);
@@ -181,82 +192,142 @@ export default function Sandbox() {
         </div>
       </div>
 
+      {/* Lab Window Manager Controls */}
+      <div className="flex flex-wrap items-center gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5 border-dashed">
+        <NavButton 
+          active={windowVisibility.CONTROLS} 
+          onClick={() => toggleWindow('CONTROLS')} 
+          icon={Target} 
+          label="إعدادات المختبر" 
+          subLabel="CONTROLS"
+        />
+        <div className="w-[1px] h-6 bg-white/5 mx-1" />
+        <NavButton 
+          active={windowVisibility.LEARNING} 
+          onClick={() => toggleWindow('LEARNING')} 
+          icon={Zap} 
+          label="سجلات التعلم" 
+          subLabel="LEARNING"
+        />
+        <NavButton 
+          active={windowVisibility.SUCCESS} 
+          onClick={() => toggleWindow('SUCCESS')} 
+          icon={Play} 
+          label="الحمولات الناجحة" 
+          subLabel="SUCCESS"
+        />
+        <NavButton 
+          active={windowVisibility.ENGINE} 
+          onClick={() => toggleWindow('ENGINE')} 
+          icon={TerminalIcon} 
+          label="محرك النظام" 
+          subLabel="ENGINE"
+        />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
         {/* Row 1: Config & Success */}
-        <div className="lg:col-span-3 flex flex-col space-y-4 h-full">
-          <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 flex flex-col h-full overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
-            <h2 className="text-[10px] font-mono text-white mb-6 flex items-center shrink-0 uppercase tracking-widest border-b border-[#10b981]/10 pb-3">
-              <Target className="w-4 h-4 ml-2 text-[#10b981]" />
-              إعدادات المختبر (LAB CONTROLS)
-            </h2>
-            <div className="space-y-5 overflow-y-auto pr-1 custom-scrollbar">
-              <ConfigInput label="Target Name (Persistence ID)" value={targetName} onChange={setTargetName} icon={Activity} />
-              <ConfigInput label="Target URL" value={url} onChange={setUrl} icon={Globe} />
-              <div className="grid grid-cols-2 gap-3">
-                <ConfigInput label="User" value={username} onChange={setUsername} />
-                <ConfigInput label="Pass" value={password} onChange={setPassword} type="password" />
-              </div>
-              <div>
-                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 leading-none">Security Level</label>
-                <select 
-                  value={security} 
-                  onChange={(e) => setSecurity(e.target.value)}
-                  className="w-full bg-black/40 border border-[#10b981]/20 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono transition-all"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="impossible">Impossible</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <ConfigInput label="Population" value={population.toString()} onChange={(v) => setPopulation(parseInt(v) || 1)} type="number" />
-                <ConfigInput label="Generations" value={generations.toString()} onChange={(v) => setGenerations(parseInt(v) || 1)} type="number" />
-              </div>
-              <div className="pt-4 mt-auto">
-                <button 
-                  onClick={resetIntelligence}
-                  className="w-full bg-slate-800/30 text-slate-500 border border-slate-700/50 py-2 rounded font-mono text-[10px] flex items-center justify-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-all uppercase tracking-widest"
-                >
-                  <Zap className="w-3 h-3" />
-                  إعادة ضبط الذكاء
-                </button>
+        {windowVisibility.CONTROLS && (
+          <div className="lg:col-span-3 flex flex-col space-y-4 h-full">
+            <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 flex flex-col h-full overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+              <h2 className="text-[10px] font-mono text-white mb-6 flex items-center shrink-0 uppercase tracking-widest border-b border-[#10b981]/10 pb-3">
+                <Target className="w-4 h-4 ml-2 text-[#10b981]" />
+                إعدادات المختبر (LAB CONTROLS)
+              </h2>
+              <div className="space-y-5 overflow-y-auto pr-1 custom-scrollbar">
+                <ConfigInput label="Target Name (Persistence ID)" value={targetName} onChange={setTargetName} icon={Activity} />
+                <ConfigInput label="Target URL" value={url} onChange={setUrl} icon={Globe} />
+                <div className="grid grid-cols-2 gap-3">
+                  <ConfigInput label="User" value={username} onChange={setUsername} />
+                  <ConfigInput label="Pass" value={password} onChange={setPassword} type="password" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 leading-none">Security Level</label>
+                  <select 
+                    value={security} 
+                    onChange={(e) => setSecurity(e.target.value)}
+                    className="w-full bg-black/40 border border-[#10b981]/20 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono transition-all"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="impossible">Impossible</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <ConfigInput label="Population" value={population.toString()} onChange={(v) => setPopulation(parseInt(v) || 1)} type="number" />
+                  <ConfigInput label="Generations" value={generations.toString()} onChange={(v) => setGenerations(parseInt(v) || 1)} type="number" />
+                </div>
+                <div className="pt-4 mt-auto">
+                  <button 
+                    onClick={resetIntelligence}
+                    className="w-full bg-slate-800/30 text-slate-500 border border-slate-700/50 py-2 rounded font-mono text-[10px] flex items-center justify-center gap-2 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-all uppercase tracking-widest"
+                  >
+                    <Zap className="w-3 h-3" />
+                    إعادة ضبط الذكاء
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Learning Logs */}
-        <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-4 h-full overflow-hidden">
-          <ConsoleBox 
-            title="سجلات تعلم الوكيل (RL Learning)" 
-            icon={Zap} 
-            data={learningLogs} 
-            ref={learningRef}
-            className="border-yellow-400/10 lg:h-full"
-            iconColor="text-yellow-400"
-          />
-          <ConsoleBox 
-            title="الحمولات الناجحة (Success Lab)" 
-            icon={Play} 
-            data={successLogs} 
-            ref={successRef}
-            className="border-emerald-400/10 lg:h-full"
-            iconColor="text-emerald-400"
-          />
-          <div className="md:col-span-2 h-full lg:h-[45%]">
+        {/* Console Windows */}
+        <div className={`${windowVisibility.CONTROLS ? 'lg:col-span-9' : 'lg:col-span-12'} grid grid-cols-1 md:grid-cols-2 gap-4 h-full overflow-hidden`}>
+          {windowVisibility.LEARNING && (
             <ConsoleBox 
-              title="سجلات النظام والمحاولات (System Engine)" 
-              icon={TerminalIcon} 
-              data={systemLogs} 
-              ref={systemRef}
-              className="border-blue-400/10 h-full"
-              iconColor="text-blue-400"
+              title="سجلات تعلم الوكيل (RL Learning)" 
+              icon={Zap} 
+              data={learningLogs} 
+              ref={learningRef}
+              className="border-yellow-400/10 lg:h-full"
+              iconColor="text-yellow-400"
             />
-          </div>
+          )}
+          {windowVisibility.SUCCESS && (
+            <ConsoleBox 
+              title="الحمولات الناجحة (Success Lab)" 
+              icon={Play} 
+              data={successLogs} 
+              ref={successRef}
+              className="border-emerald-400/10 lg:h-full"
+              iconColor="text-emerald-400"
+            />
+          )}
+          {windowVisibility.ENGINE && (
+            <div className="md:col-span-2 h-full lg:h-[45%]">
+              <ConsoleBox 
+                title="سجلات النظام والمحاولات (System Engine)" 
+                icon={TerminalIcon} 
+                data={systemLogs} 
+                ref={systemRef}
+                className="border-blue-400/10 h-full"
+                iconColor="text-blue-400"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+function NavButton({ active, onClick, icon: Icon, label, subLabel }: any) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-300 group ${
+        active 
+          ? 'bg-[#10b981]/10 border border-[#10b981]/40 text-[#10b981] shadow-[0_0_15px_rgba(16,185,129,0.1)]' 
+          : 'border border-white/5 text-slate-500 hover:bg-white/5 hover:text-slate-300'
+      }`}
+    >
+      <Icon className={`w-4 h-4 transition-transform group-hover:scale-110 ${active ? 'text-[#10b981]' : 'text-slate-600'}`} />
+      <div className="flex flex-col items-start leading-none gap-1">
+        <span className="text-[10px] font-bold tracking-wide">{label}</span>
+        <span className="text-[8px] font-mono opacity-50 uppercase tracking-tighter">{subLabel}</span>
+      </div>
+    </button>
   );
 }
 
