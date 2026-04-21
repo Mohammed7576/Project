@@ -104,9 +104,8 @@ def run_prometheus():
             for payload in new_successes:
                 print(f"\n[!!!] NEW EXPLOIT DISCOVERED: {payload}", flush=True)
                 successful_payloads.add(payload)
-            
-            # We don't stop early anymore. We continue to find MORE and BETTER exploits (like passwords)
-            # as requested by the user.
+        
+        # We don't stop early anymore.
     
     if successful_payloads:
         print("\n" + "*"*60, flush=True)

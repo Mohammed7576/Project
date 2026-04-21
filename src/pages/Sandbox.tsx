@@ -78,9 +78,16 @@ export default function Sandbox() {
     successLogs,
     systemLogs,
     currentGeneration,
+    elapsedTime,
     startAttack,
     stopAttack
   } = useAttack();
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const [windowVisibility, setWindowVisibility] = React.useState({
     CONTROLS: true,
@@ -165,6 +172,15 @@ export default function Sandbox() {
                   </span>
                 </div>
                 <span className="text-[8px] text-slate-600 uppercase tracking-tighter">Current Gen</span>
+              </div>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <Activity className={`w-3 h-3 ${isAttacking ? 'text-[#10b981]' : 'text-slate-600'}`} />
+                  <span className={`text-[10px] font-mono font-bold uppercase tracking-wider ${elapsedTime >= 1200 ? 'text-[#10b981]' : (isAttacking ? 'text-white' : 'text-slate-600')}`}>
+                    {formatTime(elapsedTime)} / 20:00
+                  </span>
+                </div>
+                <span className="text-[8px] text-slate-600 uppercase tracking-tighter">Persistence Timer</span>
               </div>
             </div>
           </div>

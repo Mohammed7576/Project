@@ -826,6 +826,13 @@ async function startServer() {
         }
       });
 
+      // Keep-alive heartbeat to prevent stream timeouts (e.g. for 20min runs)
+      const heartbeat = setInterval(() => {
+        if (!res.writableEnded) {
+          res.write(": keep-alive\n\n");
+        }
+      }, 30000);
+
       pythonProcess.stdout.on("data", (data) => {
         if (!res.writableEnded) res.write(data);
       });
@@ -835,6 +842,7 @@ async function startServer() {
       });
 
       pythonProcess.on("close", (code) => {
+        clearInterval(heartbeat);
         if (!res.writableEnded) {
           res.write(`\n[PROCESS COMPLETED WITH CODE ${code}]\n`);
           res.end();

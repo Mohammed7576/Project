@@ -21,6 +21,7 @@ interface AttackContextType {
   successLogs: string[];
   systemLogs: string[];
   currentGeneration: number;
+  elapsedTime: number;
   startAttack: () => Promise<void>;
   stopAttack: () => void;
 }
@@ -43,8 +44,11 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const [successLogs, setSuccessLogs] = useState<string[]>([]);
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
   const [currentGeneration, setCurrentGeneration] = useState(0);
+  const [elapsedTime, setElapsedTime] = useState(0);
   
   const abortControllerRef = useRef<AbortController | null>(null);
+  const attackStartTimeRef = useRef<number | null>(null);
+  const timerIntervalRef = useRef<any>(null);
 
   useEffect(() => {
     fetch('/api/last-session')
@@ -55,7 +59,18 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       .catch(err => console.error("Failed to load last session", err));
   }, []);
 
-  const startAttack = useCallback(async () => {
+  const stopAttack = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+    setIsAttacking(false);
+    attackStartTimeRef.current = null;
+  }, []);
+
+  const startAttackLoop = useCallback(async (isResume = false) => {
     // Sanitize URL: remove leading slashes and trim whitespace
     let sanitizedUrl = url.trim().replace(/^\/+/, '');
     
@@ -72,14 +87,24 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
 
     const finalUrl = sanitizedUrl.startsWith('http') ? sanitizedUrl : `http://${sanitizedUrl}`;
     
-    if (!finalUrl || isAttacking) return;
-    
-    setIsAttacking(true);
-    setLogs([]);
-    setLearningLogs([]);
-    setSuccessLogs([]);
-    setSystemLogs([]);
-    setCurrentGeneration(0);
+    if (!finalUrl) return;
+
+    if (!isResume) {
+      setIsAttacking(true);
+      setLogs([]);
+      setLearningLogs([]);
+      setSuccessLogs([]);
+      setSystemLogs([]);
+      setCurrentGeneration(0);
+      setElapsedTime(0);
+      attackStartTimeRef.current = Date.now();
+      
+      timerIntervalRef.current = setInterval(() => {
+        if (attackStartTimeRef.current) {
+          setElapsedTime(Math.floor((Date.now() - attackStartTimeRef.current) / 1000));
+        }
+      }, 1000);
+    }
     
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -116,6 +141,8 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
           const lines = chunk.split('\n').filter(line => line.trim() !== '');
           
           lines.forEach(line => {
+            if (line.includes(': keep-alive')) return;
+            
             // Categorization logic
             if (line.includes('[*] AST Blocker') || line.includes('[?] Probing') || line.includes('Discovery Complete')) {
               setLearningLogs(prev => [...prev.slice(-199), line]);
@@ -131,12 +158,27 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
           });
 
           setLogs(prev => {
-            const newLogs = [...prev, ...lines];
-            // Keep only last 500 lines to save memory/CPU
+            const newLogs = [...prev, ...lines.filter(l => !l.includes(': keep-alive'))];
             return newLogs.slice(-500);
           });
         }
       }
+
+      // Persistent Loop logic: Never stop automatically.
+      // Resume indefinitely as long as the user hasn't clicked 'STOP'
+      if (!abortController.signal.aborted) {
+        const elapsed = attackStartTimeRef.current ? (Date.now() - attackStartTimeRef.current) / 1000 : 0;
+        const msg = `[SYSTEM] Cycle completed at ${Math.floor(elapsed/60)}m. Continuous evolution active: Resuming...`;
+        setSystemLogs(prev => [...prev, msg]);
+        
+        // Short delay to allow the server to settle between cycles
+        await new Promise(r => setTimeout(r, 2000));
+        startAttackLoop(true);
+      } else {
+        setIsAttacking(false);
+        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      }
+
     } catch (error: any) {
       if (error.name === 'AbortError') {
         const msg = `[SYSTEM] Attack aborted by user.`;
@@ -147,18 +189,14 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
         setSystemLogs(prev => [...prev, msg]);
         setLogs(prev => [...prev, msg]);
       }
-    } finally {
       setIsAttacking(false);
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    } finally {
       abortControllerRef.current = null;
     }
-  }, [url, username, password, security, population, generations, isAttacking]);
+  }, [url, username, password, security, population, generations, targetName]);
 
-  const stopAttack = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    setIsAttacking(false);
-  }, []);
+  const startAttack = useCallback(() => startAttackLoop(false), [startAttackLoop]);
 
   return (
     <AttackContext.Provider value={{
@@ -175,6 +213,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       successLogs,
       systemLogs,
       currentGeneration,
+      elapsedTime,
       startAttack,
       stopAttack
     }}>

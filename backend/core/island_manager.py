@@ -275,7 +275,7 @@ class IslandManager:
                     status = f"BIASED_{status}"
                     break
 
-            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: {payload_str[:30]}... [{score:.2f} | {status}]", flush=True)
+            print(f"  [{status} | {score*100:.1f}] ... {payload_str[:20]}... {island['id']}:{i+1}/{len(pop)} [{island['id']} Island]", flush=True)
             
             self.session_tested.add(payload_str)
             mutator.report_success(payload_str, score)
