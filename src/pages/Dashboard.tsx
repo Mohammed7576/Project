@@ -6,7 +6,7 @@ import { cn, copyToClipboard } from '../lib/utils';
 
 // Types remain the same...
 interface EvolutionData {
-  time: string;
+  generation: number;
   avgScore: number;
   attempts: number;
 }
@@ -256,11 +256,11 @@ export default function Dashboard() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.3} />
                       <XAxis 
-                        dataKey="time" 
+                        dataKey="generation" 
                         stroke="#475569" 
                         fontSize={10} 
-                        tickFormatter={(str) => { try { return str.split(' ')[1] || str; } catch(e) { return str; } }} 
-                        label={{ value: 'Time (HH:MM:SS)', position: 'insideBottom', offset: -15, fill: '#64748b', fontSize: 10 }}
+                        tickFormatter={(val) => `Gen ${val}`} 
+                        label={{ value: 'رقم الجيل (Generation)', position: 'insideBottom', offset: -15, fill: '#64748b', fontSize: 10 }}
                       />
                       <YAxis 
                         stroke="#475569" 

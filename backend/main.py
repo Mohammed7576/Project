@@ -176,3 +176,8 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n[!] وحدة الهجوم halted by user.", flush=True)
         sys.exit(0)
+    except Exception as e:
+        print(f"\n[CRITICAL_SYSTEM_ERROR] {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

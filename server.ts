@@ -14,9 +14,9 @@ import fs from "fs";
 // Initialize database with error handling
 let db: any;
 try {
-  db = new Database("memory.db");
+  db = new Database("memory.db", { timeout: 10000 });
   db.pragma('journal_mode = WAL'); // Enable WAL mode for better concurrency
-  console.log("[DB] Database initialized successfully with WAL mode.");
+  console.log("[DB] Database initialized successfully with WAL mode and 10s timeout.");
 } catch (err) {
   console.error("[DB] Failed to initialize database, using in-memory fallback:", err);
   db = new Database(":memory:");
@@ -508,7 +508,7 @@ async function startServer() {
       const { targetName } = req.query;
       let query = `
         SELECT 
-          strftime('%Y-%m-%d %H:%M:%S', timestamp) as time,
+          generation_num as generation,
           COALESCE(AVG(score), 0) as avgScore,
           COUNT(*) as attempts
         FROM experience 
@@ -519,8 +519,8 @@ async function startServer() {
         params.push(targetName);
       }
       query += `
-        GROUP BY time 
-        ORDER BY time ASC 
+        GROUP BY generation_num 
+        ORDER BY generation_num ASC 
         LIMIT 50
       `;
       const stmt = db.prepare(query);
@@ -791,6 +791,9 @@ async function startServer() {
   // Catch-all for /api/* to ensure JSON response
   // API route to run Prometheus (Python script)
   app.get("/api/run-prometheus", async (req, res) => {
+    let pythonProcess: any = null;
+    let heartbeat: NodeJS.Timeout;
+
     try {
       const { url, username, password, security, population, generations, targetName } = req.query;
       
@@ -807,7 +810,7 @@ async function startServer() {
       res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for Nginx
       
       // Pass configuration as environment variables to the Python script
-      const pythonProcess = spawn("python3", [path.join(__dirname, "backend", "main.py")], {
+      pythonProcess = spawn("python3", [path.join(__dirname, "backend", "main.py")], {
         env: {
           ...process.env,
           TARGET_URL: url as string,
@@ -816,11 +819,12 @@ async function startServer() {
           TARGET_SECURITY: security as string,
           POPULATION_SIZE: population as string,
           MAX_GENERATIONS: generations as string,
-          TARGET_NAME: (targetName as string) || 'default'
+          TARGET_NAME: (targetName as string) || 'default',
+          PYTHONUNBUFFERED: "1" // Ensure python output is flushed
         }
       });
 
-      pythonProcess.on("error", (err) => {
+      pythonProcess.on("error", (err: any) => {
         console.error("Failed to start python process:", err);
         if (!res.writableEnded) {
           res.write(`[ERROR] Failed to start engine: ${err.message}\n`);
@@ -829,27 +833,21 @@ async function startServer() {
       });
 
       // Keep-alive heartbeat to prevent stream timeouts (e.g. for 20min runs)
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         if (!res.writableEnded) {
           res.write(": keep-alive\n\n");
         }
-      }, 15000);
+      }, 5000); // More frequent heartbeat (5s instead of 15s)
 
-      // Clean up on client disconnect
-      res.on("close", () => {
-        clearInterval(heartbeat);
-        if (pythonProcess) pythonProcess.kill();
-      });
-
-      pythonProcess.stdout.on("data", (data) => {
+      pythonProcess.stdout.on("data", (data: any) => {
         if (!res.writableEnded) res.write(data);
       });
 
-      pythonProcess.stderr.on("data", (data) => {
+      pythonProcess.stderr.on("data", (data: any) => {
         if (!res.writableEnded) res.write(`[ERROR] ${data}`);
       });
 
-      pythonProcess.on("close", (code) => {
+      pythonProcess.on("close", (code: any) => {
         clearInterval(heartbeat);
         if (!res.writableEnded) {
           res.write(`\n[PROCESS COMPLETED WITH CODE ${code}]\n`);
@@ -857,13 +855,18 @@ async function startServer() {
         }
       });
 
-      // Kill the process if the client disconnects
-      req.on("close", () => {
-        if (pythonProcess.exitCode === null) {
-          console.log("[SYSTEM] Client disconnected. Terminating attack process...");
-          pythonProcess.kill("SIGTERM");
-        }
+      // Kill the process if the client disconnects, but with a slight delay
+      // to handle minor network flickers without killing the evolution.
+      res.on("close", () => {
+        clearInterval(heartbeat);
+        setTimeout(() => {
+          if (pythonProcess && pythonProcess.exitCode === null) {
+            console.log("[SYSTEM] Client disconnected and grace period expired. Terminating attack process...");
+            pythonProcess.kill("SIGTERM");
+          }
+        }, 10000); // 10s grace period
       });
+
     } catch (err: any) {
       console.error("Error in run-prometheus route:", err);
       if (!res.writableEnded) {
