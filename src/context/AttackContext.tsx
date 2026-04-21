@@ -184,15 +184,30 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
         const msg = `[SYSTEM] Attack aborted by user.`;
         setSystemLogs(prev => [...prev, msg]);
         setLogs(prev => [...prev, msg]);
+        setIsAttacking(false);
+        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       } else {
         const msg = `[ERROR] Failed to connect to engine: ${error}`;
         setSystemLogs(prev => [...prev, msg]);
         setLogs(prev => [...prev, msg]);
+        
+        // Auto-recovery: If it's a stream error but not an abort, try to resume
+        if (!abortController.signal.aborted) {
+          const recoveryMsg = `[SYSTEM] Connection lost. Attempting auto-recovery in 3s...`;
+          setSystemLogs(prev => [...prev, recoveryMsg]);
+          await new Promise(r => setTimeout(r, 3000));
+          startAttackLoop(true);
+        } else {
+          setIsAttacking(false);
+          if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+        }
       }
-      setIsAttacking(false);
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     } finally {
-      abortControllerRef.current = null;
+      // ONLY clear the ref if it's still ours. 
+      // If a recursive call already replaced it, don't touch it!
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
   }, [url, username, password, security, population, generations, targetName]);
 

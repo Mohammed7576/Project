@@ -803,6 +803,8 @@ async function startServer() {
 
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Transfer-Encoding', 'chunked');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for Nginx
       
       // Pass configuration as environment variables to the Python script
       const pythonProcess = spawn("python3", [path.join(__dirname, "backend", "main.py")], {
@@ -831,7 +833,13 @@ async function startServer() {
         if (!res.writableEnded) {
           res.write(": keep-alive\n\n");
         }
-      }, 30000);
+      }, 15000);
+
+      // Clean up on client disconnect
+      res.on("close", () => {
+        clearInterval(heartbeat);
+        if (pythonProcess) pythonProcess.kill();
+      });
 
       pythonProcess.stdout.on("data", (data) => {
         if (!res.writableEnded) res.write(data);

@@ -94,7 +94,11 @@ def run_prometheus():
 
     for gen in range(start_gen, max_generations):
         print(f"\n[+] Generation {gen + 1}/{max_generations}", flush=True)
-        island.evolve_generation(gen)
+        try:
+            island.evolve_generation(gen)
+        except Exception as e:
+            print(f"  [!] Generation error (skipping): {e}", flush=True)
+            continue
         
         # Awareness: Check if we have new successes
         current_successes = set(island.hall_of_fame)
