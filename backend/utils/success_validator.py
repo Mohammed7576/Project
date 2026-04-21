@@ -176,10 +176,13 @@ class SuccessValidator:
                     # If we see at least one reflected column in a safe context
                     return 0.98, "UNION_REFLECTION_VERIFIED"
 
-        # 1. MASS DUMP DETECTION (Highest Priority for '1 OR true')
+        # 1. MASS DUMP DETECTION (Recalibrated: Boolean mass dump is a victory, but not the END GOAL)
         # If we see many occurrences of data signatures, it's a successful dump
         sig_matches = sum(1 for sig in self.basic_signatures if response_text.count(sig) > 2)
         if sig_matches >= 2 or response_text.count("ID:") > 5:
+            # If it's just a boolean bypass, cap it so more advanced exploration is needed
+            if any(kw in payload_upper for kw in ["OR ", "||", "XOR ", "TRUE", "1=1", "2=2"]):
+                 return 0.55, "SUCCESS_BOOLEAN_MASS_DUMP"
             return 1.0, "SUCCESS_MASS_DATA_DUMP"
 
         # 2. WAF/IPS Detection (sqlmap logic)
