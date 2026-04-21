@@ -1,3 +1,4 @@
+import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon, Activity } from 'lucide-react';
 import { useAttack } from '../context/AttackContext';
