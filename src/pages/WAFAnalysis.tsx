@@ -52,7 +52,7 @@ export default function WAFAnalysis() {
         {/* Rules Table */}
         <div className="lg:col-span-2 bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg overflow-hidden">
           <div className="p-4 border-b border-[#10b981]/20 bg-black/40 flex justify-between items-center">
-            <h2 className="text-sm font-mono text-white">أنماط الحظر المكتشفة حقيقياً</h2>
+            <h2 className="text-sm font-mono text-white">بصمات جدار الحماية (WAF) المستخرجة</h2>
             <div className="flex gap-2">
               <Search className="w-4 h-4 text-slate-500" />
               <Filter className="w-4 h-4 text-slate-500" />
@@ -62,8 +62,8 @@ export default function WAFAnalysis() {
             <table className="w-full text-right font-mono text-xs">
               <thead>
                 <tr className="text-slate-500 border-b border-[#10b981]/10">
-                  <th className="p-4 font-bold">النمط (Pattern)</th>
-                  <th className="p-4 font-bold">الثقة</th>
+                  <th className="p-4 font-bold">نمط البصمة (Pattern)</th>
+                  <th className="p-4 font-bold">ثقة النموذج الذكي</th>
                   <th className="p-4 font-bold">الحالة</th>
                 </tr>
               </thead>
@@ -82,13 +82,13 @@ export default function WAFAnalysis() {
                     <td className="p-4">
                       <span className="text-red-400 flex items-center gap-1">
                         <XCircle className="w-3 h-3" />
-                        محظور
+                        محظور (BLOCKED)
                       </span>
                     </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={3} className="p-12 text-center text-slate-600">لا توجد أنماط محظورة تم اكتشافها حتى الآن.</td>
+                    <td colSpan={3} className="p-12 text-center text-slate-600 italic">لم يتم التعرف بنجاح على أي أنماط هيكلية محظورة لـ WAF حتى الآن.</td>
                   </tr>
                 )}
               </tbody>
@@ -101,7 +101,7 @@ export default function WAFAnalysis() {
           <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
             <h2 className="text-sm font-mono text-white mb-4 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-yellow-500" />
-              توصيات التجاوز الحقيقية
+              توصيات التخطي الخوارزمية
             </h2>
             <div className="space-y-4">
               {intel?.recommendations?.map((rec: any, i: number) => (
@@ -114,22 +114,22 @@ export default function WAFAnalysis() {
           </div>
 
           <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
-            <h2 className="text-sm font-mono text-white mb-4">إحصائيات الحماية الميدانية</h2>
+            <h2 className="text-sm font-mono text-white mb-4">القدرات التجريبية المكتشفة لـ WAF</h2>
             <div className="space-y-3">
               <div className="flex justify-between text-[10px] font-mono">
-                <span className="text-slate-500">مستوى ذكاء WAF</span>
-                <span className="text-yellow-500">{intel?.stats?.intelligenceLevel || "تحليل..."}</span>
+                <span className="text-slate-500">تعقيد WAF المستنتج</span>
+                <span className="text-yellow-500">{intel?.stats?.intelligenceLevel || "جاري التحليل..."}</span>
               </div>
               <div className="flex justify-between text-[10px] font-mono">
-                <span className="text-slate-500">دقة التنبؤ</span>
+                <span className="text-slate-500">دقة الاستنتاج الاستباقي</span>
                 <span className="text-[#10b981]">{intel?.stats?.predictionAccuracy || "0%"}</span>
               </div>
               <div className="flex justify-between text-[10px] font-mono">
-                <span className="text-slate-500">الأنماط التي تم تجاوزها</span>
+                <span className="text-slate-500">البصمات التي تم تخطيها</span>
                 <span className="text-blue-400">{intel?.stats?.bypassedPatterns || 0}</span>
               </div>
               <div className="mt-4 pt-4 border-t border-[#10b981]/10">
-                <div className="text-[9px] text-slate-500 font-mono mb-1">الأحرف المحظورة المكتشفة:</div>
+                <div className="text-[9px] text-slate-500 font-mono mb-1">مجموعات الأحرف المحظورة المكتشفة:</div>
                 <div className="flex flex-wrap gap-1">
                   {intel?.blocked_chars?.split(',').map((char: string, i: number) => (
                     <span key={i} className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-[10px] font-mono">

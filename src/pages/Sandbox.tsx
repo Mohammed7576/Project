@@ -6,58 +6,76 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 const formatLogLine = (log: string) => {
   if (typeof log !== 'string') return log;
   
-  // 1. Identify context prefixes and baseline color
-  let prefix = null;
-  let content = log;
-  let baseColorClass = "text-[#10b981]/80";
+  let content = log.trim();
+  let badge = null;
+  let baseColorClass = "text-slate-300";
 
-  if (log.includes('[ERROR]') || log.includes('[!]')) {
-    baseColorClass = "text-red-400/90";
+  // Clean up leading arrows often found in generic tool outputs
+  if (content.startsWith('< ')) content = content.substring(2);
+  if (content.startsWith('> ')) content = content.substring(2);
+
+  // Extract a prefix badge like [TAG | SCORE]
+  const badgeMatch = content.match(/^\[(.*?)\]\s*(.*)/);
+  if (badgeMatch) {
+    const rawTag = badgeMatch[1];
+    content = badgeMatch[2]; // Remaining payload
+    
+    // Style badge based on content logic
+    let badgeBg = "bg-slate-700 text-slate-300 border-slate-600";
+    if (rawTag.includes('SUCCESS') || rawTag.includes('+')) badgeBg = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+    else if (rawTag.includes('ERROR') || rawTag.includes('FAIL') || rawTag.includes('!') || rawTag.includes('BLOCK')) badgeBg = "bg-red-500/10 text-red-400 border-red-500/30";
+    else if (rawTag.includes('BIASED') || rawTag.includes('MUTATION') || rawTag.includes('?')) badgeBg = "bg-yellow-500/10 text-yellow-400 border-yellow-500/30";
+    else if (rawTag.includes('*') || rawTag.includes('INFO') || rawTag.includes('ISLAND')) badgeBg = "bg-blue-500/10 text-blue-400 border-blue-500/30";
+
+    // Clean up the text of the badge for simpler presentation
+    let tagText = rawTag
+      .replace(/_/g, ' ')
+      .replace(/MASS DATA DUMP/g, 'DATA DUMP')
+      .replace(/SUCCESS/g, 'PASS')
+      .replace(/BIASED/g, 'BIASED');
+
+    badge = (
+      <span className={`inline-block px-1.5 py-0.5 rounded border text-[9px] font-bold tracking-wider ml-1.5 shrink-0 ${badgeBg}`} dir="ltr">
+        {tagText}
+      </span>
+    );
   }
 
-  if (log.startsWith('[*]')) {
-    prefix = <span className="text-cyan-400 font-bold ml-1.5">[*]</span>;
-    content = log.substring(3);
-  } else if (log.startsWith('[+]')) {
-    prefix = <span className="text-emerald-400 font-bold ml-1.5">[+]</span>;
-    content = log.substring(3);
-  } else if (log.startsWith('[!]')) {
-    prefix = <span className="text-red-500 font-bold ml-1.5">[!]</span>;
-    content = log.substring(3);
-  } else if (log.startsWith('[?]')) {
-    prefix = <span className="text-yellow-400 font-bold ml-1.5">[?]</span>;
-    content = log.substring(3);
+  // Extract trailing island info like [1 Island]
+  let suffix = null;
+  const suffixMatch = content.match(/(.*)\s+\[(\d+)\s+Island\]$/i);
+  if (suffixMatch) {
+    content = suffixMatch[1];
+    suffix = (
+      <span className="mr-2 px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded text-[8px] font-mono shrink-0">
+        Island {suffixMatch[2]}
+      </span>
+    );
   }
 
-  // 2. Syntax highlight the remaining content
-  // SQL Keywords
-  const keywords = ['SELECT', 'UNION', 'ALL', 'OR', 'AND', 'XOR', 'WHERE', 'FROM', 'DATABASE', 'USER', 'VERSION', 'ORDER BY', 'GROUP BY', 'LIMIT', 'OFFSET', 'HAVING', 'SLEEP', 'BENCHMARK', 'CONNECTION_ID', 'LOAD_FILE'];
+  // Common SQL Keywords for Injection
+  const keywords = ['SELECT', 'UNION', 'ALL', 'OR', 'AND', 'XOR', 'WHERE', 'FROM', 'DATABASE', 'USER', 'VERSION', 'ORDER BY', 'GROUP BY', 'LIMIT', 'OFFSET', 'HAVING', 'SLEEP', 'BENCHMARK', 'CONNECTION_ID', 'LOAD_FILE', 'TRUE', 'FALSE', 'NULL', 'LIKE', 'RLIKE', 'REGEXP'];
   
-  // Regex to split by keywords, numbers, hex, quotes and backticks
-  const parts = content.split(/(\b(?:SELECT|UNION|ALL|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER BY|GROUP BY|LIMIT|OFFSET|HAVING|SLEEP|BENCHMARK|CONNECTION_ID|LOAD_FILE)\b|\b\d+\b|0x[0-9a-fA-F]+|'[^']*'|"[^"]*"|`[^`]*`)/gi);
+  // Syntax highlight the remaining content (keywords, numbers, hex, strings, comments)
+  const parts = content.split(/(\b(?:SELECT|UNION|ALL|OR|AND|XOR|WHERE|FROM|DATABASE|USER|VERSION|ORDER BY|GROUP BY|LIMIT|OFFSET|HAVING|SLEEP|BENCHMARK|CONNECTION_ID|LOAD_FILE|TRUE|FALSE|NULL|LIKE|RLIKE|REGEXP)\b|\b\d+\b|0x[0-9a-fA-F]+|'[^']*'|"[^"]*"|`[^`]*`|--\s*.*$|#.*$|\/\*[\s\S]*?\*\/)/gi);
 
   return (
-    <div className={`flex flex-wrap items-center ${baseColorClass}`}>
-      <span className="text-slate-600 ml-2">&lt;</span>
-      {prefix}
-      {parts.map((part, i) => {
-        const upper = part.toUpperCase();
-        if (keywords.includes(upper)) return <span key={i} className="text-yellow-400 font-bold mx-0.5">{part}</span>;
-        if (/^\d+$/.test(part)) return <span key={i} className="text-purple-400 mx-0.5">{part}</span>;
-        if (part.startsWith('0x')) return <span key={i} className="text-orange-400 font-mono mx-0.5">{part}</span>;
-        if (part.startsWith("'") || part.startsWith('"') || part.startsWith('`')) return <span key={i} className="text-blue-300 italic mx-0.5">{part}</span>;
-        
-        // Highlight error segments
-        if (/Unknown column|syntax error|doesn't exist|failed|denied|forbidden/i.test(part)) {
-          return <span key={i} className="text-red-400 font-bold underline decoration-dotted mx-0.5">{part}</span>;
-        }
-        
-        if (/success|bypassed|confirmed/i.test(part)) {
-          return <span key={i} className="text-emerald-400 font-bold mx-0.5">{part}</span>;
-        }
-        
-        return <span key={i}>{part}</span>;
-      })}
+    <div className={`flex flex-wrap sm:flex-nowrap items-start sm:items-center py-1 ${baseColorClass} w-full`}>
+      <span className="text-slate-600 shrink-0 opacity-50 mt-0.5 sm:mt-0 font-mono text-[10px]">&gt;</span>
+      {badge}
+      <div className="flex-1 min-w-0 font-mono tracking-tight leading-relaxed break-all mx-2" dir="ltr">
+        {parts.map((part, i) => {
+          if (!part) return null;
+          const upper = part.toUpperCase();
+          if (keywords.includes(upper)) return <span key={i} className="text-pink-400 font-bold mx-0.5">{part}</span>;
+          if (/^\d+$/.test(part)) return <span key={i} className="text-purple-400 mx-0.5">{part}</span>;
+          if (part.startsWith('0x')) return <span key={i} className="text-orange-400 font-mono mx-0.5">{part}</span>;
+          if (part.startsWith("'") || part.startsWith('"') || part.startsWith('`')) return <span key={i} className="text-emerald-300 mx-0.5">{part}</span>;
+          if (part.startsWith('--') || part.startsWith('#') || part.startsWith('/*')) return <span key={i} className="text-slate-500 italic mx-0.5">{part}</span>;
+          return <span key={i} className="opacity-90">{part}</span>;
+        })}
+      </div>
+      {suffix}
     </div>
   );
 };
@@ -147,7 +165,7 @@ export default function Sandbox() {
             <div className="flex flex-col">
               <h1 className="text-xl font-bold text-white flex items-center gap-2">
                 <TerminalIcon className="w-5 h-5 text-[#10b981]" />
-                <span>مختبر التطوير (LABORATORY)</span>
+                <span>مختبر التجارب البحثية</span>
               </h1>
               <span className="text-[9px] text-slate-500 uppercase tracking-widest">
                 Payload Mutation & Genetic Engineering Engine
@@ -214,7 +232,7 @@ export default function Sandbox() {
           active={windowVisibility.CONTROLS} 
           onClick={() => toggleWindow('CONTROLS')} 
           icon={Target} 
-          label="إعدادات المختبر" 
+          label="إعدادات التجربة" 
           subLabel="CONTROLS"
         />
         <div className="w-[1px] h-6 bg-white/5 mx-1" />
@@ -222,21 +240,21 @@ export default function Sandbox() {
           active={windowVisibility.LEARNING} 
           onClick={() => toggleWindow('LEARNING')} 
           icon={Zap} 
-          label="سجلات التعلم" 
+          label="التسجيل التجريبي (Heuristics)" 
           subLabel="LEARNING"
         />
         <NavButton 
           active={windowVisibility.SUCCESS} 
           onClick={() => toggleWindow('SUCCESS')} 
           icon={Play} 
-          label="الحمولات الناجحة" 
+          label="الحمولات المصادق عليها" 
           subLabel="SUCCESS"
         />
         <NavButton 
           active={windowVisibility.ENGINE} 
           onClick={() => toggleWindow('ENGINE')} 
           icon={TerminalIcon} 
-          label="محرك النظام" 
+          label="وحدة تحكم المحرك" 
           subLabel="ENGINE"
         />
       </div>
@@ -248,7 +266,7 @@ export default function Sandbox() {
             <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 flex flex-col h-full overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
               <h2 className="text-[10px] font-mono text-white mb-6 flex items-center shrink-0 uppercase tracking-widest border-b border-[#10b981]/10 pb-3">
                 <Target className="w-4 h-4 ml-2 text-[#10b981]" />
-                إعدادات المختبر (LAB CONTROLS)
+                إعدادات الهدف البحثي
               </h2>
               <div className="space-y-5 overflow-y-auto pr-1 custom-scrollbar">
                 <ConfigInput label="Target Name (Persistence ID)" value={targetName} onChange={setTargetName} icon={Activity} />
@@ -292,7 +310,7 @@ export default function Sandbox() {
         <div className={`${windowVisibility.CONTROLS ? 'lg:col-span-9' : 'lg:col-span-12'} grid grid-cols-1 md:grid-cols-2 gap-4 h-full overflow-hidden`}>
           {windowVisibility.LEARNING && (
             <ConsoleBox 
-              title="سجلات تعلم الوكيل (RL Learning)" 
+              title="سجلات تعلم الآلة وتحليل WAF" 
               icon={Zap} 
               data={learningLogs} 
               ref={learningRef}
@@ -302,7 +320,7 @@ export default function Sandbox() {
           )}
           {windowVisibility.SUCCESS && (
             <ConsoleBox 
-              title="الحمولات الناجحة (Success Lab)" 
+              title="أرشيف الحمولات المؤكدة الانعكاس" 
               icon={Play} 
               data={successLogs} 
               ref={successRef}
@@ -313,7 +331,7 @@ export default function Sandbox() {
           {windowVisibility.ENGINE && (
             <div className="md:col-span-2 h-full lg:h-[45%]">
               <ConsoleBox 
-                title="سجلات النظام والمحاولات (System Engine)" 
+                title="سجلات القياس لمحرك السرب (Engine Telemetry logs)" 
                 icon={TerminalIcon} 
                 data={systemLogs} 
                 ref={systemRef}
@@ -352,12 +370,13 @@ function ConfigInput({ label, value, onChange, icon: Icon, type = "text" }: any)
     <div>
       <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</label>
       <div className="relative">
-        {Icon && <Icon className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />}
+        {Icon && <Icon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />}
         <input 
           type={type} 
           value={value}
+          dir="ltr"
           onChange={(e) => onChange(e.target.value)}
-          className={`w-full bg-black/40 border border-[#10b981]/20 rounded ${Icon ? 'pr-7' : 'px-2'} py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono transition-all`}
+          className={`w-full bg-black/40 border border-[#10b981]/20 rounded ${Icon ? 'pl-7 pr-2' : 'px-2'} py-1.5 text-xs text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono transition-all text-left placeholder:text-right`}
         />
       </div>
     </div>
@@ -376,7 +395,7 @@ const ConsoleBox = React.forwardRef(({ title, icon: Icon, data, className, iconC
       </div>
       <div className="flex-1 font-mono text-[9px] custom-scrollbar bg-[rgba(5,5,5,0.8)] overflow-hidden">
         {data.length === 0 ? (
-          <div className="p-3 text-slate-700 italic">في انتظار البيانات...</div>
+          <div className="p-3 text-slate-700 italic text-[10px]">في انتظار تدفق بيانات القياس (Telemetry)...</div>
         ) : (
           <Virtuoso
             ref={ref}

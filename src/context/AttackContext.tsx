@@ -57,6 +57,34 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
         if (data.target_url) setUrl(data.target_url);
       })
       .catch(err => console.error("Failed to load last session", err));
+
+    // Restore the current generation max
+    fetch('/api/strategic-metrics')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const maxGen = Math.max(...data.map((d: any) => d.generation));
+          setCurrentGeneration(maxGen);
+        }
+      })
+      .catch(e => console.error("Could not fetch max generation", e));
+    fetch('/api/exploits')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+           setSuccessLogs(data.map((exp: any) => `[SUCCESS - RESTORED] ... ${exp.payload}`).slice(-50));
+        }
+      })
+      .catch(e => console.error("Could not fetch historical exploits", e));
+      
+    fetch('/api/brain-logs')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+           setLearningLogs(data.map((log: any) => `[RESTORED] ${log.message}`).slice(-50));
+        }
+      })
+      .catch(e => console.error("Could not fetch historical brain logs", e));
   }, []);
 
   const stopAttack = useCallback(() => {
@@ -91,10 +119,11 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
 
     if (!isResume) {
       setIsAttacking(true);
-      setLogs([]);
-      setLearningLogs([]);
-      setSuccessLogs([]);
-      setSystemLogs([]);
+      // We no longer clear successLogs or learningLogs completely here to keep historical info visible
+      // We only clear the live execution log area so the terminal looks clean for the new run
+      setLogs([]); 
+      // If desired, you can add a fetch here to repopulate them if they were empty, 
+      // but they are kept in state across restarts in the same tab.
       setCurrentGeneration(0);
       setElapsedTime(0);
       attackStartTimeRef.current = Date.now();

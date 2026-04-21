@@ -41,18 +41,19 @@ export default function Targets() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white font-mono">إدارة <span className="text-[#10b981]">الأهداف</span></h1>
+        <h1 className="text-2xl font-bold text-white font-mono">بيئات التطبيقات <span className="text-[#10b981]">المستهدفة</span></h1>
         <div className="flex gap-2">
           <input 
             type="text" 
-            placeholder="أضف رابط هدف جديد..."
+            placeholder="إضافة رابط بيئة اختبار جديدة..."
             value={newUrl}
+            dir="ltr"
             onChange={(e) => setNewUrl(e.target.value)}
-            className="bg-black/40 border border-[#10b981]/20 rounded-lg px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono w-64"
+            className="bg-black/40 border border-[#10b981]/20 rounded-lg px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono w-64 text-left placeholder:text-right"
           />
           <button className="bg-[#10b981] text-black px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-[#10b981]/80 transition-all">
             <Plus className="w-4 h-4" />
-            إضافة
+            إدراج الهدف
           </button>
         </div>
       </div>
@@ -65,12 +66,12 @@ export default function Targets() {
                 <Shield className="w-5 h-5 text-[#10b981]" />
               </div>
               <div>
-                <h3 className="text-sm font-mono text-white flex items-center gap-2 group-hover:text-[#10b981] transition-colors">
+                <h3 className="text-sm font-mono text-white flex items-center gap-2 group-hover:text-[#10b981] transition-colors" dir="ltr">
                   {target.url}
-                  <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" />
+                  <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer mx-2" />
                 </h3>
                 <div className="flex gap-3 mt-1">
-                  <span className="text-[10px] font-mono text-slate-500">آخر هجوم: {new Date(target.lastAttack).toLocaleString('ar-EG')}</span>
+                  <span className="text-[10px] font-mono text-slate-500">آخر قياس (Telemetry): {new Date(target.lastAttack).toLocaleString('ar-EG')}</span>
                   <span className="text-[10px] font-mono text-[#10b981]">DB: {target.db_type}</span>
                   <span className="text-[10px] font-mono text-blue-400">WAF: {target.waf_name}</span>
                 </div>
@@ -83,7 +84,7 @@ export default function Targets() {
                 className="flex items-center gap-2 px-3 py-1.5 rounded text-[10px] font-bold bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20 hover:bg-[#10b981]/20 transition-all"
               >
                 <Eye className="w-3 h-3" />
-                تحليل البيانات
+                تحليل المقاييس
               </button>
               <button className="p-2 text-slate-500 hover:text-red-500 transition-colors">
                 <Trash2 className="w-4 h-4" />
@@ -93,7 +94,7 @@ export default function Targets() {
         )) : (
           <div className="bg-[#0a0a0a] border border-dashed border-slate-800 rounded-lg p-12 text-center">
             <Database className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-            <p className="text-slate-500 font-mono text-sm">لا توجد أهداف مسجلة حالياً. ابدأ هجوماً من المختبر لتسجيل الأهداف.</p>
+            <p className="text-slate-500 font-mono text-sm">لا توجد بيئات مستهدفة مسجلة. قم ببدء خط الاختبار من المختبر لتوليد بيانات القياس عن بعد.</p>
           </div>
         )}
       </div>

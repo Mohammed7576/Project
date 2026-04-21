@@ -49,7 +49,8 @@ export default function Dashboard() {
     targets: '0',
     payloads: '0',
     blocks: '0',
-    successRate: '0%'
+    successRate: '0%',
+    wafPatterns: '0'
   });
   const [copiedPayload, setCopiedPayload] = useState<string | null>(null);
 
@@ -73,7 +74,7 @@ export default function Dashboard() {
     try {
       const q = targetName ? `?targetName=${encodeURIComponent(targetName)}` : '';
       
-      const [evoRes, metricRes, exploitRes, targetRes, lootRes, convRes, radarRes, repRes, sqlRes] = await Promise.all([
+      const [evoRes, metricRes, exploitRes, targetRes, lootRes, convRes, radarRes, repRes, sqlRes, wafRes] = await Promise.all([
         fetch(`/api/evolution-stats${q}`),
         fetch(`/api/strategic-metrics${q}`),
         fetch(`/api/exploits${q}`),
@@ -82,7 +83,8 @@ export default function Dashboard() {
         fetch(`/api/convergence-stats${q}`),
         fetch(`/api/swarm-radar${q}`),
         fetch(`/api/reputation-trends${q}`),
-        fetch(`/api/sql-errors${q}`)
+        fetch(`/api/sql-errors${q}`),
+        fetch(`/api/waf-intelligence`)
       ]);
 
       if (evoRes.ok) {
@@ -99,6 +101,11 @@ export default function Dashboard() {
         }));
       }
       
+      if (wafRes) {
+        const wafVal = await wafRes.json();
+        setStats(prev => ({ ...prev, wafPatterns: wafVal.patterns ? wafVal.patterns.length.toString() : '0' }));
+      }
+
       if (convRes.ok) setConvergenceStats(await convRes.json());
       if (radarRes.ok) setRadarPoints(await radarRes.json());
       if (sqlRes.ok) setSqlErrors(await sqlRes.json());
@@ -140,12 +147,12 @@ export default function Dashboard() {
   };
 
   const sections = [
-    { id: 'OVERVIEW' as const, label: 'إحصائيات النظام', icon: LayoutGrid },
-    { id: 'EVOLUTION' as const, label: 'مسار التطور', icon: BarChart3 },
-    { id: 'EXPLOITS' as const, label: 'سجل الاختراقات', icon: ListFilter },
-    { id: 'SWARM' as const, label: 'ديناميكيات السرب', icon: Radar },
-    { id: 'STRATEGIC' as const, label: 'التحليل الاستراتيجي', icon: History },
-    { id: 'DIAGNOSTIC' as const, label: 'سجل الأخطاء', icon: MessageSquareWarning },
+    { id: 'OVERVIEW' as const, label: 'الإحصائيات الكلية', icon: LayoutGrid },
+    { id: 'EVOLUTION' as const, label: 'مسار الكفاءة التطورية', icon: BarChart3 },
+    { id: 'EXPLOITS' as const, label: 'أرشيف سلالات الاختراق', icon: ListFilter },
+    { id: 'SWARM' as const, label: 'ديناميكيات السرب الذكي', icon: Radar },
+    { id: 'STRATEGIC' as const, label: 'مصفوفة الطفرات الجينية', icon: History },
+    { id: 'DIAGNOSTIC' as const, label: 'استثناءات قواعد البيانات', icon: MessageSquareWarning },
   ];
 
   return (
@@ -160,11 +167,11 @@ export default function Dashboard() {
                 {targetName ? (
                   <span dir="ltr" className="text-blue-400">TARGET: {targetName}</span>
                 ) : (
-                  <span>لوحة التحكم الرئيسية</span>
+                  <span>عقدة القيادة والتحكم الرئيسية</span>
                 )}
               </h1>
-              <span className="text-[9px] text-slate-500 uppercase tracking-widest">
-                Real-time Genetic Payload Evolution C&C
+              <span className="text-[9px] text-slate-500 uppercase tracking-widest mt-1">
+                القياس المباشر لتطور الحمولات الجينية بالوقت الفعلي (Telemetry)
               </span>
             </div>
             <div className="h-8 w-[1px] bg-[#10b981]/20 hidden lg:block"></div>
@@ -190,16 +197,16 @@ export default function Dashboard() {
           <div className="flex items-center gap-4 text-[10px]">
             <div className="bg-[#10b981]/5 text-[#10b981] px-3 py-1 rounded border border-[#10b981]/20 flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
-              مراقبة مباشرة: {targetName ? 'TARGET_SYNC' : 'GLOBAL'}
+              التدفق النشط: {targetName ? 'TARGET_SYNC' : 'GLOBAL_AGGREGATE'}
             </div>
             {activeSections.length > 0 && (
               <button 
                 onClick={() => setActiveSections([])}
                 className="text-slate-500 hover:text-white flex items-center gap-1 transition-colors"
-                title="تفريغ الشاشة"
+                title="تفريغ العرض"
               >
                 <EyeOff className="w-3.5 h-3.5" />
-                تفريغ
+                تفريغ العرض
               </button>
             )}
           </div>
@@ -209,7 +216,7 @@ export default function Dashboard() {
       {activeSections.length === 0 ? (
         <div className="h-[60vh] flex flex-col items-center justify-center text-slate-700 border-2 border-dashed border-slate-900 rounded-3xl">
           <LayoutGrid className="w-16 h-16 opacity-5 mb-6" />
-          <p className="text-sm font-mono tracking-widest uppercase opacity-20">خامل - يرجى تحديد العناصر من الشريط العلوي</p>
+          <p className="text-sm font-mono tracking-widest uppercase opacity-20">الشاشة خاملة - يرجى تحديد المقاييس من الأعلى للبدء</p>
         </div>
       ) : (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -217,25 +224,30 @@ export default function Dashboard() {
           {/* Overview Cards Section */}
           {activeSections.includes('OVERVIEW') && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              <StatCard title="الأهداف النشطة" value={stats.targets} icon={Database} trend={targetName ? "SELECTED" : "GLOBAL"} />
-              <StatCard title="الحمولات المولدة" value={stats.payloads} icon={Zap} trend="TOTAL COUNTER" />
-              <StatCard title="سرعة التقارب" value={convergenceStats.convergence.formatted} icon={Activity} trend="SEC TO SUCCESS" />
-              <StatCard title="الحظر التنبؤي" value={convergenceStats.predictiveBlocked.toString()} icon={ShieldAlert} trend="WAF MITIGATION" />
-              <StatCard title="معدل النجاح" value={stats.successRate} icon={Activity} trend="PEAK FITNESS" />
+              <StatCard title="الأهداف النشطة (N)" value={stats.targets} icon={Database} trend={targetName ? "قاعدة بيانات محددة" : "النطاق العالمي"} />
+              <StatCard title="الطفرات التراكمية (N)" value={stats.payloads} icon={Zap} trend="إجمالي المتولد" />
+              <StatCard title="زمن التقارب الخوارزمي" value={convergenceStats.convergence.formatted} icon={Activity} trend="ثانية نحو النجاح/التقارب" />
+              <StatCard title="قواعد WAF المستخرجة" value={stats.wafPatterns} icon={ShieldAlert} trend="حجم قاعدة الأنماط" />
+              <StatCard title="ذروة الكفاءة جينياً (%)" value={stats.successRate} icon={Activity} trend="أعلى قابلية للتخطي" />
             </div>
           )}
 
           {/* Evolution Chart Section */}
           {activeSections.includes('EVOLUTION') && (
             <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6 min-h-[400px] flex flex-col group relative overflow-hidden">
-               <h2 className="text-lg font-mono text-white mb-6 border-b border-[#10b981]/10 pb-4 flex items-center gap-2">
-                <Zap className="w-4 h-4 text-[#10b981]" />
-                رسم بياني للتطور (Average Fitness per Time)
-              </h2>
+               <div className="flex justify-between items-end mb-6 border-b border-[#10b981]/10 pb-4">
+                <h2 className="text-lg font-mono text-white flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-[#10b981]" />
+                  مسار الكفاءة التطورية (متوسط الفاعلية لكل جيل)
+                </h2>
+                <span className="text-[10px] text-slate-500 font-mono w-1/2 text-right">
+                  يعرض متوسط التطور المستمر لمجموعات الحمولات بمرور الوقت، مما يوضح منحنى التعلم والتخطي للخوارزمية الجينية.
+                </span>
+              </div>
               <div className="flex-1 w-full min-h-[300px]">
                 {evolutionData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={evolutionData}>
+                    <AreaChart data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                       <defs>
                         <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -243,14 +255,26 @@ export default function Dashboard() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.3} />
-                      <XAxis dataKey="time" stroke="#475569" fontSize={10} tickFormatter={(str) => { try { return str.split(' ')[1] || str; } catch(e) { return str; } }} />
-                      <YAxis stroke="#475569" fontSize={10} domain={[0, 1]} />
+                      <XAxis 
+                        dataKey="time" 
+                        stroke="#475569" 
+                        fontSize={10} 
+                        tickFormatter={(str) => { try { return str.split(' ')[1] || str; } catch(e) { return str; } }} 
+                        label={{ value: 'Time (HH:MM:SS)', position: 'insideBottom', offset: -15, fill: '#64748b', fontSize: 10 }}
+                      />
+                      <YAxis 
+                        stroke="#475569" 
+                        fontSize={10} 
+                        domain={[0, 1]} 
+                        tickFormatter={(val) => `${(val * 100).toFixed(0)}%`}
+                        label={{ value: 'Fitness Score (%)', angle: -90, position: 'insideLeft', offset: 15, fill: '#64748b', fontSize: 10 }}
+                      />
                       <Tooltip contentStyle={{ backgroundColor: '#050505', border: '1px solid #10b98133', borderRadius: '4px', fontSize: '10px' }} />
-                      <Area type="monotone" dataKey="avgScore" stroke="#10b981" fillOpacity={1} fill="url(#colorScore)" strokeWidth={3} dot={{ r: 2, fill: '#10b981' }} />
+                      <Area type="monotone" dataKey="avgScore" name="Avg Fitness" stroke="#10b981" fillOpacity={1} fill="url(#colorScore)" strokeWidth={3} dot={{ r: 2, fill: '#10b981' }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="flex items-center justify-center h-full text-slate-600">لا توجد بيانات تطور بعد</div>
+                  <div className="flex items-center justify-center h-full text-slate-600 font-mono text-xs italic">بانتظار خط تدفق البيانات التطورية...</div>
                 )}
               </div>
             </div>
@@ -260,10 +284,13 @@ export default function Dashboard() {
           {activeSections.includes('EXPLOITS') && (
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
                <div className="xl:col-span-3 bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6 min-h-[400px] flex flex-col relative">
-                <h2 className="text-sm font-mono text-white mb-4 border-b border-[#10b981]/20 pb-4 flex items-center gap-2 uppercase tracking-widest">
-                  Payload Lineage Tracker (تتبع سلالة الحمولات)
-                </h2>
-                <div className="flex space-x-2 space-x-reverse mb-4 overflow-x-auto pb-2 custom-scrollbar">
+                <div className="flex flex-col gap-1 mb-4 border-b border-[#10b981]/20 pb-4">
+                  <h2 className="text-sm font-mono text-white flex items-center gap-2 uppercase tracking-widest">
+                    تتبع شجرة سلالات الحمولات الجينية
+                  </h2>
+                  <p className="text-[10px] text-slate-500 font-mono">عرض هرمي لمسارات الطفرات التي أدت إلى تجاوزات أمنية ناجحة للأنظمة.</p>
+                </div>
+                <div className="flex gap-2 mb-4 overflow-x-auto pb-2 custom-scrollbar">
                   {exploits.slice(0, 10).map((exp, i) => (
                     <button key={i} onClick={() => handleTraceLineage(exp.payload)} className="px-3 py-1 bg-[#10b981]/5 border border-[#10b981]/20 rounded text-[9px] font-mono text-slate-400 hover:text-white transition-all whitespace-nowrap">EXTRACT-L:{i+1}</button>
                   ))}
@@ -274,8 +301,8 @@ export default function Dashboard() {
                       <div className="absolute right-[-4px] top-0 w-2 h-2 rounded-full bg-[#10b981]"></div>
                       <div className="bg-black/50 p-3 rounded-lg border border-white/5 hover:border-[#10b981]/30 transition-colors">
                         <div className="flex justify-between items-center mb-2">
-                          <span className="text-[9px] text-slate-500 font-mono italic uppercase">PHASE {i + 1} • {step.status}</span>
-                          <span className="text-xs font-mono text-[#10b981] font-bold">{(step.score * 100).toFixed(0)}% FIT</span>
+                          <span className="text-[9px] text-slate-500 font-mono italic uppercase">المرحلة {i + 1} • {step.status}</span>
+                          <span className="text-xs font-mono text-[#10b981] font-bold">{(step.score * 100).toFixed(0)}% كفاءة</span>
                         </div>
                         <code className="text-[10px] text-slate-300 break-all bg-black p-3 block rounded font-mono leading-relaxed">
                           {step.payload}
@@ -292,8 +319,8 @@ export default function Dashboard() {
               </div>
 
               <div className="xl:col-span-1 bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6 flex flex-col max-h-[500px]">
-                <h2 className="text-sm font-mono text-white mb-4 border-b border-[#10b981]/20 pb-4 flex items-center gap-2 uppercase tracking-widest text-center">
-                  سجل الاختراقات
+                <h2 className="text-sm font-mono text-white mb-4 border-b border-[#10b981]/20 pb-4 flex items-center justify-center gap-2 uppercase tracking-widest text-center">
+                  أرشيف الثغرات المؤكدة
                 </h2>
                 <div className="flex-1 space-y-4 overflow-y-auto custom-scrollbar pr-2 h-0">
                   {exploits.length > 0 ? exploits.map((exploit, i) => (
@@ -323,27 +350,29 @@ export default function Dashboard() {
               {activeSections.includes('SWARM') && (
                 <>
                   <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5">
-                    <h2 className="text-xs font-mono text-white mb-4 border-b border-[#10b981]/10 pb-3 flex items-center gap-2 uppercase">
-                      <Activity className="w-3.5 h-3.5 text-blue-500" /> كفاءة الجزر
+                    <h2 className="text-xs font-mono text-white mb-1 flex items-center gap-2 uppercase">
+                      <Activity className="w-3.5 h-3.5 text-blue-500" /> كفاءة تحسين الأنظمة الفرعية (للجزر)
                     </h2>
+                    <p className="text-[9px] text-slate-500 font-mono mb-4 border-b border-[#10b981]/10 pb-3">يقارن معدلات الكفاءة عبر استراتيجيات الطفرات المعزولة (نظام الجزر التحليلية).</p>
                     <div className="h-[200px]">
                        <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={strategicMetrics} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                        <LineChart data={strategicMetrics} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.2} />
-                          <XAxis dataKey="label" stroke="#475569" fontSize={8} />
+                          <XAxis dataKey="label" stroke="#475569" fontSize={8} label={{ value: 'Generation ID', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 9 }} />
                           <YAxis stroke="#475569" fontSize={8} unit="%" domain={[0, 100]} />
                           <Tooltip contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #10b98133', fontSize: '10px' }} />
-                          <Line type="monotone" dataKey="islands.island1" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} name="Inference" />
-                          <Line type="monotone" dataKey="islands.island2" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} name="Bypass" />
-                          <Line type="monotone" dataKey="islands.island3" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} name="Extraction" />
+                          <Line type="monotone" dataKey="islands.island1" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} name="1. Inference" />
+                          <Line type="monotone" dataKey="islands.island2" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} name="2. WAF Bypass" />
+                          <Line type="monotone" dataKey="islands.island3" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} name="3. Data Extraction" />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
                   <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5">
-                    <h2 className="text-xs font-mono text-white mb-4 border-b border-[#10b981]/10 pb-3 flex items-center gap-2 uppercase">
-                      <Radar className="w-3.5 h-3.5 text-emerald-500" /> Swarm Radar
+                    <h2 className="text-xs font-mono text-white mb-1 flex items-center gap-2 uppercase">
+                      <Radar className="w-3.5 h-3.5 text-emerald-500" /> رادار الوكلاء الدقيق (Micro-Agents)
                     </h2>
+                    <p className="text-[9px] text-slate-500 font-mono mb-4 border-b border-[#10b981]/10 pb-3">الأداء الفعلي المباشر للوكلاء الفرديين عبر الشبكة الخوارزمية.</p>
                     <div className="h-[200px] overflow-y-auto custom-scrollbar pr-2">
                        {radarPoints.length > 0 ? radarPoints.slice(0, 15).map((p, i) => (
                          <div key={i} className="flex justify-between text-[8px] font-mono p-1.5 bg-black/40 rounded-sm border-r-2 border-emerald-500/30 mb-1">
@@ -358,19 +387,20 @@ export default function Dashboard() {
               )}
               {activeSections.includes('STRATEGIC') && (
                 <div className="xl:col-span-2 bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 flex flex-col h-[280px]">
-                   <h2 className="text-xs font-mono text-white mb-4 border-b border-[#10b981]/10 pb-3 flex items-center gap-2 uppercase">
-                    <Activity className="w-3.5 h-3.5 text-amber-500" /> Strategic Gen Matrix
+                   <h2 className="text-xs font-mono text-white mb-1 flex items-center gap-2 uppercase">
+                    <Activity className="w-3.5 h-3.5 text-amber-500" /> مصفوفة الطفرات الجيلية
                   </h2>
-                  <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  <p className="text-[9px] text-slate-500 font-mono mb-4 border-b border-[#10b981]/10 pb-3">تحليل استجابات HTTP المرتبطة بخوارزمية التوليد النشطة لكل جيل.</p>
+                  <div className="flex-1 overflow-y-auto custom-scrollbar border border-white/5 bg-black/30 rounded">
                     <table className="w-full text-right font-mono text-[9px] border-collapse">
-                      <thead className="sticky top-0 bg-[#0a0a0a]">
-                        <tr className="text-slate-600 border-b border-white/5">
-                          <th className="py-2 px-2 text-center">ID</th>
-                          <th className="py-2 px-2 text-center">FIT</th>
-                          <th className="py-2 px-2 text-center text-red-500">403</th>
-                          <th className="py-2 px-2 text-center text-amber-500">SQL</th>
-                          <th className="py-2 px-2 text-center text-[#10b981]">200</th>
-                          <th className="py-2 px-2 text-center text-blue-500">PRD</th>
+                      <thead className="sticky top-0 bg-[#111]">
+                        <tr className="text-slate-400 border-b border-white/10 uppercase tracking-wider text-[8px]">
+                          <th className="py-2.5 px-3 text-center border-r border-white/5">رقم الجيل</th>
+                          <th className="py-2.5 px-3 text-center border-r border-white/5">متوسط الكفاءة</th>
+                          <th className="py-2.5 px-3 text-center text-red-400 border-r border-white/5" title="HTTP 403 Forbidden - WAF Block">403 (حظر)</th>
+                          <th className="py-2.5 px-3 text-center text-amber-400 border-r border-white/5" title="HTTP 500 - Internal Server Error / SQL Exception">500 (حقن وخطأ)</th>
+                          <th className="py-2.5 px-3 text-center text-[#10b981] border-r border-white/5" title="HTTP 200 - Successful Bypass">200 (تجاوز)</th>
+                          <th className="py-2.5 px-3 text-center text-blue-400" title="Predictive AI Blocks generated by the system WAF">استنتاج وتوقف</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5">
@@ -396,11 +426,14 @@ export default function Dashboard() {
           {activeSections.includes('DIAGNOSTIC') && (
             <div className="bg-[#0a0a0a] border border-red-500/20 rounded-lg p-6 relative overflow-hidden">
                <div className="flex items-center justify-between mb-6 border-b border-red-500/10 pb-4">
-                <h2 className="text-sm font-mono text-white flex items-center gap-3 uppercase tracking-widest">
-                  <ShieldAlert className="w-5 h-5 text-red-500" /> سجل أخطاء SQL التشخيصي
-                </h2>
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-sm font-mono text-white flex items-center gap-3 uppercase tracking-widest">
+                    <ShieldAlert className="w-5 h-5 text-red-500" /> السجل التشخيصي لأخطاء قواعد البيانات (استثناءات SQL)
+                  </h2>
+                  <p className="text-[10px] text-slate-500 font-mono">استجابات قواعد البيانات المجمعة المستخدمة لرسم الهيكلية الداخلية والتحقق من ثغرات الحقن الأمنية.</p>
+                </div>
                 <div className="bg-red-500/5 px-2 py-1 rounded border border-red-500/20 text-[9px] text-red-400 font-mono">
-                  ERROR_TRACE: ACTIVE
+                  AST_ERROR_TRACE: ACTIVE
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
@@ -421,7 +454,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 )) : (
-                  <div className="col-span-full py-20 text-center text-slate-800 font-mono text-sm uppercase opacity-30 italic">No Database Corruption Errors Detected</div>
+                  <div className="col-span-full py-20 text-center text-slate-800 font-mono text-sm uppercase opacity-30 italic">لا توجد أخطاء مرصودة في بنية قاعدة البيانات حالياً</div>
                 )}
               </div>
             </div>
@@ -436,7 +469,7 @@ export default function Dashboard() {
 function StatCard({ title, value, icon: Icon, trend }: { title: string, value: string, icon: any, trend: string }) {
   return (
     <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 relative overflow-hidden group hover:border-[#10b981]/50 transition-all duration-300">
-      <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+      <div className="absolute top-0 left-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
         <Icon className="w-12 h-12 text-[#10b981]" />
       </div>
       <div className="relative z-10 font-mono">

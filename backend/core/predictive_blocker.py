@@ -42,12 +42,11 @@ class PredictiveBlocker:
         return False, None
 
     def learn_from_block(self, payload):
-        """Analyzes a blocked payload using Token sequencing to extract specific WAF rules."""
+        """Analyzes a blocked payload and extracts WAF rules to avoid."""
         tokens = self.mutator._tokenize(payload)
+        rule_added = False
         
         # We look for dangerous pairings (e.g., KEYWORD + KEYWORD or KEYWORD + SYMBOL)
-        # Instead of blocking the whole string, we block the semantic pattern that caused the WAF to trigger.
-        
         for i in range(len(tokens) - 1):
             tok1 = tokens[i]
             
@@ -56,6 +55,7 @@ class PredictiveBlocker:
                 # Block the exact keyword + parenthesis format specifically
                 pattern = f"\\b{re.escape(tok1['value']).upper()}\\s*\\("
                 self._update_rule(pattern, 0.15)
+                rule_added = True
                 
             # 2. Syntax-Specific Injection: Find Operator + Keyword blocks
             if tok1['type'] == 'KEYWORD':
@@ -63,20 +63,27 @@ class PredictiveBlocker:
                 for j in range(i+1, min(len(tokens), i+4)):
                     tok2 = tokens[j]
                     if tok2['type'] in ['KEYWORD', 'OPERATOR', 'SYS_VAR']:
-                        # The WAF likely triggered on the logical jump (e.g. UNION followed by SELECT)
                         pattern = f"\\b{re.escape(tok1['value']).upper()}\\b.*?\\b{re.escape(tok2['value']).upper()}\\b"
                         self._update_rule(pattern, 0.1)
+                        rule_added = True
                         break
 
             # 3. Direct Encoding / Evasion Signatures
             if tok1['type'] == 'HEX_BIT':
                 self._update_rule(r"0[xX][0-9a-fA-F]+", 0.1)
+                rule_added = True
 
             if tok1['type'] == 'EXEC_COMMENT':
-                # The WAF might be blocking MySQL executable comments
                 ver_match = re.search(r"/\*!(\d{5})", tok1['value'])
                 if ver_match:
                     self._update_rule(rf"/\*!{ver_match.group(1)}", 0.1)
+                    rule_added = True
+
+        # 4. Fallback: If AST tokenization missed it, mark the raw payload to reflect reality
+        if not rule_added and len(payload) > 5:
+            # Escape and create a literal regex for the exact payload string as a fallback
+            pattern = re.escape(payload)
+            self._update_rule(pattern, 0.05)
 
     def report_success(self, payload):
         """Reduces confidence in rules that were present in a successful payload."""
