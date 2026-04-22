@@ -882,7 +882,7 @@ async function startServer() {
             console.log("[SYSTEM] Client disconnected and grace period expired. Terminating attack process...");
             pythonProcess.kill("SIGTERM");
           }
-        }, 10000); // 10s grace period
+        }, 30000); // 30s grace period
       });
 
     } catch (err: any) {
