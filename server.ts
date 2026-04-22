@@ -355,14 +355,12 @@ async function startServer() {
       const patterns = patternsStmt.all();
 
       // 3. Get stats
-      const totalAttemptsStmt = db.prepare("SELECT COUNT(*) as count FROM experience");
-      const totalAttempts = totalAttemptsStmt.get().count;
+      const { targetName: filterName } = req.query;
+      const whereC = filterName ? " WHERE target_name = ? " : "";
+      const prms = filterName ? [filterName] : [];
 
-      const predictiveBlockedStmt = db.prepare("SELECT COUNT(*) as count FROM experience WHERE status = 'PREDICTIVE_BLOCKED'");
-      const predictiveBlocked = predictiveBlockedStmt.get().count;
-
-      const successStmt = db.prepare("SELECT COUNT(*) as count FROM experience WHERE score >= 0.8");
-      const successes = successStmt.get().count;
+      const totalAttempts = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereC}`).get(...prms).count;
+      const successes = db.prepare(`SELECT COUNT(*) as count FROM exploits ${whereC}`).get(...prms).count;
 
       // Heuristic Intelligence Level
       let intelligenceLevel = "منخفض";
@@ -847,12 +845,24 @@ async function startServer() {
         if (!res.writableEnded) res.write(`[ERROR] ${data}`);
       });
 
-      pythonProcess.on("close", (code: any) => {
+      pythonProcess.on("close", (code: any, signal: any) => {
+        console.log(`[PROCESS] Prometheus process exited with code ${code} and signal ${signal}`);
         clearInterval(heartbeat);
         if (!res.writableEnded) {
-          res.write(`\n[PROCESS COMPLETED WITH CODE ${code}]\n`);
+          res.write(`\n[PROCESS TERMINATED | CODE: ${code} | SIGNAL: ${signal}]\n`);
           res.end();
         }
+        pythonProcess = null;
+      });
+
+      pythonProcess.on("error", (err) => {
+        console.error("[PROCESS] CRITICAL: Failed to spawn process:", err);
+        clearInterval(heartbeat);
+        if (!res.writableEnded) {
+          res.write(`\n[FATAL_SPAWN_ERROR]: ${err.message}\n`);
+          res.end();
+        }
+        pythonProcess = null;
       });
 
       // Kill the process if the client disconnects, but with a slight delay
@@ -873,6 +883,63 @@ async function startServer() {
         res.status(500).write(`[CRITICAL ERROR] ${err.message}\n`);
         res.end();
       }
+    }
+  });
+
+  // NEW: Comprehensive Summary Stats
+  app.get("/api/stats-summary", (req, res) => {
+    try {
+      const { targetName } = req.query;
+      let whereClause = "";
+      let params: any[] = [];
+      if (targetName) {
+        whereClause = " WHERE target_name = ? ";
+        params.push(targetName);
+      }
+
+      const totalGen = db.prepare(`SELECT MAX(generation_num) as maxGen FROM experience ${whereClause}`).get(...params).maxGen || 0;
+      const totalPayloads = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause}`).get(...params).count;
+      const smartBlocked = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} status = 'PREDICTIVE_BLOCKED'`).get(...params).count;
+      const wafBlocked = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} (score <= 0.1 OR status = 'WAF_BLOCKED')`).get(...params).count;
+      const successCount = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} score >= 0.8`).get(...params).count;
+      const sqlErrors = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} error_msg IS NOT NULL AND error_msg != ''`).get(...params).count;
+      
+      const timeStmt = db.prepare(`SELECT MIN(timestamp) as start, MAX(timestamp) as end FROM experience ${whereClause}`);
+      const times = timeStmt.get(...params);
+      let durationSeconds = 0;
+      if (times.start && times.end) {
+        durationSeconds = (new Date(times.end).getTime() - new Date(times.start).getTime()) / 1000;
+      }
+
+      const minutes = Math.floor(durationSeconds / 60);
+      const seconds = Math.floor(durationSeconds % 60);
+
+      // Convergence logic (first success time)
+      const firstSuccessStmt = db.prepare(`SELECT MIN(timestamp) as time FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} score >= 0.8`);
+      const successTime = firstSuccessStmt.get(...params).time;
+      let convergenceSeconds = 0;
+      if (times.start && successTime) {
+        convergenceSeconds = (new Date(successTime).getTime() - new Date(times.start).getTime()) / 1000;
+      }
+
+      res.json({
+        totalGenerations: totalGen,
+        totalPayloads,
+        smartAgentBlocked: smartBlocked,
+        wafBlocked,
+        successfulPayloads: successCount,
+        sqlErrorPayloads: sqlErrors,
+        attackDuration: {
+          seconds: durationSeconds,
+          formatted: `${minutes}:${seconds.toString().padStart(2, '0')}`
+        },
+        convergence: {
+          seconds: convergenceSeconds,
+          formatted: `${Math.floor(convergenceSeconds / 60)}:${Math.floor(convergenceSeconds % 60).toString().padStart(2, '0')}`
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

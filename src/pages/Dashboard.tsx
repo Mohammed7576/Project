@@ -45,6 +45,16 @@ export default function Dashboard() {
     predictiveBlocked: 0,
     convergence: { seconds: 0, formatted: '0:00' }
   });
+  const [summaryStats, setSummaryStats] = useState({
+    totalGenerations: 0,
+    totalPayloads: 0,
+    smartAgentBlocked: 0,
+    wafBlocked: 0,
+    successfulPayloads: 0,
+    sqlErrorPayloads: 0,
+    attackDuration: { seconds: 0, formatted: '0:00' },
+    convergence: { seconds: 0, formatted: '0:00' }
+  });
   const [stats, setStats] = useState({
     targets: '0',
     payloads: '0',
@@ -74,13 +84,13 @@ export default function Dashboard() {
     try {
       const q = targetName ? `?targetName=${encodeURIComponent(targetName)}` : '';
       
-      const [evoRes, metricRes, exploitRes, targetRes, lootRes, convRes, radarRes, repRes, sqlRes, wafRes] = await Promise.all([
+      const [evoRes, metricRes, exploitRes, targetRes, lootRes, summaryRes, radarRes, repRes, sqlRes, wafRes] = await Promise.all([
         fetch(`/api/evolution-stats${q}`),
         fetch(`/api/strategic-metrics${q}`),
         fetch(`/api/exploits${q}`),
         fetch('/api/targets'),
         fetch('/api/loot'),
-        fetch(`/api/convergence-stats${q}`),
+        fetch(`/api/stats-summary${q}`),
         fetch(`/api/swarm-radar${q}`),
         fetch(`/api/reputation-trends${q}`),
         fetch(`/api/sql-errors${q}`),
@@ -89,24 +99,35 @@ export default function Dashboard() {
 
       if (evoRes.ok) {
         const evoVal = await evoRes.json();
-        setEvolutionData(evoVal);
-        
-        // Update high-level stats based on real findings
-        setStats(prev => ({
-          ...prev,
-          payloads: evoVal.reduce((acc: number, curr: any) => acc + curr.attempts, 0).toString(),
-          successRate: evoVal.length > 0 
-            ? (evoVal[evoVal.length - 1].avgScore * 100).toFixed(1) + '%'
-            : '0%'
-        }));
+        // If specific target has no data, try fetching global data to see if it exists
+        if (evoVal.length === 0 && targetName) {
+           const fallbackRes = await fetch('/api/evolution-stats');
+           if (fallbackRes.ok) {
+             const fallbackVal = await fallbackRes.json();
+             setEvolutionData(fallbackVal);
+           }
+        } else {
+          setEvolutionData(evoVal);
+        }
       }
       
-      if (wafRes) {
+      if (summaryRes.ok) {
+        const summary = await summaryRes.json();
+        setSummaryStats(summary);
+        // Sync older stats state for backward compatibility if needed
+        setStats(prev => ({
+          ...prev,
+          payloads: summary.totalPayloads.toString(),
+          blocks: (summary.smartAgentBlocked + summary.wafBlocked).toString(),
+          successRate: summary.totalPayloads > 0 ? ((summary.successfulPayloads / summary.totalPayloads) * 100).toFixed(1) + '%' : '0%'
+        }));
+      }
+
+      if (wafRes.ok) {
         const wafVal = await wafRes.json();
         setStats(prev => ({ ...prev, wafPatterns: wafVal.patterns ? wafVal.patterns.length.toString() : '0' }));
       }
 
-      if (convRes.ok) setConvergenceStats(await convRes.json());
       if (radarRes.ok) setRadarPoints(await radarRes.json());
       if (sqlRes.ok) setSqlErrors(await sqlRes.json());
       if (repRes.ok) setReputationTrends(await repRes.json());
@@ -223,12 +244,15 @@ export default function Dashboard() {
           
           {/* Overview Cards Section */}
           {activeSections.includes('OVERVIEW') && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              <StatCard title="الأهداف النشطة (N)" value={stats.targets} icon={Database} trend={targetName ? "قاعدة بيانات محددة" : "النطاق العالمي"} />
-              <StatCard title="الطفرات التراكمية (N)" value={stats.payloads} icon={Zap} trend="إجمالي المتولد" />
-              <StatCard title="زمن التقارب الخوارزمي" value={convergenceStats.convergence.formatted} icon={Activity} trend="ثانية نحو النجاح/التقارب" />
-              <StatCard title="قواعد WAF المستخرجة" value={stats.wafPatterns} icon={ShieldAlert} trend="حجم قاعدة الأنماط" />
-              <StatCard title="ذروة الكفاءة جينياً (%)" value={stats.successRate} icon={Activity} trend="أعلى قابلية للتخطي" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <StatCard title="إجمالي الأجيال المحققة" value={summaryStats.totalGenerations.toString()} icon={History} trend="Evolution Progress" />
+              <StatCard title="الحمولات الملغاة (الوكيل الذكي)" value={summaryStats.smartAgentBlocked.toString()} icon={ShieldAlert} trend="Predictive Blocks" />
+              <StatCard title="محظورات جدار الحماية (WAF)" value={summaryStats.wafBlocked.toString()} icon={ShieldAlert} trend="Total WAF Blocks" />
+              <StatCard title="البصمات التي تم تخطيها (Exploits)" value={summaryStats.successfulPayloads.toString()} icon={Check} trend="Confirmed Bypasses" />
+              <StatCard title="أخطاء SQL المستخرجة" value={summaryStats.sqlErrorPayloads.toString()} icon={MessageSquareWarning} trend="Data Leaks/Errors" />
+              <StatCard title="الوقت الفعلي المستغرق" value={summaryStats.attackDuration.formatted} icon={Activity} trend="Attack Duration" />
+              <StatCard title="إجمالي المحاولات (Full Log)" value={summaryStats.totalPayloads.toString()} icon={Zap} trend="Total Throughput" />
+              <StatCard title="قواعد WAF المكتشفة" value={stats.wafPatterns} icon={Radar} trend="Pattern Database" />
             </div>
           )}
 

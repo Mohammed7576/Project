@@ -109,11 +109,25 @@ export default function Sandbox() {
   };
 
   const [windowVisibility, setWindowVisibility] = React.useState({
-    CONTROLS: true,
-    LEARNING: true,
-    SUCCESS: true,
-    ENGINE: true
+    CONTROLS: false,
+    LEARNING: false,
+    SUCCESS: false,
+    ENGINE: false
   });
+
+  const [summary, setSummary] = React.useState({ successfulPayloads: 0, sqlErrorPayloads: 0, totalPayloads: 0 });
+
+  useEffect(() => {
+    const fetchSummary = async () => {
+      try {
+        const res = await fetch('/api/stats-summary');
+        if (res.ok) setSummary(await res.json());
+      } catch (e) {}
+    };
+    fetchSummary();
+    const inv = setInterval(fetchSummary, 5000);
+    return () => clearInterval(inv);
+  }, []);
 
   const toggleWindow = (win: keyof typeof windowVisibility) => {
     setWindowVisibility(prev => ({ ...prev, [win]: !prev[win] }));
@@ -191,6 +205,26 @@ export default function Sandbox() {
                 <div className="flex items-center gap-2 text-white">
                   <Activity className={`w-3 h-3 ${isAttacking ? 'text-[#10b981]' : 'text-slate-600'}`} />
                   <span className="text-sm font-mono">{formatTime(elapsedTime)}</span>
+                </div>
+              </div>
+
+              <div className="h-6 w-[1px] bg-[#10b981]/10 mx-1"></div>
+
+              <div className="flex flex-col">
+                <span className="text-[8px] text-slate-500 uppercase font-bold tracking-tighter">Telemetry</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5" title="Successful Bypasses">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span className="text-xs font-mono text-white">{summary.successfulPayloads}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5" title="SQL Errors">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                    <span className="text-xs font-mono text-white">{summary.sqlErrorPayloads}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5" title="Total Throughput">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                    <span className="text-xs font-mono text-white">{summary.totalPayloads}</span>
+                  </div>
                 </div>
               </div>
             </div>

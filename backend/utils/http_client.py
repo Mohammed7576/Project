@@ -18,7 +18,7 @@ class HTTPClient:
     def _get_token(self, url):
         """Extracts user_token from the specified page."""
         try:
-            response = self.session.get(url)
+            response = self.session.get(url, timeout=5)
             soup = BeautifulSoup(response.text, 'html.parser')
             token_input = soup.find('input', {'name': 'user_token'})
             return token_input['value'] if token_input else None
@@ -42,7 +42,7 @@ class HTTPClient:
             login_data['user_token'] = token
             
         print(f"[*] Attempting login as '{username}'...")
-        res = self.session.post(self.login_url, data=login_data)
+        res = self.session.post(self.login_url, data=login_data, timeout=10)
         
         if "Login failed" in res.text:
             print("[!] Login failed. Check credentials.")
@@ -58,7 +58,7 @@ class HTTPClient:
         if token:
             security_data['user_token'] = token
             
-        self.session.post(self.security_url, data=security_data)
+        self.session.post(self.security_url, data=security_data, timeout=5)
         return True
 
     def fetch_base_payloads(self):
@@ -99,10 +99,10 @@ class HTTPClient:
             # Dynamic method switching based on DVWA security context
             if getattr(self, 'security_level', 'medium') == 'low':
                 # DVWA Low uses GET parameters
-                response = self.session.get(self.injection_url, params=params)
+                response = self.session.get(self.injection_url, params=params, timeout=5)
             else:
                 # DVWA Medium uses POST body
-                response = self.session.post(self.injection_url, data=params)
+                response = self.session.post(self.injection_url, data=params, timeout=5)
                 
             return {
                 "text": response.text,
