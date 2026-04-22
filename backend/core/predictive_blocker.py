@@ -25,9 +25,11 @@ class PredictiveBlocker:
 
         if self._conn is None:
             try:
-                self._conn = sqlite3.connect(self.db_path, timeout=20, check_same_thread=False)
+                # Increased timeout and added busy_timeout for concurrency
+                self._conn = sqlite3.connect(self.db_path, timeout=60, check_same_thread=False)
                 self._conn.execute('PRAGMA journal_mode = WAL')
                 self._conn.execute('PRAGMA synchronous = NORMAL')
+                self._conn.execute('PRAGMA busy_timeout = 60000') # 60 seconds
             except Exception as e:
                 print(f"[!] Blocker DB Connection Error: {e}")
                 return sqlite3.connect(self.db_path, check_same_thread=False)
@@ -125,24 +127,35 @@ class PredictiveBlocker:
         self._load_patterns() # Refresh local set
 
     def _update_rule(self, pattern, confidence_boost):
-        try:
-            conn = self.conn
-            cursor = conn.cursor()
-            # Check if exists
-            cursor.execute('SELECT confidence FROM blocking_rules WHERE pattern = ?', (pattern,))
-            row = cursor.fetchone()
-            if row:
-                new_conf = min(1.0, row[0] + confidence_boost)
-                cursor.execute('UPDATE blocking_rules SET confidence = ? WHERE pattern = ?', (new_conf, pattern))
-                if new_conf > 0.8 and pattern not in self.blocked_patterns:
-                     print(f"[*] Blocker: Confidence peaked, rule active: {pattern}", flush=True)
-            else:
-                # New rule starts with higher confidence due to syntax tree precision
-                initial_conf = 0.6 + confidence_boost
-                cursor.execute('INSERT INTO blocking_rules (pattern, confidence) VALUES (?, ?)', (pattern, initial_conf))
-                print(f"[*] AST Blocker: New semantic blocking pattern learned: {pattern} (Conf: +{initial_conf:.2f})", flush=True)
-            
-            conn.commit()
-            self._load_patterns()
-        except Exception as e:
-            print(f"[!] Blocker: Error updating rule: {e}")
+        import time
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                conn = self.conn
+                cursor = conn.cursor()
+                # Check if exists
+                cursor.execute('SELECT confidence FROM blocking_rules WHERE pattern = ?', (pattern,))
+                row = cursor.fetchone()
+                if row:
+                    new_conf = min(1.0, row[0] + confidence_boost)
+                    cursor.execute('UPDATE blocking_rules SET confidence = ? WHERE pattern = ?', (new_conf, pattern))
+                    if new_conf > 0.8 and pattern not in self.blocked_patterns:
+                         print(f"[*] Blocker: Confidence peaked, rule active: {pattern}", flush=True)
+                else:
+                    # New rule starts with higher confidence due to syntax tree precision
+                    initial_conf = 0.6 + confidence_boost
+                    cursor.execute('INSERT INTO blocking_rules (pattern, confidence) VALUES (?, ?)', (pattern, initial_conf))
+                    print(f"[*] AST Blocker: New semantic blocking pattern learned: {pattern} (Conf: +{initial_conf:.2f})", flush=True)
+                
+                conn.commit()
+                self._load_patterns()
+                return
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                print(f"[!] Blocker: Error updating rule: {e}")
+                break
+            except Exception as e:
+                print(f"[!] Blocker: Error updating rule: {e}")
+                break

@@ -19,10 +19,11 @@ class ExperienceManager:
 
         if self._conn is None:
             try:
-                # check_same_thread=False is essential for multi-threaded island runners
-                self._conn = sqlite3.connect(self.db_path, timeout=20, check_same_thread=False)
+                # Increased timeout and added check_same_thread for multi-threading
+                self._conn = sqlite3.connect(self.db_path, timeout=60, check_same_thread=False)
                 self._conn.execute('PRAGMA journal_mode = WAL')
                 self._conn.execute('PRAGMA synchronous = NORMAL')
+                self._conn.execute('PRAGMA busy_timeout = 60000') # 60 seconds
             except Exception as e:
                 print(f"[!] DB Connection Error: {e}")
                 return sqlite3.connect(self.db_path, check_same_thread=False)
@@ -289,16 +290,27 @@ class ExperienceManager:
             return None
 
     def save_attempt(self, payload, score, status, parent_payload=None, island_id=1, generation_num=1, error_msg=None, target_name="default"):
-        try:
-            conn = self.conn
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
-            conn.commit()
-        except Exception as e:
-            print(f"[!] Database Error (Save): {e}")
+        import time
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                conn = self.conn
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
+                conn.commit()
+                return
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                print(f"[!] Database Error (Save): {e}")
+                break
+            except Exception as e:
+                print(f"[!] Database Error (Save): {e}")
+                break
 
     def save_exploit(self, payload, exploit_type, target_name="default"):
         try:

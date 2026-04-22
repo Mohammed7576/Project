@@ -17,7 +17,7 @@ console.log(`[SYSTEM] Using database at: ${dbPath}`);
 
 let db: any;
 try {
-  db = new Database(dbPath, { timeout: 10000 });
+  db = new Database(dbPath, { timeout: 30000 });
   db.pragma('journal_mode = WAL'); 
   console.log("[DB] Database initialized successfully at " + dbPath);
 } catch (err) {
