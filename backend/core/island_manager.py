@@ -243,7 +243,14 @@ class IslandManager:
                     scored_population.append((genome, score, None))
                     continue
 
-            response = self.client.send_request(payload_str)
+            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
+            try:
+                response = self.client.send_request(payload_str)
+            except Exception as e:
+                print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
+                continue
+            
+            print(f"  [Island {island['id']}] Response received (Status: {response.status})", flush=True)
             
             # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
             if i == 0:

@@ -6,6 +6,13 @@ class HTTPClient:
     def __init__(self, base_url="http://localhost/"):
         self.base_url = base_url.rstrip('/') + '/'
         self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        })
         
         # Guard against base_url being a specific file
         if "login.php" in self.base_url:
@@ -99,10 +106,10 @@ class HTTPClient:
             # Dynamic method switching based on DVWA security context
             if getattr(self, 'security_level', 'medium') == 'low':
                 # DVWA Low uses GET parameters
-                response = self.session.get(self.injection_url, params=params, timeout=5)
+                response = self.session.get(self.injection_url, params=params, timeout=10)
             else:
                 # DVWA Medium uses POST body
-                response = self.session.post(self.injection_url, data=params, timeout=5)
+                response = self.session.post(self.injection_url, data=params, timeout=10)
                 
             return {
                 "text": response.text,

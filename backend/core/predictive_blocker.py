@@ -11,6 +11,7 @@ class PredictiveBlocker:
         self._conn = None
         self.blocked_patterns = set()
         self.mutator = ASTMutator() # Just for tokenization
+        self._init_db()
         self._load_patterns()
 
     @property
@@ -25,30 +26,43 @@ class PredictiveBlocker:
 
         if self._conn is None:
             try:
-                # Increased timeout and added busy_timeout for concurrency
+                # Optimized for maximum concurrency
                 self._conn = sqlite3.connect(self.db_path, timeout=60, check_same_thread=False)
                 self._conn.execute('PRAGMA journal_mode = WAL')
                 self._conn.execute('PRAGMA synchronous = NORMAL')
-                self._conn.execute('PRAGMA busy_timeout = 60000') # 60 seconds
+                self._conn.execute('PRAGMA busy_timeout = 60000')
+                self._conn.execute('PRAGMA cache_size = -2000') # 2MB cache
             except Exception as e:
                 print(f"[!] Blocker DB Connection Error: {e}")
-                return sqlite3.connect(self.db_path, check_same_thread=False)
+                # Fallback with at least basic timeout
+                try:
+                    conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
+                    conn.execute('PRAGMA busy_timeout = 30000')
+                    return conn
+                except:
+                    return None
         return self._conn
+
+    def _init_db(self):
+        """Ensures table exists once at start."""
+        try:
+            conn = self.conn
+            cursor = conn.cursor()
+            cursor.execute('CREATE TABLE IF NOT EXISTS blocking_rules (pattern TEXT PRIMARY KEY, confidence REAL)')
+            
+            # Prune broad rules once at startup
+            bad_rules = [r"\bSELECT\b", r"\bOR\b", r"\bAND\b", r"\bUNION\b", r"\bXOR\b", r"\d+\s*=\s*\d+", r"/\*.*\*/"]
+            for bad in bad_rules:
+                cursor.execute('DELETE FROM blocking_rules WHERE pattern = ?', (bad,))
+            conn.commit()
+        except Exception as e:
+            print(f"[!] Blocker: Error in _init_db: {e}")
 
     def _load_patterns(self):
         """Loads known blocking patterns from the database."""
         try:
             conn = self.conn
             cursor = conn.cursor()
-            cursor.execute('CREATE TABLE IF NOT EXISTS blocking_rules (pattern TEXT PRIMARY KEY, confidence REAL)')
-            
-            # Prune overly broad rules that kill evolution
-            bad_rules = [r"\bSELECT\b", r"\bOR\b", r"\bAND\b", r"\bUNION\b", r"\bXOR\b", r"\d+\s*=\s*\d+", r"/\*.*\*/"]
-            for bad in bad_rules:
-                cursor.execute('DELETE FROM blocking_rules WHERE pattern = ?', (bad,))
-            if cursor.rowcount > 0:
-                conn.commit()
-
             cursor.execute('SELECT pattern FROM blocking_rules WHERE confidence > 0.4')
             self.blocked_patterns = {row[0] for row in cursor.fetchall()}
         except Exception as e:
@@ -106,6 +120,10 @@ class PredictiveBlocker:
             # Escape and create a literal regex for the exact payload string as a fallback
             pattern = re.escape(payload)
             self._update_rule(pattern, 0.05)
+            rule_added = True
+
+        if rule_added:
+            self._load_patterns()
 
     def report_success(self, payload):
         """Reduces confidence in rules that were present in a successful payload."""
@@ -148,7 +166,6 @@ class PredictiveBlocker:
                     print(f"[*] AST Blocker: New semantic blocking pattern learned: {pattern} (Conf: +{initial_conf:.2f})", flush=True)
                 
                 conn.commit()
-                self._load_patterns()
                 return
             except sqlite3.OperationalError as e:
                 if "locked" in str(e).lower():
