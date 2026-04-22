@@ -96,12 +96,13 @@ class HTTPClient:
         return []
 
     def send_request(self, payload):
-        """Sends the SQLi payload to the target page."""
+        """Sends the SQLi payload to the target page and measures latency."""
         params = {
             'id': payload,
             'Submit': 'Submit'
         }
         
+        start_time = time.time()
         try:
             # Dynamic method switching based on DVWA security context
             if getattr(self, 'security_level', 'medium') == 'low':
@@ -111,14 +112,17 @@ class HTTPClient:
                 # DVWA Medium uses POST body
                 response = self.session.post(self.injection_url, data=params, timeout=10)
                 
+            latency = int((time.time() - start_time) * 1000)
             return {
                 "text": response.text,
                 "status": response.status_code,
-                "headers": dict(response.headers)
+                "headers": dict(response.headers),
+                "latency": latency
             }
         except Exception as e:
             return {
                 "text": f"Connection Error: {e}",
                 "status": 500,
-                "headers": {}
+                "headers": {},
+                "latency": 0
             }

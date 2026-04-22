@@ -18,7 +18,10 @@ class SuccessValidator:
             r"table_name", r"column_name", r"information_schema", r"schema_name",
             r"datname", r"user_tables", r"all_tab_columns", r"sysobjects",
             r"Current User:", r"Database:", r"VERSION\(\)", r"@@VERSION",
-            r"TABLE_SCHEMA", r"COLUMN_TYPE", r"TABLE_CATALOG"
+            r"TABLE_SCHEMA", r"COLUMN_TYPE", r"TABLE_CATALOG",
+            # Additional MySQL dumping signals
+            r"CHARACTER_SET_NAME", r"COLLATION_NAME", r"ROUTINE_NAME",
+            r"CREATE TABLE", r"ENGINE=InnoDB", r"DEFAULT CHARSET"
         ]
         
         # sqlmap (official data/xml/errors.xml) exhaustive signatures for MySQL ONLY

