@@ -80,58 +80,58 @@ class IslandManager:
 
         if not is_resuming:
             for i in range(num_islands):
-            island_id = i + 1
-            is_quoteless = (context == "QUOTELESS_STRING")
-            # If it's quoteless, we still treat the inner context as essentially string-breaking, but with backslashes
-            actual_context = "SINGLE_QUOTE" if is_quoteless else context
-            
-            # Setting disable_strings dynamically based on target security
-            mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
-            
-            # 1. Context-Aware Initialization
-            if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":
-                mutator.strategy_weights["context_aware"] *= 3.0
-                print(f"[*] Island {island_id}: Optimizing for String contexts.", flush=True)
-            elif context == "DOUBLE_QUOTE":
-                mutator.strategy_weights["context_aware"] *= 3.0
-                print(f"[*] Island {island_id}: Optimizing for DOUBLE_QUOTE context.", flush=True)
-            elif context == "NUMERIC":
-                mutator.strategy_weights["logical_alts"] *= 3.0
-                print(f"[*] Island {island_id}: Optimizing for NUMERIC context.", flush=True)
+                island_id = i + 1
+                is_quoteless = (context == "QUOTELESS_STRING")
+                # If it's quoteless, we still treat the inner context as essentially string-breaking, but with backslashes
+                actual_context = "SINGLE_QUOTE" if is_quoteless else context
+                
+                # Setting disable_strings dynamically based on target security
+                mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
+                
+                # 1. Context-Aware Initialization
+                if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":
+                    mutator.strategy_weights["context_aware"] *= 3.0
+                    print(f"[*] Island {island_id}: Optimizing for String contexts.", flush=True)
+                elif context == "DOUBLE_QUOTE":
+                    mutator.strategy_weights["context_aware"] *= 3.0
+                    print(f"[*] Island {island_id}: Optimizing for DOUBLE_QUOTE context.", flush=True)
+                elif context == "NUMERIC":
+                    mutator.strategy_weights["logical_alts"] *= 3.0
+                    print(f"[*] Island {island_id}: Optimizing for NUMERIC context.", flush=True)
 
-            # Specialization: Each island has a different initial bias
-            # Mapping to Dashboard: 1: Inference, 2: Bypass, 3: Extraction
-            if island_id == 3: # Structural Island (Expert in Extraction)
-                mutator.strategy_weights["logical_alts"] *= 2.0
-                mutator.strategy_weights["union_balance"] *= 5.0
-                mutator.strategy_weights["column_discovery"] *= 3.0
-                mutator.strategy_weights["upgrade_to_exfil"] *= 3.0
-            elif island_id == 2: # Bypass Island (Expert in WAF evasion)
-                mutator.strategy_weights["inline_comments"] *= 2.0
-                mutator.strategy_weights["junk_fill"] *= 2.0
-                mutator.strategy_weights["micro_fragmentation"] *= 2.0
-            else: # island_id == 1: Inference Island (Expert in Blind/Time attacks)
-                mutator.strategy_weights["blind_inference"] *= 5.0
-                mutator.strategy_weights["context_aware"] *= 2.0
-                mutator.strategy_weights["dynamic_structural"] *= 2.0
+                # Specialization: Each island has a different initial bias
+                # Mapping to Dashboard: 1: Inference, 2: Bypass, 3: Extraction
+                if island_id == 3: # Structural Island (Expert in Extraction)
+                    mutator.strategy_weights["logical_alts"] *= 2.0
+                    mutator.strategy_weights["union_balance"] *= 5.0
+                    mutator.strategy_weights["column_discovery"] *= 3.0
+                    mutator.strategy_weights["upgrade_to_exfil"] *= 3.0
+                elif island_id == 2: # Bypass Island (Expert in WAF evasion)
+                    mutator.strategy_weights["inline_comments"] *= 2.0
+                    mutator.strategy_weights["junk_fill"] *= 2.0
+                    mutator.strategy_weights["micro_fragmentation"] *= 2.0
+                else: # island_id == 1: Inference Island (Expert in Blind/Time attacks)
+                    mutator.strategy_weights["blind_inference"] *= 5.0
+                    mutator.strategy_weights["context_aware"] *= 2.0
+                    mutator.strategy_weights["dynamic_structural"] *= 2.0
 
-            # Initialize population for this island
-            golden_seeds = self.exp_manager.get_golden_payloads(limit=10)
-            combined_seeds = golden_seeds + base_payloads
-            pop_strings = random.sample(combined_seeds, min(len(combined_seeds), self.island_pop_size))
-            
-            # Convert strings to structured Genomes
-            pop = [PayloadGenome.from_string(s) for s in pop_strings]
-            
-            self.islands.append({
-                "id": island_id,
-                "population": pop,
-                "mutator": mutator,
-                "stagnation": 0,
-                "best_score": 0
-            })
+                # Initialize population for this island
+                golden_seeds = self.exp_manager.get_golden_payloads(limit=10)
+                combined_seeds = (golden_seeds if golden_seeds else []) + base_payloads
+                pop_strings = random.sample(combined_seeds, min(len(combined_seeds), self.island_pop_size))
+                
+                # Convert strings to structured Genomes
+                pop = [PayloadGenome.from_string(s) for s in pop_strings]
+                
+                self.islands.append({
+                    "id": island_id,
+                    "population": pop,
+                    "mutator": mutator,
+                    "stagnation": 0,
+                    "best_score": 0
+                })
 
-        print(f"[*] Archipelago Initialized: {num_islands} Islands established.", flush=True)
+        print(f"[*] Archipelago Initialized: {len(self.islands)} Islands established.", flush=True)
 
     def _calculate_similarity(self, p1, p2):
         """Simple Jaccard similarity based on characters to detect structural bias."""
