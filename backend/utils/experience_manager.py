@@ -335,7 +335,7 @@ class ExperienceManager:
             print(f"[!] Database Error (Get Exploits): {e}")
             return []
 
-    def get_golden_payloads(self, limit=5):
+    def get_golden_payloads(self, limit=50):
         """Retrieves the most successful payloads from previous sessions."""
         try:
             conn = self.conn
