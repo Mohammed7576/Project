@@ -34,6 +34,7 @@ class IslandManager:
         self.islands = []
         
         # Try to load previous state
+        is_resuming = False
         saved_state = self.exp_manager.load_session_state(client.base_url)
         if saved_state:
             try:
@@ -45,16 +46,16 @@ class IslandManager:
                     actual_context = "SINGLE_QUOTE" if is_quoteless else context
                     mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
                     # Merge weights to support new strategies in old sessions
-                    loaded_weights = i_data['weights']
+                    loaded_weights = i_data.get('weights', {})
                     for k, v in loaded_weights.items():
                         if k in mutator.strategy_weights:
                             mutator.strategy_weights[k] = v
                     
-                    mutator.keyword_reputation = i_data['reputation']
+                    mutator.keyword_reputation = i_data.get('reputation', {})
                     
                     # Population is now a list of dicts (genomes)
                     pop = []
-                    for p in i_data['population']:
+                    for p in i_data.get('population', []):
                         if isinstance(p, dict) and "core" in p:
                             pop.append(PayloadGenome.from_dict(p))
                         elif isinstance(p, str):
@@ -67,11 +68,18 @@ class IslandManager:
                         "stagnation": i_data.get('stagnation', 0),
                         "best_score": i_data.get('best_score', 0)
                     })
-                return # Skip default initialization
+                
+                # Load historical hall of fame from DB
+                golden = self.exp_manager.get_golden_payloads(limit=50)
+                self.hall_of_fame = golden if golden else []
+                
+                is_resuming = True
             except Exception as e:
                 print(f"[!] Failed to load state: {e}. Starting fresh.", flush=True)
+                self.islands = [] # Reset
 
-        for i in range(num_islands):
+        if not is_resuming:
+            for i in range(num_islands):
             island_id = i + 1
             is_quoteless = (context == "QUOTELESS_STRING")
             # If it's quoteless, we still treat the inner context as essentially string-breaking, but with backslashes

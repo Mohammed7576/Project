@@ -33,12 +33,11 @@ class PredictiveBlocker:
                 self._conn.execute('PRAGMA busy_timeout = 60000')
                 self._conn.execute('PRAGMA cache_size = -2000') # 2MB cache
             except Exception as e:
-                print(f"[!] Blocker DB Connection Error: {e}")
+                print(f"[!] Blocker DB Connection Error: {e}", flush=True)
                 # Fallback with at least basic timeout
                 try:
-                    conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
-                    conn.execute('PRAGMA busy_timeout = 30000')
-                    return conn
+                    self._conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
+                    self._conn.execute('PRAGMA busy_timeout = 30000')
                 except:
                     return None
         return self._conn
