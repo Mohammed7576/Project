@@ -12,13 +12,16 @@ const __dirname = path.dirname(__filename);
 import fs from "fs";
 
 // Initialize database with error handling
+const dbPath = path.resolve(__dirname, "main.db");
+console.log(`[SYSTEM] Using database at: ${dbPath}`);
+
 let db: any;
 try {
-  db = new Database("memory.db", { timeout: 10000 });
-  db.pragma('journal_mode = WAL'); // Enable WAL mode for better concurrency
-  console.log("[DB] Database initialized successfully with WAL mode and 10s timeout.");
+  db = new Database(dbPath, { timeout: 10000 });
+  db.pragma('journal_mode = WAL'); 
+  console.log("[DB] Database initialized successfully at " + dbPath);
 } catch (err) {
-  console.error("[DB] Failed to initialize database, using in-memory fallback:", err);
+  console.error("[DB] Failed to initialize database file, attempting fallback:", err);
   db = new Database(":memory:");
 }
 
@@ -803,9 +806,10 @@ async function startServer() {
       }
 
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.setHeader('Transfer-Encoding', 'chunked');
       res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering for Nginx
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Accel-Buffering', 'no'); 
       
       // Pass configuration as environment variables to the Python script
       pythonProcess = spawn("python3", [path.join(__dirname, "backend", "main.py")], {
@@ -818,7 +822,8 @@ async function startServer() {
           POPULATION_SIZE: population as string,
           MAX_GENERATIONS: generations as string,
           TARGET_NAME: (targetName as string) || 'default',
-          PYTHONUNBUFFERED: "1" // Ensure python output is flushed
+          DB_PATH: dbPath,
+          PYTHONUNBUFFERED: "1" 
         }
       });
 
@@ -849,6 +854,9 @@ async function startServer() {
         console.log(`[PROCESS] Prometheus process exited with code ${code} and signal ${signal}`);
         clearInterval(heartbeat);
         if (!res.writableEnded) {
+          if (code !== 0 && code !== null) {
+             res.write(`\n[PROCESS_ERROR] Engine exited abnormally with code ${code}. Check backend logs.\n`);
+          }
           res.write(`\n[PROCESS TERMINATED | CODE: ${code} | SIGNAL: ${signal}]\n`);
           res.end();
         }

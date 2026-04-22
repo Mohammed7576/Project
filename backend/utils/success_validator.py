@@ -10,7 +10,8 @@ class SuccessValidator:
         self.password_signatures = [
             r"password", r"passwd", r"key", r"secret", r"hash", r"token", 
             r"credential", r"login_password", r"user_password", r"access_token",
-            r"session_id", r"salt", r"md5", r"sha1", r"sha256", r"crypt"
+            r"session_id", r"salt", r"md5", r"sha1", r"sha256", r"crypt",
+            r"api_key", r"secret_key", r"access_key", r"auth_token", r"jwt_token"
         ]
         self.hash_pattern = r"[a-f0-9]{32}"
         self.schema_signatures = [
