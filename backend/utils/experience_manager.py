@@ -9,15 +9,23 @@ class ExperienceManager:
 
     @property
     def conn(self):
+        try:
+            if self._conn is not None:
+                # Test connectivity
+                self._conn.execute("SELECT 1")
+                return self._conn
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            self._conn = None
+
         if self._conn is None:
             try:
-                self._conn = sqlite3.connect(self.db_path, timeout=20)
+                # check_same_thread=False is essential for multi-threaded island runners
+                self._conn = sqlite3.connect(self.db_path, timeout=20, check_same_thread=False)
                 self._conn.execute('PRAGMA journal_mode = WAL')
                 self._conn.execute('PRAGMA synchronous = NORMAL')
             except Exception as e:
                 print(f"[!] DB Connection Error: {e}")
-                # Fallback to a temporary connection if needed, though this is risky
-                return sqlite3.connect(self.db_path)
+                return sqlite3.connect(self.db_path, check_same_thread=False)
         return self._conn
 
     def _init_db(self):
