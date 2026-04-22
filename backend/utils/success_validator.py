@@ -9,13 +9,15 @@ class SuccessValidator:
         self.basic_signatures = ["First name:", "Surname:", "ID:", "admin", "gordonb", "1337"]
         self.password_signatures = [
             r"password", r"passwd", r"key", r"secret", r"hash", r"token", 
-            r"credential", r"login_password", r"user_password"
+            r"credential", r"login_password", r"user_password", r"access_token",
+            r"session_id", r"salt", r"md5", r"sha1", r"sha256", r"crypt"
         ]
         self.hash_pattern = r"[a-f0-9]{32}"
         self.schema_signatures = [
             r"table_name", r"column_name", r"information_schema", r"schema_name",
             r"datname", r"user_tables", r"all_tab_columns", r"sysobjects",
-            r"Current User:", r"Database:"
+            r"Current User:", r"Database:", r"VERSION\(\)", r"@@VERSION",
+            r"TABLE_SCHEMA", r"COLUMN_TYPE", r"TABLE_CATALOG"
         ]
         
         # sqlmap (official data/xml/errors.xml) exhaustive signatures for MySQL ONLY

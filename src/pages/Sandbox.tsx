@@ -125,7 +125,7 @@ export default function Sandbox() {
       } catch (e) {}
     };
     fetchSummary();
-    const inv = setInterval(fetchSummary, 5000);
+    const inv = setInterval(fetchSummary, 10000);
     return () => clearInterval(inv);
   }, []);
 

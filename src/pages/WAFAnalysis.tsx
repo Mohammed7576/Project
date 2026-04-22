@@ -23,7 +23,7 @@ export default function WAFAnalysis() {
     };
     
     fetchIntel();
-    const intervalId = setInterval(fetchIntel, 5000);
+    const intervalId = setInterval(fetchIntel, 10000);
     
     return () => {
       isMounted = false;

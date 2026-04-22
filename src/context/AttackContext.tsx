@@ -35,8 +35,8 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('password');
   const [security, setSecurity] = useState('medium');
-  const [population, setPopulation] = useState(12);
-  const [generations, setGenerations] = useState(300);
+  const [population, setPopulation] = useState(300);
+  const [generations, setGenerations] = useState(30);
   const [targetName, setTargetName] = useState('dvwa_lab');
   const [isAttacking, setIsAttacking] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);

