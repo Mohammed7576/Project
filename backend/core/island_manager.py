@@ -6,6 +6,7 @@ from core.payload_genome import PayloadGenome
 from core.predictive_blocker import PredictiveBlocker
 from core.waf_fingerprinter import WAFFingerprinter
 from core.error_refiner import SQLErrorRefiner
+from core.semantic_memory import SemanticMemory
 from utils.success_validator import SuccessValidator
 from utils.data_extractor import DataExtractor
 
@@ -14,6 +15,10 @@ class IslandManager:
         self.client = client
         self.baseline = baseline
         self.exp_manager = exp_manager
+        
+        # Shared Semantic Memory (Global Experience Buffer)
+        self.semantic_memory = SemanticMemory(self.exp_manager)
+        
         self.target_name = target_name
         self.base_seeds = base_payloads
         self.num_islands = num_islands
@@ -47,6 +52,7 @@ class IslandManager:
                     is_quoteless = (context == "QUOTELESS_STRING")
                     actual_context = "SINGLE_QUOTE" if is_quoteless else context
                     mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
+                    mutator.semantic_memory = self.semantic_memory
                     # Merge weights to support new strategies in old sessions
                     loaded_weights = i_data.get('weights', {})
                     for k, v in loaded_weights.items():
@@ -89,6 +95,7 @@ class IslandManager:
                 
                 # Setting disable_strings dynamically based on target security
                 mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
+                mutator.semantic_memory = self.semantic_memory
                 
                 # 1. Context-Aware Initialization
                 if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":
@@ -359,6 +366,10 @@ class IslandManager:
             # 2. Federated Policy Migration (Weights)
             policy = source_island["mutator"].get_policy_weights()
             target_island["mutator"].load_policy_weights(policy)
+            
+        # 3. Semantic Memory Sync (Shared Knowledge)
+        self.semantic_memory.sync_to_db()
+        self.semantic_memory._load_memory() # Refresh from DB to get patterns from all islands
 
     def _generate_next_gen(self, elites, survivors, intensity, mutator):
         next_gen = []

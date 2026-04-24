@@ -106,6 +106,22 @@ class ExperienceManager:
                 )
             ''')
             cursor.execute('''
+                CREATE TABLE IF NOT EXISTS token_reputation (
+                    token TEXT PRIMARY KEY,
+                    reputation REAL DEFAULT 1.0,
+                    blocked_count INTEGER DEFAULT 0,
+                    success_count INTEGER DEFAULT 0
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS pattern_memory (
+                    pattern_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    vector_blob BLOB,
+                    label TEXT,
+                    payload_sample TEXT
+                )
+            ''')
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS session_state (
                     target_url TEXT PRIMARY KEY,
                     state_json TEXT,

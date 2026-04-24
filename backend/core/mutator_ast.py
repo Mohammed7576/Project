@@ -65,6 +65,7 @@ class ASTMutator:
         self.boredom_counter = 0 # Track how many samey successes we hit
         self.last_score = 0
         self.current_state_vector = [1, 0, 0, 0, 1, 0, 0] # Default baseline state
+        self.semantic_memory = None # Set by IslandManager
 
     def apply_hint(self, hint):
         """Applies AI-driven hints to strategy weights."""
@@ -129,6 +130,16 @@ class ASTMutator:
         # 4. Contextual Compatibility Logic
         if wrap:
             mutated = self._context_aware_wrap(mutated)
+        
+        # Point 3: Semantic Safety Check (Shared Knowledge)
+        # If the generated payload matches a known global blocked pattern, try a final scramble
+        if self.semantic_memory:
+            is_blocked, conf, pattern = self.semantic_memory.check_payload(mutated)
+            if is_blocked and conf > 0.7:
+                print(f"[*] Mutator: BLOCK PREVENTED by Semantic Memory! Pattern matched: {pattern}", flush=True)
+                # Final emergency obfuscation to break the known pattern
+                mutated = self._break_regex_match(mutated)
+        
         return mutated
 
     def _apply_waf_evasion(self, payload, blocked_patterns):
@@ -259,6 +270,10 @@ class ASTMutator:
 
     def _update_reputations(self, payload, delta):
         """Point 3: Contextual Credit Assignment (Sequences vs Words)."""
+        # Point 2: Update Semantic Memory (Token based)
+        if self.semantic_memory:
+            self.semantic_memory.update_reputation(payload, delta > 0)
+
         upper_p = payload.upper()
         found_kws = [kw for kw in self.sql_keywords if kw in upper_p]
         

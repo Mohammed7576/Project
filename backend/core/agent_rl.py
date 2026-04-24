@@ -1,78 +1,72 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 import numpy as np
 
-class ActorCritic(nn.Module):
-    """
-    Point 7: Deep Actor-Critic (A2C) implementation.
-    Actor: Selects the best mutation strategy based on WAF state.
-    Critic: Estimates the success probability (Value) of the state.
-    """
-    def __init__(self, state_dim, action_dim):
-        super(ActorCritic, self).__init__()
-        # Shared layer for feature extraction
-        self.affine = nn.Linear(state_dim, 64)
-        
-        # Actor head: Outputs probabilities for each mutation strategy
-        self.action_head = nn.Linear(64, action_dim)
-        
-        # Critic head: Outputs the state value (Expected Reward)
-        self.value_head = nn.Linear(64, 1)
-
-    def forward(self, x):
-        x = F.relu(self.affine(x))
-        
-        action_prob = F.softmax(self.action_head(x), dim=-1)
-        state_values = self.value_head(x)
-        
-        return action_prob, state_values
-
 class RLAgent:
+    """
+    Point 7: Deep Actor-Critic (A2C) implementation using NumPy.
+    Actor: Base policy for mutation selection.
+    Critic: Value estimation.
+    """
     def __init__(self, state_dim, action_names):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.state_dim = state_dim
         self.action_names = action_names
-        self.model = ActorCritic(state_dim, len(action_names)).to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.01)
+        self.action_dim = len(action_names)
+        self.lr = 0.01
         
-        self.saved_actions = []
-        self.rewards = []
+        # Simple Neural Network Weights (One hidden layer)
+        self.W1 = np.random.randn(state_dim, 32) * 0.1
+        self.W_actor = np.random.randn(32, self.action_dim) * 0.1
+        self.W_critic = np.random.randn(32, 1) * 0.1
+        
+        self.last_state = None
+        self.last_action_idx = None
+
+    def _softmax(self, x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum()
 
     def select_action(self, state_vector):
-        """Actor: Choosing the mutation strategy."""
-        state = torch.from_numpy(np.array(state_vector)).float().unsqueeze(0).to(self.device)
-        probs, state_value = self.model(state)
+        """Actor: Forward pass to choose mutation."""
+        state = np.array(state_vector).reshape(1, -1)
         
-        # Create a categorical distribution over the list of probabilities of actions
-        m = torch.distributions.Categorical(probs)
-        action_idx = m.sample()
+        # Forward pass
+        h = np.tanh(np.dot(state, self.W1))
+        probs = self._softmax(np.dot(h, self.W_actor))[0]
         
-        # Save log probability and state value for training (Critic step)
-        self.saved_actions.append((m.log_prob(action_idx), state_value))
+        # Sample action from distribution
+        action_idx = np.random.choice(self.action_dim, p=probs)
         
-        return self.action_names[action_idx.item()]
+        self.last_state = state
+        self.last_action_idx = action_idx
+        self.last_h = h
+        self.last_probs = probs
+        
+        return self.action_names[action_idx]
 
     def update(self, reward):
-        """Critic: Optimization via Policy Gradient (Advantage)."""
-        if not self.saved_actions: return
+        """Critic: Simple Policy Gradient update (Backpropagation)."""
+        if self.last_state is None: return
         
-        # Use simple single-step update for demo efficiency
-        log_prob, state_value = self.saved_actions[-1]
+        # Multi-variable advantage
+        # Target value is the reward
+        # Current value prediction
+        value_pred = np.dot(self.last_h, self.W_critic)[0, 0]
+        advantage = reward - value_pred
         
-        # Advantage calculation: R - V(s)
-        advantage = reward - state_value.item()
+        # 1. Update Critic (MSE Loss)
+        # Grad of (reward - V)^2 -> 2 * (reward - V) * -h
+        dv = -2 * advantage
+        dW_critic = np.dot(self.last_h.T, np.array([[dv]]))
+        self.W_critic -= self.lr * dW_critic
         
-        # Policy Loss: -log_prob * Advantage
-        policy_loss = -log_prob * advantage
+        # 2. Update Actor (Policy Gradient)
+        # Grad of -log(prob) * advantage
+        d_actor = self.last_probs.copy()
+        d_actor[self.last_action_idx] -= 1.0 # Softmax gradient
+        d_actor *= advantage
         
-        # Value Loss: Mean Squared Error of predicted value and actual reward
-        value_loss = F.mse_loss(state_value, torch.tensor([[reward]]).to(self.device))
+        dW_actor = np.dot(self.last_h.T, d_actor.reshape(1, -1))
+        self.W_actor -= self.lr * dW_actor
         
-        loss = policy_loss + value_loss
+        # Simplification: Only updating heads, hidden layer fixed for stability in small runs
         
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        
-        self.saved_actions = [] # Reset after update
+        self.last_state = None # Reset
