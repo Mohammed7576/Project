@@ -53,6 +53,43 @@ class SuccessValidator:
         
         # sqlmap's default ratio threshold
         self.ratio_threshold = 0.88 # Based on lib/core/settings.py: URI_INJECTION_RATIO
+        
+    def is_syntax_plausible(self, payload):
+        """AST Syntax Pre-check: Quickly drops payloads that are inherently malformed (unbalanced quotes/parentheses)."""
+        # Exclude from check if using complex evasion or hex since those can deliberately break parsers
+        if "%" in payload or "0x" in payload.lower() or "/*!(" in payload:
+            return True
+            
+        # Count quotes
+        sq = payload.count("'")
+        dq = payload.count('"')
+        # If both are odd and neither is escaping the other natively, it might be fundamentally broken
+        # But this is an SQL injection, odd quotes are NORMAL if we are closing a user input!
+        # Example: ' OR 1=1 -- <- has 1 quote. It's valid.
+        pass # Better to check parenthesis balance
+
+        # Parentheses Check:
+        opened = 0
+        in_sq = False
+        in_dq = False
+        
+        for i, char in enumerate(payload):
+            if char == "'" and (i == 0 or payload[i-1] != "\\") and not in_dq:
+                in_sq = not in_sq
+            elif char == '"' and (i == 0 or payload[i-1] != "\\") and not in_sq:
+                in_dq = not in_dq
+            elif char == '(' and not in_sq and not in_dq:
+                opened += 1
+            elif char == ')' and not in_sq and not in_dq:
+                opened -= 1
+        
+        # In SQLi we often add closing parentheses `))` to break out of queries
+        # so opened < 0 is fine.
+        # But if we open many and don't close them, it's a syntax error that will never work.
+        if opened > 2:
+            return False
+            
+        return True
 
     def get_sql_error(self, response_text):
         """sqlmap-style error extraction: finds the specific error string from exhaustive set."""
@@ -99,7 +136,7 @@ class SuccessValidator:
                 # Time-based might still trigger, so check latency first
                 if latency > (baseline.get('latency', 0) + 4000):
                     return 0.85, "TIME_BASED_POSITIVE"
-                return 0.05, "NO_DATA_VARIATION"
+                return 0.6, "NO_DATA_VARIATION"
 
         # 0. ERROR-BASED DETECTION (Priority Shift: Catch syntax errors before false successes)
         error_msg = self.get_sql_error(response_text)
@@ -135,7 +172,7 @@ class SuccessValidator:
                 if not any(p_part in low_err for p_part in payload_lower.split() if len(p_part) > 3):
                     return 0.85, "SIGNAL_UNKNOWN_COLUMN_GENERIC"
 
-            return 0.3, "SQL_SYNTAX_ERROR"
+            return 0.4, "SQL_SYNTAX_ERROR"
 
 
         # 1. SENSITIVE DATA DETECTION (Focus on Passwords and NEW reflecting data)
@@ -238,4 +275,4 @@ class SuccessValidator:
         if any(sig in response_text for sig in self.basic_signatures):
             return 0.65, "LOGIC_BYPASS_GENERIC"
 
-        return 0.05, "INCONCLUSIVE"
+        return 0.6, "INCONCLUSIVE_VALID_SYNTAX"

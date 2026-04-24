@@ -11,7 +11,7 @@ from utils.success_validator import SuccessValidator
 from utils.data_extractor import DataExtractor
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default"):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default", blocked_keywords=None):
         self.client = client
         self.baseline = baseline
         self.exp_manager = exp_manager
@@ -32,6 +32,7 @@ class IslandManager:
         self.error_refiner = SQLErrorRefiner()
         self.session_tested = set() # Avoid repeating in same session
         self.current_gen = 0
+        self.blocked_keywords = blocked_keywords or []
         
         # Initialize Islands with their own mutators and populations
         self.islands = []
@@ -47,12 +48,14 @@ class IslandManager:
                 for i_data in state['islands']:
                     is_quoteless = (context == "QUOTELESS_STRING")
                     actual_context = "SINGLE_QUOTE" if is_quoteless else context
-                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
+                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, blocked_keywords=self.blocked_keywords)
                     # Merge weights to support new strategies in old sessions
                     loaded_weights = i_data.get('weights', {})
                     for k, v in loaded_weights.items():
                         if k in mutator.strategy_weights:
                             mutator.strategy_weights[k] = v
+                            mutator.strategy_q_values[k] = v # Sync UCB Q-values
+                            mutator.strategy_counts[k] = 10 # Provide pseudo-count
                     
                     mutator.keyword_reputation = i_data.get('reputation', {})
                     
@@ -89,7 +92,7 @@ class IslandManager:
                 actual_context = "SINGLE_QUOTE" if is_quoteless else context
                 
                 # Setting disable_strings dynamically based on target security
-                mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
+                mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, blocked_keywords=self.blocked_keywords)
                 
                 # 1. Context-Aware Initialization
                 if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":
@@ -241,6 +244,11 @@ class IslandManager:
             if payload_str in self.session_tested:
                 return None
 
+            # 0.5 AST Syntax Pre-check
+            if not self.validator.is_syntax_plausible(payload_str):
+                # Silently drop implausible syntax without HTTP request to save time
+                return None
+
             # 1. Predictive Blocking (The Intelligent Filter)
             # If severely stagnated, ignore predictive blocker occasionally to force exploration against real WAF
             ignore_blocker = (island["stagnation"] >= 5 and random.random() < 0.3)
@@ -316,7 +324,7 @@ class IslandManager:
             return (genome, score, error_msg)
 
         max_score = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 8)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 20)) as executor:
             futures = [executor.submit(evaluate_payload, i, genome) for i, genome in enumerate(pop)]
             for future in concurrent.futures.as_completed(futures):
                 try:

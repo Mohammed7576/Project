@@ -3,7 +3,7 @@ import re
 from core.grammar_engine import GrammarEngine
 
 class ASTMutator:
-    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True):
+    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True, blocked_keywords=None):
         self.sql_keywords = [
             "UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", 
             "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION",
@@ -14,8 +14,12 @@ class ASTMutator:
         self.context = context
         self.quoteless = quoteless
         self.disable_strings = disable_strings
-        # RL: Epsilon-Greedy parameters
-        self.epsilon = 0.2  # Exploration rate
+        self.blocked_keywords = blocked_keywords or []
+        # RL: UCB (Upper Confidence Bound) Multi-Armed Bandit parameters
+        self.strategy_counts = {name: 0 for name in self.strategies.keys()}
+        self.strategy_q_values = {name: 0.0 for name in self.strategies.keys()}
+        self.total_mutations = 0
+        self.ucb_c = 1.5 # Exploration parameter
         self.strategies = {
             "logical_alts": self._logical_equivalents,
             "inline_comments": self._inline_version_comments,
@@ -47,6 +51,8 @@ class ASTMutator:
         
         # Gene Credit Assignment: Track reputation of each keyword
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
+        for kw in self.blocked_keywords:
+            self.keyword_reputation[kw.upper()] = 0.1 # Force evasion immediately
         self.last_strategy_used = None
         self.stealth_mode = False
         self.boredom_counter = 0 # Track how many samey successes we hit
@@ -92,31 +98,43 @@ class ASTMutator:
         for _ in range(num_mutations):
             names = list(self.strategies.keys())
             
-            # --- INTELLIGENT DISCOVERY STEERING ---
-            # If we are "stuck" in logical successes (boredom), force exploratory strategies
+            # --- UCB MULTI-ARMED BANDIT SELECTION ---
+            import math
+            self.total_mutations += 1
             advanced_strats = ["column_discovery", "upgrade_to_exfil", "dios_mutation", "advanced_blind", "scientific_notation"]
             
             if self.boredom_counter > 5:
-                # Force an advanced move to break the local maximum
                 strat_name = random.choice(advanced_strats)
-                self.boredom_counter -= 1 # Decelerate boredom
-            elif random.random() < self.epsilon:
-                strat_name = random.choice(names)
+                self.boredom_counter -= 1
             else:
-                current_weights = dict(self.strategy_weights)
+                best_ucb = -float('inf')
+                best_strats = []
+                for name in names:
+                    if self.strategy_counts[name] == 0:
+                        # Force exploration of untried strategies
+                        ucb_val = float('inf')
+                    else:
+                        # Base UCB formula
+                        exploitation = self.strategy_q_values[name]
+                        exploration = self.ucb_c * math.sqrt(math.log(self.total_mutations) / self.strategy_counts[name])
+                        ucb_val = exploitation + exploration
+                        
+                        # Contextual boosting
+                        if name in advanced_strats and self.last_score >= 0.5:
+                            ucb_val += 2.0 # Boost advanced techniques when payload passes WAF
+                        
+                        if self.stealth_mode and name in ["dynamic_structural", "micro_fragmentation"]:
+                            ucb_val += 1.0 # Boost evasion when getting blocked
+                    
+                    if ucb_val > best_ucb:
+                        best_ucb = ucb_val
+                        best_strats = [name]
+                    elif ucb_val == best_ucb:
+                        best_strats.append(name)
                 
-                # If we are in "Exfil Mode" (found a boolean bypass), boost the exfil strategies
-                if self.last_score >= 0.5:
-                    for s in advanced_strats:
-                        current_weights[s] = current_weights.get(s, 1.0) * 10.0
-                
-                if self.stealth_mode:
-                    current_weights["dynamic_structural"] *= 2.0
-                    current_weights["micro_fragmentation"] *= 2.0
-                
-                weights = [current_weights.get(n, 1.0) for n in names]
-                strat_name = random.choices(names, weights=weights, k=1)[0]
+                strat_name = random.choice(best_strats) if best_strats else random.choice(names)
             
+            self.strategy_counts[strat_name] += 1
             self.last_strategy_used = strat_name
             # Safeguard: Don't mutate if it's already "too" mutated/large
             if len(mutated) > 500:
@@ -211,17 +229,18 @@ class ASTMutator:
                         self.keyword_reputation[kw] += 0.05
                         self.keyword_reputation[kw] = min(2.0, self.keyword_reputation[kw])
 
-        if self.last_strategy_used and score > 0.5:
-            # Reward the strategy
-            if self.last_strategy_used not in self.strategy_weights:
-                self.strategy_weights[self.last_strategy_used] = 1.0
+        if self.last_strategy_used:
+            # UCB Update: Q(a) = Q(a) + (1/N(a)) * (Reward - Q(a))
+            if self.last_strategy_used not in self.strategy_q_values:
+                self.strategy_q_values[self.last_strategy_used] = 0.0
+                
+            n = max(1, self.strategy_counts.get(self.last_strategy_used, 1))
+            current_q = self.strategy_q_values[self.last_strategy_used]
+            new_q = current_q + (1.0 / n) * (score - current_q)
+            self.strategy_q_values[self.last_strategy_used] = new_q
             
-            self.strategy_weights[self.last_strategy_used] += 0.1
-            # Normalize to prevent runaway weights
-            total = sum(self.strategy_weights.values())
-            for k in self.strategy_weights:
-                self.strategy_weights[k] /= total
-                self.strategy_weights[k] *= len(self.strategy_weights) # Keep average at 1.0
+            # Backwards compatibility for anything still using strategy_weights
+            self.strategy_weights[self.last_strategy_used] = new_q
 
     def _directed_keyword_mutation(self, payload):
         """Directed Mutations: Apply BNF grammar expansions to Keywords."""
