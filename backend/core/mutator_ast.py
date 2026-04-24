@@ -50,6 +50,10 @@ class ASTMutator:
         # Point 3: Contextual Credit Assignment (Sequences)
         self.sequence_reputation = {} # Tracks pairs like (UNION, SELECT)
         
+        # Point 7: Deep Actor-Critic Integration
+        from core.agent_rl import RLAgent
+        self.rl_agent = RLAgent(state_dim=7, action_names=list(self.strategy_weights.keys()))
+        
         self.last_strategy_used = None
         self.last_payload_used = None
         
@@ -60,6 +64,7 @@ class ASTMutator:
         self.stealth_mode = False
         self.boredom_counter = 0 # Track how many samey successes we hit
         self.last_score = 0
+        self.current_state_vector = [1, 0, 0, 0, 1, 0, 0] # Default baseline state
 
     def apply_hint(self, hint):
         """Applies AI-driven hints to strategy weights."""
@@ -95,36 +100,21 @@ class ASTMutator:
         if error_msg:
             mutated = self._apply_error_feedback(mutated, error_msg)
             
-        # 2. Strategy Selection Strategy: Exploration vs Exploitation
+        # 2. Strategy Selection Strategy: Actor-Critic (RL) vs Exploration
         num_mutations = random.randint(1, 2) * intensity
         
         for _ in range(num_mutations):
             names = list(self.strategies.keys())
             
-            # --- INTELLIGENT DISCOVERY STEERING ---
-            # If we are "stuck" in logical successes (boredom), force exploratory strategies
-            advanced_strats = ["column_discovery", "upgrade_to_exfil", "dios_mutation", "advanced_blind", "scientific_notation"]
-            
+            # --- INTELLIGENT DISCOVERY STEERING (Actor-Critic) ---
+            # Use Deep RL Agent to select the mutation strategy based on WAF state
             if self.boredom_counter > 5:
-                # Force an advanced move to break the local maximum
+                advanced_strats = ["column_discovery", "upgrade_to_exfil", "dios_mutation", "advanced_blind", "scientific_notation"]
                 strat_name = random.choice(advanced_strats)
-                self.boredom_counter -= 1 # Decelerate boredom
-            elif random.random() < self.epsilon:
-                strat_name = random.choice(names)
+                self.boredom_counter -= 1
             else:
-                current_weights = dict(self.strategy_weights)
-                
-                # If we are in "Exfil Mode" (found a boolean bypass), boost the exfil strategies
-                if self.last_score >= 0.5:
-                    for s in advanced_strats:
-                        current_weights[s] = current_weights.get(s, 1.0) * 10.0
-                
-                if self.stealth_mode:
-                    current_weights["dynamic_structural"] *= 2.0
-                    current_weights["micro_fragmentation"] *= 2.0
-                
-                weights = [current_weights.get(n, 1.0) for n in names]
-                strat_name = random.choices(names, weights=weights, k=1)[0]
+                # RL ACTOR: Choosing strategy based on state_vector
+                strat_name = self.rl_agent.select_action(self.current_state_vector)
             
             self.last_strategy_used = strat_name
             # Safeguard: Don't mutate if it's already "too" mutated/large
@@ -220,9 +210,15 @@ class ASTMutator:
     def report_success(self, payload, score, status=None, state_vector=None):
         """
         Gene Credit Assignment: Update strategy and keyword reputation based on score.
-        Point 1 (HER) & Point 2 (ICM) implemented here.
+        Point 1 (HER), Point 2 (ICM) & Point 7 (Deep Actor-Critic RL) implemented here.
         """
         self.last_score = score
+        
+        # Point 7: Update Actor-Critic (CRITIC Step)
+        if state_vector:
+            self.current_state_vector = state_vector
+            # The Critic uses the score as immediate reward to refine the policy
+            self.rl_agent.update(score)
         
         # 1. HER & Information Gain: Learning from 403 (Forbidden)
         if status == "WAF_BLOCKED" or (status and "403" in str(status)):
