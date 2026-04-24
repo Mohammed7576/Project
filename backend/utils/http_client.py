@@ -110,10 +110,10 @@ class HTTPClient:
             # Dynamic method switching based on DVWA security context
             if getattr(self, 'security_level', 'medium') == 'low':
                 # DVWA Low uses GET parameters
-                response = self.session.get(self.injection_url, params=params, timeout=10)
+                response = self.session.get(self.injection_url, params=params, timeout=5)
             else:
                 # DVWA Medium uses POST body
-                response = self.session.post(self.injection_url, data=params, timeout=10)
+                response = self.session.post(self.injection_url, data=params, timeout=5)
                 
             latency = int((time.time() - start_time) * 1000)
             return {

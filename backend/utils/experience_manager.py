@@ -296,17 +296,18 @@ class ExperienceManager:
             import threading
             self._save_lock = threading.Lock()
 
+        should_flush = False
         with self._save_lock:
             self._save_queue.append((payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
-            
-            # If queue is large enough, or if it's been a while, flush it
-            # For simplicity in this env, we'll flush every 20 items or if it's a high score
-            if len(self._save_queue) >= 20 or score >= 0.8:
-                self.flush_save_queue()
+            if len(self._save_queue) >= 50 or score >= 0.8:
+                should_flush = True
+        
+        if should_flush:
+            self.flush_save_queue()
 
     def flush_save_queue(self):
         """Flushes the queued attempts to the database in a single transaction."""
-        if not hasattr(self, '_save_queue') or not self._save_queue:
+        if not hasattr(self, '_save_queue'):
             return
 
         import sqlite3
@@ -315,11 +316,10 @@ class ExperienceManager:
         
         # Take a snapshot and clear the queue
         with self._save_lock:
+            if not self._save_queue:
+                return
             to_save = list(self._save_queue)
             self._save_queue = []
-
-        if not to_save:
-            return
 
         for attempt in range(max_retries):
             try:

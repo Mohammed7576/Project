@@ -278,13 +278,10 @@ class IslandManager:
                 print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
                 return None
             
-            print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
-            
             # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
             if i == 0:
                 waf = self.fingerprinter.identify(response['headers'], response['text'])
                 if waf != "GENERIC / UNKNOWN":
-                    print(f"[*] WAF DETECTED: {waf}", flush=True)
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
@@ -333,7 +330,7 @@ class IslandManager:
             return (genome, score, error_msg)
 
         max_score = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 80)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 40)) as executor:
             futures = [executor.submit(evaluate_payload, i, genome) for i, genome in enumerate(pop)]
             for future in concurrent.futures.as_completed(futures):
                 try:
