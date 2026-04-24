@@ -354,7 +354,7 @@ async function startServer() {
       const target = targetStmt.get();
 
       // 2. Get blocking patterns
-      const patternsStmt = db.prepare("SELECT pattern, confidence FROM blocking_rules ORDER BY confidence DESC LIMIT 20");
+      const patternsStmt = db.prepare("SELECT pattern, confidence FROM blocking_rules ORDER BY confidence DESC");
       const patterns = patternsStmt.all();
 
       // 3. Get stats
