@@ -115,7 +115,12 @@ class SuccessValidator:
                 # Time-based might still trigger, so check latency first
                 if latency > (baseline.get('latency', 0) + 4000):
                     return 0.85, "TIME_BASED_POSITIVE"
-                return 0.6, "NO_DATA_VARIATION"
+                    
+                # If our payload was logically trying to be TRUE (e.g. AND 1=1), this confirms the syntax works without breaking data.
+                if payload_upper and any(kw in payload_upper for kw in ["AND 1=1", "AND TRUE", "NOT 0"]):
+                    return 0.5, "LOGICAL_TRUE_EVALUATED"
+                    
+                return 0.05, "NO_DATA_VARIATION"
 
         # 0. ERROR-BASED DETECTION (Priority Shift: Catch syntax errors before false successes)
         error_msg = self.get_sql_error(response_text)
@@ -238,6 +243,7 @@ class SuccessValidator:
             return 0.8, "DATA_REFLECTION_DETECTED"
 
         # 4. BOOLEAN-BASED (Comparison-ratio)
+        ratio = 1.0
         if baseline and status_code == 200:
             # Baseline is usually the 'original' or 'False' condition
             baseline_text = baseline.get('text', '')
@@ -253,12 +259,6 @@ class SuccessValidator:
                         return 0.75, "BOOLEAN_INFERENCE_POSITIVE_DUMP"
                 else:
                     return 0.4, "STRUCTURAL_VARIANCE_NO_DATA"
-                    
-            # If ratio is high (very similar to baseline), it means the query succeeded normally.
-            # If our payload was logically trying to be TRUE (e.g. AND 1=1), this confirms the syntax works without breaking data.
-            elif ratio > 0.98:
-                if any(kw in payload_upper for kw in ["AND 1=1", "AND TRUE", "NOT 0"]):
-                    return 0.5, "LOGICAL_TRUE_EVALUATED"
 
         # 5. TIME-BASED (Statistical Delay)
         if baseline:
@@ -268,7 +268,9 @@ class SuccessValidator:
                 return 0.85, "TIME_BASED_POSITIVE"
 
         # 6. HEURISTIC SIGNATURES
-        if any(sig in response_text for sig in self.basic_signatures):
-            return 0.65, "LOGIC_BYPASS_GENERIC"
+        # Only evaluate heuristics if the ratio suggests something significantly changed or if it was entirely new.
+        if (baseline and ratio < 0.95) or not baseline:
+            if any(sig in response_text for sig in self.basic_signatures):
+                return 0.65, "LOGIC_BYPASS_GENERIC"
 
-        return 0.6, "INCONCLUSIVE_VALID_SYNTAX"
+        return 0.05, "INCONCLUSIVE_VALID_SYNTAX"
