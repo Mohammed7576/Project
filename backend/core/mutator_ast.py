@@ -109,22 +109,22 @@ class ASTMutator:
             else:
                 best_ucb = -float('inf')
                 best_strats = []
+                # Precompute log to save math calls
+                log_total = math.log(max(2, self.total_mutations))
+                
                 for name in names:
                     if self.strategy_counts[name] == 0:
-                        # Force exploration of untried strategies
                         ucb_val = float('inf')
                     else:
-                        # Base UCB formula
                         exploitation = self.strategy_q_values[name]
-                        exploration = self.ucb_c * math.sqrt(math.log(self.total_mutations) / self.strategy_counts[name])
+                        exploration = self.ucb_c * math.sqrt(log_total / self.strategy_counts[name])
                         ucb_val = exploitation + exploration
                         
-                        # Contextual boosting
                         if name in advanced_strats and self.last_score >= 0.5:
-                            ucb_val += 2.0 # Boost advanced techniques when payload passes WAF
+                            ucb_val += 2.0
                         
                         if self.stealth_mode and name in ["dynamic_structural", "micro_fragmentation"]:
-                            ucb_val += 1.0 # Boost evasion when getting blocked
+                            ucb_val += 1.0
                     
                     if ucb_val > best_ucb:
                         best_ucb = ucb_val
