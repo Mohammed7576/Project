@@ -101,21 +101,25 @@ class IslandManager:
                     mutator.strategy_weights["logical_alts"] *= 3.0
                     print(f"[*] Island {island_id}: Optimizing for NUMERIC context.", flush=True)
 
-                # Specialization: Each island has a different initial bias
-                # Mapping to Dashboard: 1: Inference, 2: Bypass, 3: Extraction
-                if island_id == 3: # Structural Island (Expert in Extraction)
-                    mutator.strategy_weights["logical_alts"] *= 2.0
-                    mutator.strategy_weights["union_balance"] *= 5.0
-                    mutator.strategy_weights["column_discovery"] *= 3.0
-                    mutator.strategy_weights["upgrade_to_exfil"] *= 3.0
-                elif island_id == 2: # Bypass Island (Expert in WAF evasion)
-                    mutator.strategy_weights["inline_comments"] *= 2.0
-                    mutator.strategy_weights["junk_fill"] *= 2.0
-                    mutator.strategy_weights["micro_fragmentation"] *= 2.0
-                else: # island_id == 1: Inference Island (Expert in Blind/Time attacks)
-                    mutator.strategy_weights["blind_inference"] *= 5.0
-                    mutator.strategy_weights["context_aware"] *= 2.0
+                # Specialization: Each island focuses on a distinct Obfuscation (تشويش) category
+                # Mapping: 1: Lexical, 2: Structural, 3: Semantic/Dialect
+                if island_id == 3: # Semantic & Dialect Obfuscation (The "Logic" Island)
+                    mutator.strategy_weights["logical_alts"] *= 4.0
+                    mutator.strategy_weights["scientific_notation"] *= 3.0
+                    mutator.strategy_weights["wide_byte"] *= 2.0
+                    mutator.strategy_weights["dios_mutation"] *= 2.0
+                    print(f"[*] Island {island_id}: Specialized in Semantic Obfuscation (Function/Logic alternatives).", flush=True)
+                elif island_id == 2: # Structural Obfuscation (The "Deception" Island)
+                    mutator.strategy_weights["inline_comments"] *= 3.0
+                    mutator.strategy_weights["junk_fill"] *= 3.0
+                    mutator.strategy_weights["micro_fragmentation"] *= 4.0
                     mutator.strategy_weights["dynamic_structural"] *= 2.0
+                    print(f"[*] Island {island_id}: Specialized in Structural Obfuscation (Fragmentation & Comments).", flush=True)
+                else: # island_id == 1: Lexical Obfuscation (The "Visual" Island)
+                    mutator.strategy_weights["semantic_mutation"] *= 3.0 # Handles case/backticks
+                    mutator.strategy_weights["nested_encoding"] *= 3.0 # Strictly Single-Layer URL
+                    mutator.strategy_weights["grammar_expansion"] *= 2.0
+                    print(f"[*] Island {island_id}: Specialized in Lexical Obfuscation (Encoding & Case Variance).", flush=True)
 
                 # Initialize population for this island
                 golden_seeds = self.exp_manager.get_golden_payloads(limit=10)
@@ -248,7 +252,9 @@ class IslandManager:
                 if blocked:
                     print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
                     score, status = 0.05, "PREDICTIVE_BLOCKED"
-                    mutator.report_success(payload_str, score)
+                    # Mock state vector for blocked
+                    state_vec = [0, 1, 0, 0, 0, 0] # WAF Blocked category
+                    mutator.report_success(payload_str, score, status=status, state_vector=state_vec)
                     self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], target_name=self.target_name, parent_payload=genome.parent_payload) # Record the block
                     scored_population.append((genome, score, None))
                     continue
@@ -270,7 +276,16 @@ class IslandManager:
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
+            # Point 6: Generate State Vector
+            state_vec = self.validator.get_state_vector(response['text'], response['status'], response.get('latency', 0), self.baseline)
+            
             score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, latency=response.get('latency', 0), baseline=self.baseline)
+            
+            # Point 4: Side-Channel Reward (Latency Penalty/Reward)
+            # If latency is very high but it's a 200, maybe it's Deep Inspection (WAF stress).
+            latency = response.get('latency', 0)
+            if latency > 3000 and status == "INCONCLUSIVE":
+                score += 0.1 # Information gain from side-channel
             
             # 1.2 Combat Genetic Drift
             if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
@@ -295,7 +310,8 @@ class IslandManager:
             print(f"  [{status} | {score*100:.1f}] ... {payload_str[:20]}... {island['id']}:{i+1}/{len(pop)} [{island['id']} Island]", flush=True)
             
             self.session_tested.add(payload_str)
-            mutator.report_success(payload_str, score)
+            # Pass advanced metrics to RL reporter
+            mutator.report_success(payload_str, score, status=status, state_vector=state_vec)
             self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
             scored_population.append((genome, score, error_msg))
             
@@ -326,18 +342,23 @@ class IslandManager:
         return {"max_score": max_score, "diversity": diversity_ratio}
 
     def _migrate(self):
-        """Copies the best payload from each island to the next one in the ring."""
-        print("[*] Migration Event: Exchanging genetic material between islands...", flush=True)
+        """
+        Point 5: Federated Policy Migration.
+        Exchanges both genetic material (payloads) and learned weights (Policy).
+        """
+        print("[*] Migration Event: Exchanging payloads AND learned policy weights between islands...", flush=True)
         for i in range(self.num_islands):
             source_island = self.islands[i]
             target_island = self.islands[(i + 1) % self.num_islands]
             
-            # Get best from source (first in population is usually elite)
+            # 1. Genetic Migration (Payloads)
             best_payload = source_island["population"][0]
-            
-            # Inject into target island (replace a random one that isn't elite)
             replace_idx = random.randint(1, len(target_island["population"]) - 1)
             target_island["population"][replace_idx] = best_payload
+            
+            # 2. Federated Policy Migration (Weights)
+            policy = source_island["mutator"].get_policy_weights()
+            target_island["mutator"].load_policy_weights(policy)
 
     def _generate_next_gen(self, elites, survivors, intensity, mutator):
         next_gen = []

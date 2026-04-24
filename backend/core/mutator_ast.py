@@ -47,7 +47,16 @@ class ASTMutator:
         
         # Gene Credit Assignment: Track reputation of each keyword
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
+        # Point 3: Contextual Credit Assignment (Sequences)
+        self.sequence_reputation = {} # Tracks pairs like (UNION, SELECT)
+        
         self.last_strategy_used = None
+        self.last_payload_used = None
+        
+        # Point 2: Curiosity-driven Exploration (ICM)
+        self.response_history = [] 
+        self.curiosity_reward = 0.0
+        
         self.stealth_mode = False
         self.boredom_counter = 0 # Track how many samey successes we hit
         self.last_score = 0
@@ -183,13 +192,47 @@ class ASTMutator:
             
         return new_text
 
-    def report_success(self, payload, score):
-        """Gene Credit Assignment: Update strategy and keyword reputation based on score."""
+    def get_policy_weights(self):
+        """Point 5: Export experience for Federated Learning."""
+        return {
+            "strategies": self.strategy_weights,
+            "keywords": self.keyword_reputation,
+            "sequences": self.sequence_reputation
+        }
+
+    def load_policy_weights(self, policy_data):
+        """Point 5: Import experience from other islands."""
+        if not policy_data: return
+        # Federated Averaging / Transfer
+        for k, v in policy_data.get("strategies", {}).items():
+            if k in self.strategy_weights:
+                self.strategy_weights[k] = (self.strategy_weights[k] + v) / 2.0
+        
+        for k, v in policy_data.get("keywords", {}).items():
+            if k in self.keyword_reputation:
+                self.keyword_reputation[k] = (self.keyword_reputation[k] + v) / 2.0
+                
+        # Merge sequences
+        for k, v in policy_data.get("sequences", {}).items():
+            current = self.sequence_reputation.get(k, 1.0)
+            self.sequence_reputation[k] = (current + v) / 2.0
+
+    def report_success(self, payload, score, status=None, state_vector=None):
+        """
+        Gene Credit Assignment: Update strategy and keyword reputation based on score.
+        Point 1 (HER) & Point 2 (ICM) implemented here.
+        """
         self.last_score = score
+        
+        # 1. HER & Information Gain: Learning from 403 (Forbidden)
+        if status == "WAF_BLOCKED" or (status and "403" in str(status)):
+            # Point 1: Treat meaningful blocks as Information Gain
+            # We don't punish as hard if we got a "new" type of block (Information Gain)
+            info_gain = self._calculate_curiosity(state_vector)
+            score = max(score, info_gain * 0.4) # Give a small "experience" boost
         
         # 0. Boredom Check
         if score > 0.5 and score < 0.9:
-            # It's a win, but not the BIG win. If we keep doing this, we're bored.
             self.boredom_counter += 1
         else:
             self.boredom_counter = max(0, self.boredom_counter - 1)
@@ -198,30 +241,63 @@ class ASTMutator:
         if score <= 0.1:
             self.stealth_mode = True
             # Penalize keywords present in a blocked payload
-            for kw in self.sql_keywords:
-                if kw in payload.upper():
-                    self.keyword_reputation[kw] -= 0.1
-                    self.keyword_reputation[kw] = max(0.1, self.keyword_reputation[kw])
+            self._update_reputations(payload, -0.1)
         else:
             self.stealth_mode = False
             # Reward keywords in a successful payload
             if score > 0.5:
-                for kw in self.sql_keywords:
-                    if kw in payload.upper():
-                        self.keyword_reputation[kw] += 0.05
-                        self.keyword_reputation[kw] = min(2.0, self.keyword_reputation[kw])
+                self._update_reputations(payload, 0.05)
 
-        if self.last_strategy_used and score > 0.5:
+        if self.last_strategy_used and score > 0.3:
             # Reward the strategy
-            if self.last_strategy_used not in self.strategy_weights:
-                self.strategy_weights[self.last_strategy_used] = 1.0
+            boost = 0.1 * score
+            if self.last_strategy_used in self.strategy_weights:
+                self.strategy_weights[self.last_strategy_used] += boost
             
-            self.strategy_weights[self.last_strategy_used] += 0.1
-            # Normalize to prevent runaway weights
+            # Normalize periodically
             total = sum(self.strategy_weights.values())
-            for k in self.strategy_weights:
-                self.strategy_weights[k] /= total
-                self.strategy_weights[k] *= len(self.strategy_weights) # Keep average at 1.0
+            if total > 0:
+                for k in self.strategy_weights:
+                    self.strategy_weights[k] /= total
+                    self.strategy_weights[k] *= len(self.strategy_weights)
+
+    def _update_reputations(self, payload, delta):
+        """Point 3: Contextual Credit Assignment (Sequences vs Words)."""
+        upper_p = payload.upper()
+        found_kws = [kw for kw in self.sql_keywords if kw in upper_p]
+        
+        # Update individual keywords
+        for kw in found_kws:
+            self.keyword_reputation[kw] = max(0.1, min(2.0, self.keyword_reputation[kw] + delta))
+            
+        # Update Sequences (Pairs)
+        if len(found_kws) >= 2:
+            for i in range(len(found_kws) - 1):
+                pair = (found_kws[i], found_kws[i+1])
+                pair_key = f"{pair[0]}->{pair[1]}"
+                current = self.sequence_reputation.get(pair_key, 1.0)
+                # Sequence credit is more sensitive to failure/success than individual words
+                self.sequence_reputation[pair_key] = max(0.05, min(3.0, current + (delta * 2.0)))
+
+    def _calculate_curiosity(self, state_vector):
+        """Point 2: ICM - Intrinsic Curiosity Module."""
+        if not state_vector: return 0.0
+        
+        # Simple Curiosity: Distance from previous states
+        if not self.response_history:
+            self.response_history.append(state_vector)
+            return 1.0 # Maximum curiosity for first discovery
+            
+        # Calculate distance to nearest neighbor in history
+        min_dist = 1.0
+        for old_state in self.response_history[-20:]: # Last 20 states
+            dist = sum((a - b) ** 2 for a, b in zip(state_vector, old_state)) ** 0.5
+            if dist < min_dist:
+                min_dist = dist
+        
+        self.response_history.append(state_vector)
+        # If it's a "far" state, it means the WAF reacted unpredictably!
+        return min_dist
 
     def _directed_keyword_mutation(self, payload):
         """Directed Mutations: Apply BNF grammar expansions to Keywords."""
