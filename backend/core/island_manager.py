@@ -320,6 +320,8 @@ class IslandManager:
         elites = [p[0] for p in scored_population[:2] if p[1] > 0.2]
         survivors = [p for p in scored_population if p[1] > 0.1]
         
+        # Inject learned WAF rules into Mutator for active evasion during generation
+        mutator.active_waf_rules = self.blocker.blocked_patterns
         island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
         return {"max_score": max_score, "diversity": diversity_ratio}
 
