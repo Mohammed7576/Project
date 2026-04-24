@@ -178,9 +178,8 @@ class ASTMutator:
             for w in set(words):
                 new_text = re.sub(rf'\b{re.escape(w)}\b', f"/*!{random.randint(40000, 60000)}{w}*/", new_text, flags=re.IGNORECASE)
         else:
-            # Double URL Encoding locally
-            first_pass = "".join([f"%{ord(c):02x}" for c in new_text])
-            new_text = first_pass.replace('%', '%25')
+            # Single URL Encoding locally
+            new_text = "".join([f"%{ord(c):02x}" for c in new_text])
             
         return new_text
 
@@ -768,6 +767,7 @@ class ASTMutator:
         # Only encode keywords or specific parts to avoid breaking SQL syntax entirely
         mutated = payload
         for kw in self.sql_keywords:
+            # First check if the keyword is present in its raw form to avoid double encoding `%`
             if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and random.random() < 0.4:
                 # Strictly single URL encoding as per user request
                 mutated = re.sub(rf'\b{kw}\b', to_url(kw), mutated, flags=re.IGNORECASE)

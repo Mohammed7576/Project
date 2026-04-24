@@ -68,11 +68,8 @@ class PayloadGenome:
                 return "0x" + "".join([f"{ord(c):02x}" for c in s])
             return re.sub(r"'([^']*)'", to_hex, text)
         if tech == "URL_ENCODING":
-            # Encode keywords and operators
-            return "".join([f"%{ord(c):02x}" if not c.isalnum() and c not in "()=," else c for c in text])
-        if tech == "DOUBLE_ENCODING":
-            encoded = "".join([f"%{ord(c):02x}" if not c.isalnum() else c for c in text])
-            return encoded.replace("%", "%25")
+            # Encode keywords and operators, avoid double encoding %
+            return "".join([f"%{ord(c):02x}" if not c.isalnum() and c not in "()=,%" else c for c in text])
         if tech == "WHITESPACE_JUNK":
             junk = ["%0a", "%0d", "/**/", " ", "\t"]
             return text.replace(" ", random.choice(junk))
@@ -86,7 +83,7 @@ class PayloadGenome:
         choice = random.random()
         if choice < 0.4:
             # 1. Branch Mutation: Change Bypass Layer (Encoding/Obfuscation)
-            techs = ["INLINE_COMMENTS", "VERSION_COMMENTS", "URL_ENCODING", "HEX_ENCODING", "WHITESPACE_JUNK", "DOUBLE_ENCODING", "GRAMMAR_BNF"]
+            techs = ["INLINE_COMMENTS", "VERSION_COMMENTS", "URL_ENCODING", "HEX_ENCODING", "WHITESPACE_JUNK", "GRAMMAR_BNF"]
             if random.random() < 0.7:
                 new_tech = random.choice(techs)
                 if new_tech not in self.bypasses:
