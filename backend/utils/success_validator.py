@@ -85,8 +85,22 @@ class SuccessValidator:
     def _calculate_ratio(self, text1, text2):
         """sqlmap logic (lib/core/comparison.py): Returns exact similarity ratio."""
         if not text1 or not text2: return 0.0
-        # sqlmap uses a more complex system filtering out dynamic parts, 
-        # but SequenceMatcher is the core engine for its 'comparison' function.
+        
+        # Fast optimization: exact match
+        if text1 == text2:
+            return 1.0
+            
+        len1, len2 = len(text1), len(text2)
+        # If lengths are very different, they can't be very similar
+        if len1 > 0 and (abs(len1 - len2) / max(len1, len2)) > 0.5:
+             return 0.5 # Return a generic low ratio without full computation
+             
+        # Only use SequenceMatcher for strings that are relatively similar in length
+        # to avoid O(N^2) complexity on massive pages.
+        if len1 > 50000 or len2 > 50000:
+            # For very large pages, use an even faster approximation
+            return 1.0 - (abs(len1 - len2) / max(len1, len2))
+
         return difflib.SequenceMatcher(None, text1, text2).quick_ratio()
 
     def validate(self, response_text, status_code, payload=None, latency=0, baseline=None):

@@ -174,6 +174,8 @@ class IslandManager:
                         island["best_score"] = island_results["max_score"]
                 except Exception as e:
                     print(f"[!] Island {island['id']} evolution failed: {e}", flush=True)
+                    
+        self.exp_manager.flush_save_queue()
 
         # 2. Migration Step: Every 5 generations, exchange genetic material
         if gen_num > 0 and gen_num % 5 == 0:
@@ -331,7 +333,7 @@ class IslandManager:
             return (genome, score, error_msg)
 
         max_score = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 50)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 80)) as executor:
             futures = [executor.submit(evaluate_payload, i, genome) for i, genome in enumerate(pop)]
             for future in concurrent.futures.as_completed(futures):
                 try:
@@ -388,11 +390,11 @@ class IslandManager:
             attempts += 1
             rand_val = random.random()
             
-            if rand_val < 0.05: # Reduced from 0.15 to 0.05 to save blocking time
+            if rand_val < 0.01: # Reduced from 0.05 to 0.01
                 # Try to get a semantically similar payload from history for the best current survivor
                 semantic_seed_str = None
-                # Semantic search is slow (blocking HTTP), only do it if the island is stuck
-                if survivors and island["stagnation"] > 2:
+                # Semantic search is slow (blocking HTTP), only do it if the island is EXTREMELY stuck
+                if survivors and island["stagnation"] > 8:
                     best_survivor_genome = survivors[0][0]
                     results = self.client.semantic_search(best_survivor_genome.render(), k=3)
                     if results:
