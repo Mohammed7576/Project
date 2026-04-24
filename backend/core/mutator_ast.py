@@ -1,5 +1,6 @@
 import random
 import re
+import math
 from core.grammar_engine import GrammarEngine
 
 class ASTMutator:
@@ -99,7 +100,6 @@ class ASTMutator:
             names = list(self.strategies.keys())
             
             # --- UCB MULTI-ARMED BANDIT SELECTION ---
-            import math
             self.total_mutations += 1
             advanced_strats = ["column_discovery", "upgrade_to_exfil", "dios_mutation", "advanced_blind", "scientific_notation"]
             

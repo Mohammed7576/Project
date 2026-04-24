@@ -168,8 +168,14 @@ class SuccessValidator:
                         # We actually leaked a real column name from the schema! High value.
                         return 0.85, "SIGNAL_LEAKED_COLUMN"
                 # If we couldn't parse the column but it says unknown column, it's still interesting 
-                # but only if not clearly self-induced via simpler check
+                # but only if not clearly self-induced via simpler check. We strip special chars to check.
+                clean_payload = re.sub(r'[^a-zA-Z0-9]', '', payload_lower)
                 if not any(p_part in low_err for p_part in payload_lower.split() if len(p_part) > 3):
+                    # Fallback check for numbers or short strings reflecting
+                    numbers_in_payload = re.findall(r'\d+', payload_lower)
+                    if any(num in low_err for num in numbers_in_payload):
+                        return 0.3, "SQL_SYNTAX_ERROR_NUMBER_REFLECTION"
+                        
                     return 0.85, "SIGNAL_UNKNOWN_COLUMN_GENERIC"
 
             return 0.4, "SQL_SYNTAX_ERROR"
@@ -255,14 +261,25 @@ class SuccessValidator:
         # 4. BOOLEAN-BASED (Comparison-ratio)
         if baseline and status_code == 200:
             # Baseline is usually the 'original' or 'False' condition
-            ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
+            baseline_text = baseline.get('text', '')
+            ratio = self._calculate_ratio(response_text, baseline_text)
             
             # sqlmap logic: If ratio is significantly different from 1.0, 
-            # and the payload is a 'True' condition (OR 1=1), it's a positive match.
+            # we need to be careful. If the page is SMALLER, we probably just broke the query 
+            # or hit a "User not found" state (evaluated to false/0).
+            # If the page is LARGER, we likely dumped more data (e.g., OR 1=1 dumping all users).
             if ratio < self.ratio_threshold:
-                if any(kw in payload_upper for kw in ["OR 1=1", "TRUE", "NOT 0", "OR 1"]):
-                    return 0.75, "BOOLEAN_INFERENCE_POSITIVE"
-                return 0.4, "STRUCTURAL_VARIANCE"
+                if len(response_text) > len(baseline_text) + 50:
+                    if any(kw in payload_upper for kw in ["OR 1=1", "TRUE", "NOT 0", "OR 1"]):
+                        return 0.75, "BOOLEAN_INFERENCE_POSITIVE_DUMP"
+                else:
+                    return 0.4, "STRUCTURAL_VARIANCE_NO_DATA"
+                    
+            # If ratio is high (very similar to baseline), it means the query succeeded normally.
+            # If our payload was logically trying to be TRUE (e.g. AND 1=1), this confirms the syntax works without breaking data.
+            elif ratio > 0.98:
+                if any(kw in payload_upper for kw in ["AND 1=1", "AND TRUE", "NOT 0"]):
+                    return 0.5, "LOGICAL_TRUE_EVALUATED"
 
         # 5. TIME-BASED (Statistical Delay)
         if baseline:

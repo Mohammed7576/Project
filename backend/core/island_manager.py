@@ -324,7 +324,7 @@ class IslandManager:
             return (genome, score, error_msg)
 
         max_score = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 20)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 100)) as executor:
             futures = [executor.submit(evaluate_payload, i, genome) for i, genome in enumerate(pop)]
             for future in concurrent.futures.as_completed(futures):
                 try:
