@@ -6,7 +6,7 @@ class HTTPClient:
     def __init__(self, base_url="http://localhost/"):
         self.base_url = base_url.rstrip('/') + '/'
         self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100)
+        adapter = requests.adapters.HTTPAdapter(pool_connections=200, pool_maxsize=200)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
         self.session.headers.update({

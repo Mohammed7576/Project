@@ -156,25 +156,24 @@ class IslandManager:
             for island in self.islands:
                 island["mutator"].apply_hint(hints)
 
-        # 1. Evolve each island independently
-        for island in self.islands:
-            # Dynamic Epsilon based on stagnation to force exploration
-            mutator = island["mutator"]
-            if island["stagnation"] > 3:
-                mutator.epsilon = min(0.1 + (island["stagnation"] * 0.1), 0.7)
-            else:
-                mutator.epsilon = 0.2
-                
-            island_results = self._evolve_island(island, gen_num)
-            if island_results["max_score"] > global_max_score:
-                global_max_score = island_results["max_score"]
-            
-            # Track island-specific stagnation
-            if island_results["max_score"] <= island["best_score"]:
-                island["stagnation"] += 1
-            else:
-                island["stagnation"] = 0
-                island["best_score"] = island_results["max_score"]
+        # 1. Evolve islands in parallel for maximum throughput
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.islands)) as island_executor:
+            island_futures = {island_executor.submit(self._evolve_island, island, gen_num): island for island in self.islands}
+            for future in concurrent.futures.as_completed(island_futures):
+                island = island_futures[future]
+                try:
+                    island_results = future.result()
+                    if island_results["max_score"] > global_max_score:
+                        global_max_score = island_results["max_score"]
+                    
+                    # Track island-specific stagnation
+                    if island_results["max_score"] <= island["best_score"]:
+                        island["stagnation"] += 1
+                    else:
+                        island["stagnation"] = 0
+                        island["best_score"] = island_results["max_score"]
+                except Exception as e:
+                    print(f"[!] Island {island['id']} evolution failed: {e}", flush=True)
 
         # 2. Migration Step: Every 5 generations, exchange genetic material
         if gen_num > 0 and gen_num % 5 == 0:
@@ -221,6 +220,12 @@ class IslandManager:
         scored_population = []
         max_score = 0
         
+        # Dynamic Epsilon based on stagnation to force exploration
+        if island["stagnation"] > 3:
+            mutator.epsilon = min(0.1 + (island["stagnation"] * 0.1), 0.7)
+        else:
+            mutator.epsilon = 0.2
+
         # Calculate diversity
         pop_str_hashes = [p.render() for p in pop]
         unique_payloads = len(set(pop_str_hashes))
@@ -256,13 +261,15 @@ class IslandManager:
             if not ignore_blocker:
                 blocked, reason = self.blocker.should_block(payload_str)
                 if blocked:
-                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
+                    # Reduced logging for predictive blocks
                     score, status = 0.05, "PREDICTIVE_BLOCKED"
                     mutator.report_success(payload_str, score)
                     self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], target_name=self.target_name, parent_payload=genome.parent_payload) # Record the block
                     return (genome, score, None)
 
-            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
+            # Only print every 5th request to reduce I/O overhead unless it's first or success
+            if i % 5 == 0:
+                print(f"  [Island {island['id']}] Requesting... {payload_str[:20]}", flush=True)
             try:
                 response = self.client.send_request(payload_str)
             except Exception as e:
@@ -381,10 +388,11 @@ class IslandManager:
             attempts += 1
             rand_val = random.random()
             
-            if rand_val < 0.15: # Diversity: Semantic Seed from Memory
+            if rand_val < 0.05: # Reduced from 0.15 to 0.05 to save blocking time
                 # Try to get a semantically similar payload from history for the best current survivor
                 semantic_seed_str = None
-                if survivors:
+                # Semantic search is slow (blocking HTTP), only do it if the island is stuck
+                if survivors and island["stagnation"] > 2:
                     best_survivor_genome = survivors[0][0]
                     results = self.client.semantic_search(best_survivor_genome.render(), k=3)
                     if results:
