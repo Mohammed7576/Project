@@ -16,10 +16,6 @@ class ASTMutator:
         self.disable_strings = disable_strings
         self.blocked_keywords = blocked_keywords or []
         # RL: UCB (Upper Confidence Bound) Multi-Armed Bandit parameters
-        self.strategy_counts = {name: 0 for name in self.strategies.keys()}
-        self.strategy_q_values = {name: 0.0 for name in self.strategies.keys()}
-        self.total_mutations = 0
-        self.ucb_c = 1.5 # Exploration parameter
         self.strategies = {
             "logical_alts": self._logical_equivalents,
             "inline_comments": self._inline_version_comments,
@@ -41,6 +37,10 @@ class ASTMutator:
             "advanced_blind": self._advanced_blind_probing,
             "advanced_time": self._advanced_time_probing
         }
+        self.strategy_counts = {name: 0 for name in self.strategies.keys()}
+        self.strategy_q_values = {name: 0.0 for name in self.strategies.keys()}
+        self.total_mutations = 0
+        self.ucb_c = 1.5 # Exploration parameter
         # Awareness: Track success of each strategy (Q-values)
         self.strategy_weights = {name: 1.0 for name in self.strategies.keys()}
         # Priority Boost: MySQL Specific & Exfiltration Methods

@@ -135,7 +135,7 @@ def run_prometheus():
 
     # WAF Probing Phase
     print("[*] Stage: WAF Rule Profiling (Probing Phase)...", flush=True)
-    probe_keywords = ["'", '"', "UNION", "SELECT", "SLEEP", "AND", "OR", "--", "#", "/\*", "ORDER", "INFORMATION_SCHEMA"]
+    probe_keywords = ["'", '"', "UNION", "SELECT", "SLEEP", "AND", "OR", "--", "#", "/*", "ORDER", "INFORMATION_SCHEMA"]
     blocked_keywords = []
     
     # Threaded probing for speed
