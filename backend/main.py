@@ -35,7 +35,7 @@ def run_prometheus():
         except:
             return default
 
-    pop_size = safe_int(os.getenv("POPULATION_SIZE"), 300)
+    pop_size = safe_int(os.getenv("POPULATION_SIZE"), 12)
     max_gens = safe_int(os.getenv("MAX_GENERATIONS"), 30)
     
     print(f"[*] Config: Target={target_name}, Security={target_security}, Pop={pop_size}, MaxGens={max_gens}", flush=True)
@@ -133,29 +133,6 @@ def run_prometheus():
     print("[*] Stage: Capturing Baseline (Testing '1')...", flush=True)
     baseline_response = client.send_request("1")
 
-    # WAF Probing Phase
-    print("[*] Stage: WAF Rule Profiling (Probing Phase)...", flush=True)
-    probe_keywords = ["'", '"', "UNION", "SELECT", "SLEEP", "AND", "OR", "--", "#", "/*", "ORDER", "INFORMATION_SCHEMA"]
-    blocked_keywords = []
-    
-    # Threaded probing for speed
-    import concurrent.futures
-    def probe_kw(kw):
-        res = client.send_request(f"1 {kw}")
-        if res['status'] in [403, 406, 501, 999] or "waf" in res['text'].lower() or getattr(client, '_is_waf_response', lambda x: False)(res['text']):
-            return kw
-        return None
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        for blocked_kw in executor.map(probe_kw, probe_keywords):
-            if blocked_kw:
-                blocked_keywords.append(blocked_kw)
-                
-    if blocked_keywords:
-        print(f"[*] Probing Complete. WAF natively blocks: {', '.join(blocked_keywords)}", flush=True)
-    else:
-        print("[*] Probing Complete. No keywords blocked naively.", flush=True)
-
     print("[*] Stage: Evolutionary Engine Initialization...", flush=True)
     island = IslandManager(
         client, 
@@ -165,8 +142,7 @@ def run_prometheus():
         context=inj_type, 
         disable_strings=disable_quotes,
         baseline=baseline_response,
-        target_name=target_name,
-        blocked_keywords=blocked_keywords
+        target_name=target_name
     )
     
     start_gen = island.current_gen

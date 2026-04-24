@@ -6,9 +6,6 @@ class HTTPClient:
     def __init__(self, base_url="http://localhost/"):
         self.base_url = base_url.rstrip('/') + '/'
         self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(pool_connections=200, pool_maxsize=200)
-        self.session.mount('http://', adapter)
-        self.session.mount('https://', adapter)
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -110,10 +107,10 @@ class HTTPClient:
             # Dynamic method switching based on DVWA security context
             if getattr(self, 'security_level', 'medium') == 'low':
                 # DVWA Low uses GET parameters
-                response = self.session.get(self.injection_url, params=params, timeout=5)
+                response = self.session.get(self.injection_url, params=params, timeout=10)
             else:
                 # DVWA Medium uses POST body
-                response = self.session.post(self.injection_url, data=params, timeout=5)
+                response = self.session.post(self.injection_url, data=params, timeout=10)
                 
             latency = int((time.time() - start_time) * 1000)
             return {

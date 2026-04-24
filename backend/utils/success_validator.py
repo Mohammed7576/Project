@@ -53,22 +53,6 @@ class SuccessValidator:
         
         # sqlmap's default ratio threshold
         self.ratio_threshold = 0.88 # Based on lib/core/settings.py: URI_INJECTION_RATIO
-        
-    def is_syntax_plausible(self, payload):
-        """AST Syntax Pre-check: Quickly drops payloads that are inherently malformed (unbalanced quotes/parentheses)."""
-        # Exclude from check if using complex evasion or hex since those can deliberately break parsers
-        if "%" in payload or "0x" in payload.lower() or "/*!(" in payload:
-            return True
-            
-        # Fast parenthesis balance check (ignoring quotes for speed, 99% accurate enough for SQLi)
-        # If we open many more parentheses than we close, it's definitively broken.
-        opened = payload.count('(')
-        closed = payload.count(')')
-        
-        if (opened - closed) > 2:
-            return False
-            
-        return True
 
     def get_sql_error(self, response_text):
         """sqlmap-style error extraction: finds the specific error string from exhaustive set."""
@@ -85,22 +69,8 @@ class SuccessValidator:
     def _calculate_ratio(self, text1, text2):
         """sqlmap logic (lib/core/comparison.py): Returns exact similarity ratio."""
         if not text1 or not text2: return 0.0
-        
-        # Fast optimization: exact match
-        if text1 == text2:
-            return 1.0
-            
-        len1, len2 = len(text1), len(text2)
-        # If lengths are very different, they can't be very similar
-        if len1 > 0 and (abs(len1 - len2) / max(len1, len2)) > 0.5:
-             return 0.5 # Return a generic low ratio without full computation
-             
-        # Only use SequenceMatcher for strings that are relatively similar in length
-        # to avoid O(N^2) complexity on massive pages.
-        if len1 > 50000 or len2 > 50000:
-            # For very large pages, use an even faster approximation
-            return 1.0 - (abs(len1 - len2) / max(len1, len2))
-
+        # sqlmap uses a more complex system filtering out dynamic parts, 
+        # but SequenceMatcher is the core engine for its 'comparison' function.
         return difflib.SequenceMatcher(None, text1, text2).quick_ratio()
 
     def validate(self, response_text, status_code, payload=None, latency=0, baseline=None):
@@ -126,15 +96,7 @@ class SuccessValidator:
             ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
             # Over 98% similarity means it's essentially the same page
             if ratio > 0.98:
-                # Time-based might still trigger, so check latency first
-                if latency > (baseline.get('latency', 0) + 4000):
-                    return 0.85, "TIME_BASED_POSITIVE"
-                    
-                # If our payload was logically trying to be TRUE (e.g. AND 1=1), this confirms the syntax works without breaking data.
-                if payload_upper and any(kw in payload_upper for kw in ["AND 1=1", "AND TRUE", "NOT 0"]):
-                    return 0.5, "LOGICAL_TRUE_EVALUATED"
-                    
-                return 0.05, "NO_DATA_VARIATION"
+                return 0.2, "NO_DATA_VARIATION"
 
         # 0. ERROR-BASED DETECTION (Priority Shift: Catch syntax errors before false successes)
         error_msg = self.get_sql_error(response_text)
@@ -161,23 +123,16 @@ class SuccessValidator:
                     discovered_col = match.group(1).lower()
                     # If the "unknown column" is just our payload reflecting back, it's a FAIL.
                     if discovered_col in payload_lower:
-                        return 0.05, "SQL_SYNTAX_ERROR_SELF_INDUCED"
+                        return 0.2, "SQL_SYNTAX_ERROR_SELF_INDUCED"
                     else:
                         # We actually leaked a real column name from the schema! High value.
                         return 0.85, "SIGNAL_LEAKED_COLUMN"
                 # If we couldn't parse the column but it says unknown column, it's still interesting 
-                # but only if not clearly self-induced via simpler check. We strip special chars to check.
-                clean_payload = re.sub(r'[^a-zA-Z0-9]', '', payload_lower)
+                # but only if not clearly self-induced via simpler check
                 if not any(p_part in low_err for p_part in payload_lower.split() if len(p_part) > 3):
-                    # Fallback check for numbers or short strings reflecting
-                    numbers_in_payload = re.findall(r'\d+', payload_lower)
-                    if any(num in low_err for num in numbers_in_payload):
-                        return 0.3, "SQL_SYNTAX_ERROR_NUMBER_REFLECTION"
-                        
                     return 0.85, "SIGNAL_UNKNOWN_COLUMN_GENERIC"
 
-            return 0.4, "SQL_SYNTAX_ERROR"
-
+            return 0.2, "SQL_SYNTAX_ERROR"
 
         # 1. SENSITIVE DATA DETECTION (Focus on Passwords and NEW reflecting data)
         # We only care if these signatures appear and WERE NOT already in the baseline
@@ -257,22 +212,16 @@ class SuccessValidator:
             return 0.8, "DATA_REFLECTION_DETECTED"
 
         # 4. BOOLEAN-BASED (Comparison-ratio)
-        ratio = 1.0
         if baseline and status_code == 200:
             # Baseline is usually the 'original' or 'False' condition
-            baseline_text = baseline.get('text', '')
-            ratio = self._calculate_ratio(response_text, baseline_text)
+            ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
             
             # sqlmap logic: If ratio is significantly different from 1.0, 
-            # we need to be careful. If the page is SMALLER, we probably just broke the query 
-            # or hit a "User not found" state (evaluated to false/0).
-            # If the page is LARGER, we likely dumped more data (e.g., OR 1=1 dumping all users).
+            # and the payload is a 'True' condition (OR 1=1), it's a positive match.
             if ratio < self.ratio_threshold:
-                if len(response_text) > len(baseline_text) + 50:
-                    if any(kw in payload_upper for kw in ["OR 1=1", "TRUE", "NOT 0", "OR 1"]):
-                        return 0.75, "BOOLEAN_INFERENCE_POSITIVE_DUMP"
-                else:
-                    return 0.4, "STRUCTURAL_VARIANCE_NO_DATA"
+                if any(kw in payload_upper for kw in ["OR 1=1", "TRUE", "NOT 0", "OR 1"]):
+                    return 0.75, "BOOLEAN_INFERENCE_POSITIVE"
+                return 0.4, "STRUCTURAL_VARIANCE"
 
         # 5. TIME-BASED (Statistical Delay)
         if baseline:
@@ -282,9 +231,7 @@ class SuccessValidator:
                 return 0.85, "TIME_BASED_POSITIVE"
 
         # 6. HEURISTIC SIGNATURES
-        # Only evaluate heuristics if the ratio suggests something significantly changed or if it was entirely new.
-        if (baseline and ratio < 0.95) or not baseline:
-            if any(sig in response_text for sig in self.basic_signatures):
-                return 0.65, "LOGIC_BYPASS_GENERIC"
+        if any(sig in response_text for sig in self.basic_signatures):
+            return 0.65, "LOGIC_BYPASS_GENERIC"
 
-        return 0.05, "INCONCLUSIVE_VALID_SYNTAX"
+        return 0.2, "INCONCLUSIVE"

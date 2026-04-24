@@ -290,55 +290,26 @@ class ExperienceManager:
             return None
 
     def save_attempt(self, payload, score, status, parent_payload=None, island_id=1, generation_num=1, error_msg=None, target_name="default"):
-        """Queues an attempt for periodic batch saving."""
-        if not hasattr(self, '_save_queue'):
-            self._save_queue = []
-            import threading
-            self._save_lock = threading.Lock()
-
-        should_flush = False
-        with self._save_lock:
-            self._save_queue.append((payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
-            if len(self._save_queue) >= 50 or score >= 0.8:
-                should_flush = True
-        
-        if should_flush:
-            self.flush_save_queue()
-
-    def flush_save_queue(self):
-        """Flushes the queued attempts to the database in a single transaction."""
-        if not hasattr(self, '_save_queue'):
-            return
-
-        import sqlite3
         import time
         max_retries = 5
-        
-        # Take a snapshot and clear the queue
-        with self._save_lock:
-            if not self._save_queue:
-                return
-            to_save = list(self._save_queue)
-            self._save_queue = []
-
         for attempt in range(max_retries):
             try:
                 conn = self.conn
                 cursor = conn.cursor()
-                cursor.executemany('''
+                cursor.execute('''
                     INSERT OR REPLACE INTO experience (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', to_save)
+                ''', (payload, score, status, parent_payload, island_id, generation_num, error_msg, target_name))
                 conn.commit()
                 return
             except sqlite3.OperationalError as e:
                 if "locked" in str(e).lower():
-                    time.sleep(0.2 * (attempt + 1))
+                    time.sleep(0.5 * (attempt + 1))
                     continue
-                print(f"[!] Database Error (Batch Save): {e}")
+                print(f"[!] Database Error (Save): {e}")
                 break
             except Exception as e:
-                print(f"[!] Database Error (Batch Save): {e}")
+                print(f"[!] Database Error (Save): {e}")
                 break
 
     def save_exploit(self, payload, exploit_type, target_name="default"):
