@@ -1,6 +1,7 @@
 import random
 import time
 import json
+import concurrent.futures
 from core.mutator_ast import ASTMutator
 from core.payload_genome import PayloadGenome
 from core.predictive_blocker import PredictiveBlocker
@@ -231,13 +232,14 @@ class IslandManager:
         if mutation_intensity >= 3:
             print(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}", flush=True)
 
-        for i, genome in enumerate(pop):
+        def evaluate_payload(i, genome):
             payload_str = genome.render()
-            if payload_str in self.hall_of_fame: continue
+            if payload_str in self.hall_of_fame: 
+                return None
             
             # 0. Avoid repeating successful payloads in the same session
             if payload_str in self.session_tested:
-                continue
+                return None
 
             # 1. Predictive Blocking (The Intelligent Filter)
             # If severely stagnated, ignore predictive blocker occasionally to force exploration against real WAF
@@ -250,15 +252,14 @@ class IslandManager:
                     score, status = 0.05, "PREDICTIVE_BLOCKED"
                     mutator.report_success(payload_str, score)
                     self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], target_name=self.target_name, parent_payload=genome.parent_payload) # Record the block
-                    scored_population.append((genome, score, None))
-                    continue
+                    return (genome, score, None)
 
             print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
             try:
                 response = self.client.send_request(payload_str)
             except Exception as e:
                 print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
-                continue
+                return None
             
             print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
             
@@ -273,7 +274,7 @@ class IslandManager:
             score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, latency=response.get('latency', 0), baseline=self.baseline)
             
             # 1.2 Combat Genetic Drift
-            if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
+            if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in list(self.discovered_niches)):
                 score *= 0.5 
                 status = "LOCAL_OPTIMA_PENALIZED"
 
@@ -286,7 +287,7 @@ class IslandManager:
             error_msg = self.validator.get_sql_error(response['text'])
             
             # Similarity Penalty
-            for successful_p in self.hall_of_fame:
+            for successful_p in list(self.hall_of_fame):
                 if self._calculate_similarity(payload_str, successful_p) > 0.8:
                     score *= 0.5
                     status = f"BIASED_{status}"
@@ -297,9 +298,6 @@ class IslandManager:
             self.session_tested.add(payload_str)
             mutator.report_success(payload_str, score)
             self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
-            scored_population.append((genome, score, error_msg))
-            
-            if score > max_score: max_score = score
             
             # Track discoveries
             if score >= 0.3:
@@ -314,6 +312,21 @@ class IslandManager:
                     if payload_str not in self.hall_of_fame:
                         self.hall_of_fame.append(payload_str)
                         self.exp_manager.save_exploit(payload_str, status, target_name=self.target_name)
+
+            return (genome, score, error_msg)
+
+        max_score = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(pop), 8)) as executor:
+            futures = [executor.submit(evaluate_payload, i, genome) for i, genome in enumerate(pop)]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        scored_population.append(result)
+                        if result[1] > max_score:
+                            max_score = result[1]
+                except Exception as e:
+                    print(f"Thread failed: {e}", flush=True)
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)

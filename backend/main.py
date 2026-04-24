@@ -35,7 +35,7 @@ def run_prometheus():
         except:
             return default
 
-    pop_size = safe_int(os.getenv("POPULATION_SIZE"), 12)
+    pop_size = safe_int(os.getenv("POPULATION_SIZE"), 300)
     max_gens = safe_int(os.getenv("MAX_GENERATIONS"), 30)
     
     print(f"[*] Config: Target={target_name}, Security={target_security}, Pop={pop_size}, MaxGens={max_gens}", flush=True)

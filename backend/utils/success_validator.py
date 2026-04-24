@@ -96,7 +96,10 @@ class SuccessValidator:
             ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
             # Over 98% similarity means it's essentially the same page
             if ratio > 0.98:
-                return 0.2, "NO_DATA_VARIATION"
+                # Time-based might still trigger, so check latency first
+                if latency > (baseline.get('latency', 0) + 4000):
+                    return 0.85, "TIME_BASED_POSITIVE"
+                return 0.05, "NO_DATA_VARIATION"
 
         # 0. ERROR-BASED DETECTION (Priority Shift: Catch syntax errors before false successes)
         error_msg = self.get_sql_error(response_text)
@@ -123,7 +126,7 @@ class SuccessValidator:
                     discovered_col = match.group(1).lower()
                     # If the "unknown column" is just our payload reflecting back, it's a FAIL.
                     if discovered_col in payload_lower:
-                        return 0.2, "SQL_SYNTAX_ERROR_SELF_INDUCED"
+                        return 0.05, "SQL_SYNTAX_ERROR_SELF_INDUCED"
                     else:
                         # We actually leaked a real column name from the schema! High value.
                         return 0.85, "SIGNAL_LEAKED_COLUMN"
@@ -132,7 +135,8 @@ class SuccessValidator:
                 if not any(p_part in low_err for p_part in payload_lower.split() if len(p_part) > 3):
                     return 0.85, "SIGNAL_UNKNOWN_COLUMN_GENERIC"
 
-            return 0.2, "SQL_SYNTAX_ERROR"
+            return 0.3, "SQL_SYNTAX_ERROR"
+
 
         # 1. SENSITIVE DATA DETECTION (Focus on Passwords and NEW reflecting data)
         # We only care if these signatures appear and WERE NOT already in the baseline
@@ -234,4 +238,4 @@ class SuccessValidator:
         if any(sig in response_text for sig in self.basic_signatures):
             return 0.65, "LOGIC_BYPASS_GENERIC"
 
-        return 0.2, "INCONCLUSIVE"
+        return 0.05, "INCONCLUSIVE"
