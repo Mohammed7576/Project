@@ -2,20 +2,25 @@ import numpy as np
 
 class RLAgent:
     """
-    Point 7: Deep Actor-Critic (A2C) implementation using NumPy.
+    Point 7: Enhanced Actor-Critic with Experience Replay.
     Actor: Base policy for mutation selection.
-    Critic: Value estimation.
+    Critic: Value estimation learned from a history of experiences.
     """
     def __init__(self, state_dim, action_names):
         self.state_dim = state_dim
         self.action_names = action_names
         self.action_dim = len(action_names)
         self.lr = 0.01
+        self.gamma = 0.95 # Discount factor for future rewards
         
-        # Simple Neural Network Weights (One hidden layer)
-        self.W1 = np.random.randn(state_dim, 32) * 0.1
-        self.W_actor = np.random.randn(32, self.action_dim) * 0.1
-        self.W_critic = np.random.randn(32, 1) * 0.1
+        # Simple Neural Network Weights
+        self.W1 = np.random.randn(state_dim, 64) * 0.1
+        self.W_actor = np.random.randn(64, self.action_dim) * 0.1
+        self.W_critic = np.random.randn(64, 1) * 0.1
+        
+        # Experience Replay Buffer
+        self.memory = []
+        self.max_memory = 500
         
         self.last_state = None
         self.last_action_idx = None
@@ -25,15 +30,16 @@ class RLAgent:
         return e_x / e_x.sum()
 
     def select_action(self, state_vector):
-        """Actor: Forward pass to choose mutation."""
+        """Actor: Forward pass to choose mutation with noise for exploration."""
         state = np.array(state_vector).reshape(1, -1)
-        
-        # Forward pass
         h = np.tanh(np.dot(state, self.W1))
         probs = self._softmax(np.dot(h, self.W_actor))[0]
         
-        # Sample action from distribution
-        action_idx = np.random.choice(self.action_dim, p=probs)
+        # Add a bit of epsilon-greedy for exploration
+        if np.random.random() < 0.05:
+            action_idx = np.random.choice(self.action_dim)
+        else:
+            action_idx = np.random.choice(self.action_dim, p=probs)
         
         self.last_state = state
         self.last_action_idx = action_idx
@@ -42,31 +48,47 @@ class RLAgent:
         
         return self.action_names[action_idx]
 
+    def store_experience(self, state, action_idx, reward, next_state):
+        """Adds observation to memory for batch learning."""
+        self.memory.append((state, action_idx, reward, next_state))
+        if len(self.memory) > self.max_memory:
+            self.memory.pop(0)
+
     def update(self, reward):
-        """Critic: Simple Policy Gradient update (Backpropagation)."""
+        """Critic: Batch update from memory to stabilize training."""
         if self.last_state is None: return
         
-        # Multi-variable advantage
-        # Target value is the reward
-        # Current value prediction
-        value_pred = np.dot(self.last_h, self.W_critic)[0, 0]
-        advantage = reward - value_pred
+        # Store current experience
+        self.store_experience(self.last_state, self.last_action_idx, reward, None)
         
-        # 1. Update Critic (MSE Loss)
-        # Grad of (reward - V)^2 -> 2 * (reward - V) * -h
-        dv = -2 * advantage
-        dW_critic = np.dot(self.last_h.T, np.array([[dv]]))
-        self.W_critic -= self.lr * dW_critic
+        # Learn from a small batch of history (Stochastic Gradient Descent)
+        batch_size = min(len(self.memory), 16)
+        batch_indices = np.random.choice(len(self.memory), batch_size, replace=False)
         
-        # 2. Update Actor (Policy Gradient)
-        # Grad of -log(prob) * advantage
-        d_actor = self.last_probs.copy()
-        d_actor[self.last_action_idx] -= 1.0 # Softmax gradient
-        d_actor *= advantage
-        
-        dW_actor = np.dot(self.last_h.T, d_actor.reshape(1, -1))
-        self.W_actor -= self.lr * dW_actor
-        
-        # Simplification: Only updating heads, hidden layer fixed for stability in small runs
-        
-        self.last_state = None # Reset
+        for idx in batch_indices:
+            s, a, r, _ = self.memory[idx]
+            
+            # Re-calculating forward for the sampled state
+            h = np.tanh(np.dot(s, self.W1))
+            probs = self._softmax(np.dot(h, self.W_actor))[0]
+            val = np.dot(h, self.W_critic)[0, 0]
+            
+            # Advantange estimation
+            advantage = r - val
+            
+            # 1. Update Critic (Value Head)
+            dv = -2 * advantage
+            self.W_critic -= self.lr * np.dot(h.T, np.array([[dv]]))
+            
+            # 2. Update Actor (Policy Head)
+            d_actor = probs.copy()
+            d_actor[a] -= 1.0
+            d_actor *= advantage
+            self.W_actor -= self.lr * np.dot(h.T, d_actor.reshape(1, -1))
+            
+            # 3. Hidden layer update (Backprop through Tanh)
+            # Simplification: Only update W1 based on actor grad to steer feature extraction
+            dh = np.dot(d_actor.reshape(1, -1), self.W_actor.T) * (1 - h**2)
+            self.W1 -= self.lr * np.dot(s.T, dh)
+
+        self.last_state = None

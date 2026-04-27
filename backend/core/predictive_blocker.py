@@ -68,13 +68,21 @@ class PredictiveBlocker:
             print(f"[!] Blocker: Error loading patterns: {e}")
 
     def should_block(self, payload):
-        """Checks if the payload matches any known blocking pattern."""
+        """
+        Calculates the 'Risk Score' of a payload based on known blocking patterns.
+        Instead of a binary result, we now return a risk level to trigger camouflage.
+        """
+        risk_score = 0
+        matching_patterns = []
+
         for pattern in self.blocked_patterns:
             try:
                 if re.search(pattern, payload, re.IGNORECASE):
-                    return True, pattern
+                    risk_score += 1
+                    matching_patterns.append(pattern)
             except: pass
-        return False, None
+        
+        return risk_score, matching_patterns
 
     def learn_from_block(self, payload):
         """Analyzes a blocked payload and extracts WAF rules to avoid."""

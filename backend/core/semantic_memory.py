@@ -85,16 +85,77 @@ class SemanticMemory:
         Assigns positive/negative credit to specific words/tokens.
         """
         tokens = self._tokenize(payload)
-        delta = 0.05 if is_success else -0.1
         
-        # Update 1-Grams (Individual words)
-        for token in tokens:
-            current = self.token_reputation.get(token, 1.0)
-            self.token_reputation[token] = max(0.1, min(2.0, current + delta))
+        # Point 5: Update all n-grams in the payload with success/fail status
+        for n in [1, 2, 3]:
+            for i in range(len(tokens) - n + 1):
+                ngram = " ".join(tokens[i:i+n])
+                self._update_ngram_maliciousness(ngram, is_blocked=not is_success)
             
         # Point 4: Shared Knowledge Update (Consolidation)
         if random.random() < 0.1: # 10% chance to sync per reported result
             self.sync_to_db()
+
+    def learn_blocked_pattern(self, payload):
+        """
+        Point 5: Sequence Inference (Sliding Window Learning).
+        Learns which n-grams are strongly associated with blocks.
+        """
+        tokens = self._tokenize(payload)
+        
+        # We record the appearance of these tokens in blocked payloads
+        for n in [1, 2, 3]:
+            for i in range(len(tokens) - n + 1):
+                ngram = " ".join(tokens[i:i+n])
+                # We update a 'maliciousness_score' in the DB
+                self._update_ngram_maliciousness(ngram, is_blocked=True)
+
+    def _update_ngram_maliciousness(self, ngram, is_blocked):
+        """Updates the statistical probability that an n-gram causes a block."""
+        try:
+            conn = self.exp_manager.conn
+            cursor = conn.cursor()
+            
+            # Use token_reputation table or a more specific one? 
+            # Reusing token_reputation for simplicity, but treat ngram as a 'token'
+            cursor.execute("SELECT reputation, blocked_count, success_count FROM token_reputation WHERE token = ?", (ngram,))
+            row = cursor.fetchone()
+            
+            if row:
+                rep, b_count, s_count = row
+                if is_blocked:
+                    b_count += 1
+                else:
+                    s_count += 1
+                
+                # Bayesian-ish reputation: (successes + 1) / (total + 2)
+                new_rep = (s_count + 1.0) / (b_count + s_count + 2.0)
+                
+                cursor.execute('''
+                    UPDATE token_reputation 
+                    SET reputation = ?, blocked_count = ?, success_count = ? 
+                    WHERE token = ?
+                ''', (new_rep, b_count, s_count, ngram))
+            else:
+                b_count = 1 if is_blocked else 0
+                s_count = 1 if not is_blocked else 0
+                new_rep = (s_count + 1.0) / (b_count + s_count + 2.0)
+                cursor.execute('''
+                    INSERT INTO token_reputation (token, reputation, blocked_count, success_count)
+                    VALUES (?, ?, ?, ?)
+                ''', (ngram, new_rep, b_count, s_count))
+            
+            # Update local cache
+            self.token_reputation[ngram] = new_rep
+            
+            # If an n-gram is very malicious, elevate it to a blocking rule
+            if b_count > 5 and new_rep < 0.2:
+                self.insert_pattern(ngram, confidence=0.9)
+                cursor.execute("INSERT OR IGNORE INTO blocking_rules (pattern, confidence) VALUES (?, ?)", (ngram, 0.9))
+                
+            conn.commit()
+        except Exception as e:
+            print(f"[!] Semantic Memory: N-Gram update error: {e}")
 
     def sync_to_db(self):
         """Persists learned token reputations to shared database."""

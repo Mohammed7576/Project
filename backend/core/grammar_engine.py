@@ -20,11 +20,17 @@ class GrammarEngine:
             "AND": [" AND ", " && ", " and ", "&&(SELECT 1)&&", "&&(true)&&"],
             "SELECT": [
                 "SELECT", "SEL/**/ECT", "S%45LECT", "/*!50000SELECT*/", 
-                "SeLeCt", "(SELECT)", "/*!--+*/SELECT", "1.e(SELECT)"
+                "SeLeCt", "(SELECT)", "/*!--+*/SELECT", "1.e(SELECT)",
+                "SELECT DISTINCT", "SELECT ALL", "/*!12345SELECT*/"
             ],
             "UNION": [
                 "UNION", "UNI/**/ON", "U%4eION", "/*!50000UNION*/", 
-                "UnIoN", "(UNION)", "all union", "1.e(UNION)"
+                "UnIoN", "(UNION)", "all union", "1.e(UNION)",
+                "UNION SELECT", "UNION DISTINCT", "UNION ALL", "/*!12345UNION*/"
+            ],
+            "ORDER_BY": [
+                " ORDER BY ", " ORDER/**/BY ", " OR%44ER BY ", "/*!50000ORDER BY*/",
+                " oRdEr By ", "GROUP BY", " ORDER  BY "
             ],
             "FROM": [
                 "FROM", "FR/**/OM", "F%52OM", "/*!50000FROM*/", 

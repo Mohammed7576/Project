@@ -73,15 +73,15 @@ class SuccessValidator:
         # but SequenceMatcher is the core engine for its 'comparison' function.
         return difflib.SequenceMatcher(None, text1, text2).quick_ratio()
 
-    def get_state_vector(self, response_text, status_code, latency, baseline):
+    def get_state_vector(self, response_text, status_code, latency, baseline, depth=0, consecutive_fails=0):
         """
-        Point 6: System State Vector Representation for the RL Agent.
-        Converts the WAF response into a mathematical vector (tensor-like).
+        Point 6: Enhanced System State Vector Representation (Contextual Consciousness).
+        Converts the WAF response and history into a mathematical vector.
+        Vector Size: 11
         """
         vector = []
         
-        # 1. Status Code One-Hot Encoding
-        # [1,0,0] = 200, [0,1,0] = 4xx, [0,0,1] = 5xx
+        # 1. Status Code One-Hot (3)
         if status_code == 200:
             vector.extend([1, 0, 0])
         elif 400 <= status_code < 500:
@@ -89,24 +89,40 @@ class SuccessValidator:
         else:
             vector.extend([0, 0, 1])
             
-        # 2. Latency Normalization (0.0 to 1.0)
-        norm_latency = min(latency / 10000.0, 1.0) # Cap at 10s
+        # 2. Latency Penalty (1) - Normalized spike
+        base_lat = baseline.get('latency', 0) if baseline else 500
+        lat_spike = max(0, latency - base_lat)
+        norm_latency = min(lat_spike / 5000.0, 1.0) 
         vector.append(norm_latency)
         
-        # 3. Content Similarity Score
+        # 3. Content Similarity Logic (1)
         if baseline:
             ratio = self._calculate_ratio(response_text, baseline.get('text', ''))
             vector.append(ratio)
         else:
             vector.append(0.5)
             
-        # 4. Error Signature Vector (Presence of SQL Errors)
+        # 4. Error State (1)
         error_msg = self.get_sql_error(response_text)
         vector.append(1.0 if error_msg else 0.0)
         
-        # 5. Data Leaks Vector (Keywords found)
+        # 5. Data Density (1) - Presence of schema keywords
         leak_count = sum(1 for sig in self.schema_signatures if re.search(sig, response_text, re.IGNORECASE))
-        vector.append(min(leak_count / 5.0, 1.0))
+        vector.append(min(leak_count / 3.0, 1.0))
+
+        # 6. Response Length Variation (1)
+        base_len = len(baseline.get('text', '')) if baseline else 1000
+        curr_len = len(response_text) if response_text else 0
+        len_delta = abs(curr_len - base_len) / max(base_len, 1)
+        vector.append(min(len_delta, 1.0))
+
+        # 7. Progress Metrics (2)
+        vector.append(min(depth / 10.0, 1.0)) # Mutation depth
+        vector.append(min(consecutive_fails / 5.0, 1.0)) # Stagnation sense
+
+        # 8. WAF Blocking Intensity (1)
+        is_blocked = 1.0 if status_code in [403, 406] else 0.0
+        vector.append(is_blocked)
         
         return vector
 

