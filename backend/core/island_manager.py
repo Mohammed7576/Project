@@ -346,6 +346,20 @@ class IslandManager:
         # Inject learned WAF rules into Mutator for active evasion during generation
         mutator.active_waf_rules = self.blocker.blocked_patterns
         island["population"] = await self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
+
+        # Telemetry Data
+        telemetry = {
+            "type": "telemetry",
+            "gen": gen_num,
+            "island": island["id"],
+            "max_score": max_score,
+            "diversity": diversity_ratio,
+            "intensity": mutation_intensity,
+            "stagnation": island["stagnation"]
+        }
+        self.client.log(telemetry)
+        self.exp_manager.save_telemetry(gen_num, island["id"], max_score, diversity_ratio, mutation_intensity, island["stagnation"])
+
         return {"max_score": max_score, "diversity": diversity_ratio}
 
     async def _migrate(self):

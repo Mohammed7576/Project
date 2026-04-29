@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon, Activity, Flame, LineChart as ChartIcon } from 'lucide-react';
+import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon, Activity, Flame, LineChart as ChartIcon, Gauge } from 'lucide-react';
 import { useAttack } from '../context/AttackContext';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { StatsPanel } from '../components/StatsPanel';
 import { EvolutionChart } from '../components/EvolutionChart';
+import { TelemetryDashboard } from '../components/TelemetryDashboard';
 
 const formatLogLine = (log: string) => {
   if (typeof log !== 'string') return log;
@@ -104,7 +105,8 @@ export default function Campaign() {
     LEARNING: true,
     SUCCESS: true,
     ENGINE: true,
-    CHART: true
+    CHART: true,
+    TELEMETRY: false
   });
 
   const [summary, setSummary] = React.useState({ successfulPayloads: 0, sqlErrorPayloads: 0, totalPayloads: 0 });
@@ -218,6 +220,7 @@ export default function Campaign() {
            <NavButton active={windowVisibility.SUCCESS} onClick={() => toggleWindow('SUCCESS')} icon={Flame} label="الغنائم" subLabel="LOOT" color="text-emerald-400" />
            <NavButton active={windowVisibility.ENGINE} onClick={() => toggleWindow('ENGINE')} icon={TerminalIcon} label="القيادة" subLabel="CNC" color="text-blue-400" />
            <NavButton active={windowVisibility.CHART} onClick={() => toggleWindow('CHART')} icon={ChartIcon} label="التحليل" subLabel="ANA" color="text-indigo-400" />
+           <NavButton active={windowVisibility.TELEMETRY} onClick={() => toggleWindow('TELEMETRY')} icon={Gauge} label="القياس" subLabel="TEL" color="text-rose-400" />
         </div>
       </div>
 
@@ -283,6 +286,18 @@ export default function Campaign() {
                 </div>
                 <div className="h-full">
                   <EvolutionChart />
+                </div>
+              </div>
+            )}
+
+            {windowVisibility.TELEMETRY && (
+              <div className="md:col-span-2 bg-[#0a0a0a] border border-rose-500/10 rounded-lg p-4 h-auto min-h-[400px]">
+                <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-2">
+                   <Gauge className="w-3.5 h-3.5 text-rose-400" />
+                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Engine Swarm Telemetry Systems</span>
+                </div>
+                <div className="h-full">
+                  <TelemetryDashboard />
                 </div>
               </div>
             )}

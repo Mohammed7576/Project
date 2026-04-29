@@ -23,6 +23,7 @@ interface AttackContextType {
   currentGeneration: number;
   elapsedTime: number;
   attemptHistory: any[];
+  telemetryHistory: any[];
   startAttack: (mode?: 'training' | 'attack') => Promise<void>;
   stopAttack: () => void;
 }
@@ -45,6 +46,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const [currentGeneration, setCurrentGeneration] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [attemptHistory, setAttemptHistory] = useState<any[]>([]);
+  const [telemetryHistory, setTelemetryHistory] = useState<any[]>([]);
   
   const abortControllerRef = useRef<AbortController | null>(null);
   const attackStartTimeRef = useRef<number | null>(null);
@@ -96,6 +98,8 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       if (score >= 0.7) {
         setSuccessLogs(prev => [...prev.slice(-99), `[SUCCESS] ${payload}`]);
       }
+    } else if (type === 'telemetry') {
+      setTelemetryHistory(prev => [...prev.slice(-299), { ...data, timestamp: Date.now() }]);
     } else if (type === 'gen_start') {
       setCurrentGeneration(data.val || 0);
       setSystemLogs(prev => [...prev.slice(-199), message || `[GENERATION START]`]);
@@ -230,6 +234,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       currentGeneration,
       elapsedTime,
       attemptHistory,
+      telemetryHistory,
       startAttack,
       stopAttack
     }}>
