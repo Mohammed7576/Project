@@ -870,7 +870,9 @@ async function startServer() {
       });
 
       pythonProcess.stderr.on("data", (data: any) => {
-        if (!res.writableEnded) res.write(`[ERROR] ${data}`);
+        const str = data.toString();
+        console.error(`[PYTHON_STDERR] ${str}`);
+        if (!res.writableEnded) res.write(`[ERROR] ${str}`);
       });
 
       pythonProcess.on("close", (code: any, signal: any) => {

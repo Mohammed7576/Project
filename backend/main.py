@@ -1,7 +1,20 @@
 import sys
-import asyncio
 import os
+import asyncio
 import json
+
+# Ensure types and core are discoverable
+sys.path.append(os.path.join(os.path.dirname(__file__)))
+
+try:
+    import numpy as np
+    import aiohttp
+    from bs4 import BeautifulSoup
+except ImportError as e:
+    # Use direct print to stdout as a fallback if the library isn't there yet
+    print(json.dumps({"type": "error", "message": f"Missing Dependency: {e}. Please ensure requirements are installed."}), flush=True)
+    sys.exit(1)
+
 from utils.http_client import HTTPClient
 from utils.experience_manager import ExperienceManager
 from core.island_manager import IslandManager

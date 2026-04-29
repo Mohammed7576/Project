@@ -229,6 +229,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       systemLogs,
       currentGeneration,
       elapsedTime,
+      attemptHistory,
       startAttack,
       stopAttack
     }}>
