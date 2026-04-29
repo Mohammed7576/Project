@@ -289,11 +289,11 @@ class IslandManager:
             
             for (genome, p_str), response in zip(batch, responses):
                 if isinstance(response, Exception):
-                    self.client.log(f"  [Island {island['id']}] Request FAILED: {response}", type="error")
+                    self.client.log({"type": "error", "message": f"[Island {island['id']}] Request FAILED: {str(response)}"})
                     continue
                 
                 # Check Fingerprint (on first success or if unknown)
-                waf = self.fingerprinter.identify(response['headers'], response['text'])
+                waf = self.fingerprinter.identify(response.get('headers', {}), response.get('text', ''))
                 if waf != "GENERIC / UNKNOWN":
                     mutator.apply_hint({"suggestion": self.fingerprinter.get_bypass_strategy(waf)["hint"], "weights": self.fingerprinter.get_bypass_strategy(waf)["weights"]})
 

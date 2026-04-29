@@ -8,11 +8,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__)))
 
 try:
     import numpy as np
-    import aiohttp
-    from bs4 import BeautifulSoup
+    import requests 
 except ImportError as e:
-    # Use direct print to stdout as a fallback if the library isn't there yet
-    print(json.dumps({"type": "error", "message": f"Missing Dependency: {e}. Please ensure requirements are installed."}), flush=True)
+    print(json.dumps({"type": "error", "message": f"Missing Dependency: {e}. Please ensure numpy and requests are installed."}), flush=True)
     sys.exit(1)
 
 from utils.http_client import HTTPClient
