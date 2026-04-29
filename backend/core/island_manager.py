@@ -157,13 +157,13 @@ class IslandManager:
         union = len(s1.union(s2))
         return intersection / union if union > 0 else 0
 
-    def evolve_generation(self, gen_num):
+    async def evolve_generation(self, gen_num):
         global_max_score = 0
         
         # 0. Poll for AI Hints from SQLite
         hints = self.exp_manager.get_latest_hint()
         if hints:
-            print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
+            self.client.log(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}")
             for island in self.islands:
                 island["mutator"].apply_hint(hints)
 
@@ -176,7 +176,7 @@ class IslandManager:
             else:
                 mutator.epsilon = 0.2
                 
-            island_results = self._evolve_island(island, gen_num)
+            island_results = await self._evolve_island(island, gen_num)
             if island_results["max_score"] > global_max_score:
                 global_max_score = island_results["max_score"]
             
@@ -189,22 +189,22 @@ class IslandManager:
 
         # 1.5 Batch WAF Pattern Analysis (Understanding 'Why')
         if self.blocked_buffer:
-            print(f"[*] Analyzing WAF behavior across {len(self.blocked_buffer)} blocked payloads...", flush=True)
+            self.client.log(f"[*] Analyzing WAF behavior across {len(self.blocked_buffer)} blocked payloads...")
             new_inferred_rules = self.inferrer.analyze_batch(self.blocked_buffer)
             if new_inferred_rules:
-                print(f"[WAF_ANALYSIS_SUCCESS] Inferred {len(new_inferred_rules)} blocking patterns.", flush=True)
+                self.client.log(f"[WAF_ANALYSIS_SUCCESS] Inferred {len(new_inferred_rules)} blocking patterns.", type="success")
                 for island in self.islands:
                     island["mutator"].inferred_rules = new_inferred_rules
                     
                 for rule in new_inferred_rules[:3]: # Log top 3
-                    print(f"  [PATTERN_ID] Rule: '{rule['pattern']}' | Confidence: {rule['confidence']:.2f}", flush=True)
+                    self.client.log(f"  [PATTERN_ID] Rule: '{rule['pattern']}' | Confidence: {rule['confidence']:.2f}")
             
             # Clear buffer for next gen
             self.blocked_buffer = []
 
         # 2. Migration Step: Every 5 generations, exchange genetic material
         if gen_num > 0 and gen_num % 5 == 0:
-            self._migrate()
+            await self._migrate()
 
         self.best_score_history.append(global_max_score)
         
@@ -241,7 +241,7 @@ class IslandManager:
 
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
-    def _evolve_island(self, island, gen_num):
+    async def _evolve_island(self, island, gen_num):
         pop = island["population"] # List of PayloadGenome objects
         mutator = island["mutator"]
         scored_population = []
@@ -259,7 +259,7 @@ class IslandManager:
         mutation_intensity = min(max(1, round(calc_intensity)), 6)
 
         if mutation_intensity >= 3:
-            print(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}", flush=True)
+            self.client.log(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}")
 
         for i, genome in enumerate(pop):
             payload_str = genome.render()
@@ -276,17 +276,17 @@ class IslandManager:
             if not ignore_blocker:
                 risk_score, matched_patterns = self.blocker.should_block(payload_str)
                 if risk_score > 0:
-                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...", flush=True)
+                    self.client.log(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...")
                     # Point 5: Instead of avoiding, we increase camouflage
                     payload_str = mutator.camouflage_payload(payload_str, matched_patterns)
                     # We might want to re-validate if it's still "too" risky, or just send it
                     # Here we just proceed with the camouflaged version
 
-            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
+            self.client.log(f"  [Island {island['id']}] {i+1}/{len(pop)}: Testing {payload_str[:40]}...", type="attack")
             try:
-                response = self.client.send_request(payload_str)
+                response = await self.client.send_request(payload_str)
             except Exception as e:
-                print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
+                self.client.log(f"  [Island {island['id']}] Request FAILED: {e}", type="error")
                 continue
             
             print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
@@ -295,7 +295,7 @@ class IslandManager:
             if i == 0:
                 waf = self.fingerprinter.identify(response['headers'], response['text'])
                 if waf != "GENERIC / UNKNOWN":
-                    print(f"[*] WAF DETECTED: {waf}", flush=True)
+                    self.client.log(f"[*] WAF DETECTED: {waf}", type="system")
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
@@ -346,9 +346,17 @@ class IslandManager:
             if score <= 0.1:
                 block_reason = self.inferrer.get_blocking_reason(payload_str)
                 if block_reason:
-                    print(f"  [WAF_REASON] Payload matched inferred rule: '{block_reason[0]['pattern']}'", flush=True)
+                    self.client.log(f"  [WAF_REASON] Payload matched inferred rule: '{block_reason[0]['pattern']}'", type="waf_alert")
 
-            print(f"  [{status} | {score*100:.1f}] ... {payload_str[:20]}... {island['id']}:{i+1}/{len(pop)} [{island['id']} Island]", flush=True)
+            self.client.log({
+                "type": "attempt",
+                "island": island['id'],
+                "payload": payload_str,
+                "score": score,
+                "status": status,
+                "latency": latency,
+                "gen": gen_num
+            })
             
             self.session_tested.add(payload_str)
             # Pass advanced metrics to RL reporter
@@ -366,7 +374,7 @@ class IslandManager:
                     harvested_data = self.extractor.extract(response['text'])
                     if harvested_data:
                         report = self.extractor.format_report(harvested_data)
-                        print(report, flush=True)
+                        self.client.log(report, type="success")
 
                     if payload_str not in self.hall_of_fame:
                         self.hall_of_fame.append(payload_str)
@@ -382,12 +390,12 @@ class IslandManager:
         island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
         return {"max_score": max_score, "diversity": diversity_ratio}
 
-    def _migrate(self):
+    async def _migrate(self):
         """
         Point 5: Federated Policy Migration.
         Exchanges both genetic material (payloads) and learned weights (Policy).
         """
-        print("[*] Migration Event: Exchanging payloads AND learned policy weights between islands...", flush=True)
+        self.client.log("[*] Migration Event: Exchanging genetic policy across islands...")
         for i in range(self.num_islands):
             source_island = self.islands[i]
             target_island = self.islands[(i + 1) % self.num_islands]
@@ -405,13 +413,12 @@ class IslandManager:
         self.semantic_memory.sync_to_db()
         self.semantic_memory._load_memory() # Refresh from DB to get patterns from all islands
 
-    def _generate_next_gen(self, elites, survivors, intensity, mutator):
+    async def _generate_next_gen(self, elites, survivors, intensity, mutator):
         next_gen = []
         seen_payloads = set()
         
         # Elites stay as they are
         for e in elites:
-            # e is a PayloadGenome object
             payload_str = e.render()
             if payload_str not in seen_payloads:
                 next_gen.append(e)
@@ -427,11 +434,10 @@ class IslandManager:
             rand_val = random.random()
             
             if rand_val < 0.15: # Diversity: Semantic Seed from Memory
-                # Try to get a semantically similar payload from history for the best current survivor
                 semantic_seed_str = None
                 if survivors:
                     best_survivor_genome = survivors[0][0]
-                    results = self.client.semantic_search(best_survivor_genome.render(), k=3)
+                    results = await self.client.semantic_search(best_survivor_genome.render(), k=3)
                     if results:
                         semantic_seed_str = random.choice(results).get('content')
                 

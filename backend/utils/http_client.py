@@ -1,18 +1,19 @@
-import requests
+import aiohttp
+import asyncio
 from bs4 import BeautifulSoup
 import time
+import json
 
 class HTTPClient:
     def __init__(self, base_url="http://localhost/"):
         self.base_url = base_url.rstrip('/') + '/'
-        self.session = requests.Session()
-        self.session.headers.update({
+        self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1'
-        })
+        }
         
         # Guard against base_url being a specific file
         if "login.php" in self.base_url:
@@ -21,25 +22,40 @@ class HTTPClient:
         self.login_url = f"{self.base_url}login.php"
         self.security_url = f"{self.base_url}security.php"
         self.injection_url = f"{self.base_url}vulnerabilities/sqli/"
+        self.session = None
+        self.security_level = "medium"
 
-    def _get_token(self, url):
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers=self.headers)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+
+    async def _get_token(self, url):
         """Extracts user_token from the specified page."""
         try:
-            response = self.session.get(url, timeout=5)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            token_input = soup.find('input', {'name': 'user_token'})
-            return token_input['value'] if token_input else None
+            async with self.session.get(url, timeout=5) as response:
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                token_input = soup.find('input', {'name': 'user_token'})
+                return token_input['value'] if token_input else None
         except Exception as e:
-            print(f"[!] Error extracting CSRF token: {e}")
+            self.log(f"[!] Error extracting CSRF token: {e}")
             return None
 
-    def setup_dvwa(self, username="admin", password="password", security_level="medium"):
+    def log(self, message, type="log"):
+        """Sends a message that the server will broadcast via WebSocket."""
+        print(json.dumps({"type": type, "message": message}), flush=True)
+
+    async def setup_dvwa(self, username="admin", password="password", security_level="medium"):
         """Performs login and sets security level."""
         self.security_level = security_level.lower()
-        print(f"[*] Initializing connection to {self.base_url}...")
+        self.log(f"[*] Initializing connection to {self.base_url}...")
         
         # 1. Login
-        token = self._get_token(self.login_url)
+        token = await self._get_token(self.login_url)
         login_data = {
             'username': username,
             'password': password,
@@ -48,16 +64,16 @@ class HTTPClient:
         if token:
             login_data['user_token'] = token
             
-        print(f"[*] Attempting login as '{username}'...")
-        res = self.session.post(self.login_url, data=login_data, timeout=10)
-        
-        if "Login failed" in res.text:
-            print("[!] Login failed. Check credentials.")
-            return False
+        self.log(f"[*] Attempting login as '{username}'...")
+        async with self.session.post(self.login_url, data=login_data, timeout=10) as res:
+            text = await res.text()
+            if "Login failed" in text:
+                self.log("[!] Login failed. Check credentials.")
+                return False
             
         # 2. Set Security Level
-        print(f"[*] Setting Security Level to: {security_level.upper()}")
-        token = self._get_token(self.security_url)
+        self.log(f"[*] Setting Security Level to: {security_level.upper()}")
+        token = await self._get_token(self.security_url)
         security_data = {
             'security': security_level.lower(),
             'seclev_submit': 'Submit'
@@ -65,37 +81,33 @@ class HTTPClient:
         if token:
             security_data['user_token'] = token
             
-        self.session.post(self.security_url, data=security_data, timeout=5)
+        async with self.session.post(self.security_url, data=security_data, timeout=5):
+            pass
+            
         return True
 
-    def fetch_base_payloads(self):
+    async def fetch_base_payloads(self):
         """Fetches seeded payloads from the server's database API."""
         try:
-            # The Prometheus server is at localhost:3000
-            res = requests.get("http://localhost:3000/api/base-payloads", timeout=5)
-            if res.status_code == 200:
-                return res.json()
+            async with self.session.get("http://localhost:3000/api/base-payloads", timeout=5) as res:
+                if res.status == 200:
+                    return await res.json()
         except Exception as e:
-            print(f"[!] Warning: Could not fetch base payloads from DB: {e}")
+            self.log(f"[!] Warning: Could not fetch base payloads from DB: {e}")
         return []
 
-    def semantic_search(self, payload, k=5):
+    async def semantic_search(self, payload, k=5):
         """Fetches semantically similar payloads using the Vector Database API."""
         try:
-            # Note: The actual embedding must be provided by the server/frontend.
-            # Here we just pass the text and let the server handle the embedding if possible,
-            # but our server API expects the embedding. 
-            # In AI Studio, we can't easily generate embeddings in Python without heavy libs.
-            # So we rely on the server having a 'search-by-text' which first embeds then searches.
-            # Let's add that to server.ts
-            res = requests.post("http://localhost:3000/api/semantic/search-text", json={"content": payload, "k": k}, timeout=5)
-            if res.status_code == 200:
-                return res.json()
+            async with self.session.post("http://localhost:3000/api/semantic/search-text", 
+                                        json={"content": payload, "k": k}, timeout=5) as res:
+                if res.status == 200:
+                    return await res.json()
         except Exception as e:
             pass
         return []
 
-    def send_request(self, payload):
+    async def send_request(self, payload):
         """Sends the SQLi payload to the target page and measures latency."""
         params = {
             'id': payload,
@@ -105,18 +117,24 @@ class HTTPClient:
         start_time = time.time()
         try:
             # Dynamic method switching based on DVWA security context
-            if getattr(self, 'security_level', 'medium') == 'low':
+            if self.security_level == 'low':
                 # DVWA Low uses GET parameters
-                response = self.session.get(self.injection_url, params=params, timeout=10)
+                async with self.session.get(self.injection_url, params=params, timeout=10) as response:
+                    text = await response.text()
+                    status = response.status
+                    headers = dict(response.headers)
             else:
                 # DVWA Medium uses POST body
-                response = self.session.post(self.injection_url, data=params, timeout=10)
+                async with self.session.post(self.injection_url, data=params, timeout=10) as response:
+                    text = await response.text()
+                    status = response.status
+                    headers = dict(response.headers)
                 
             latency = int((time.time() - start_time) * 1000)
             return {
-                "text": response.text,
-                "status": response.status_code,
-                "headers": dict(response.headers),
+                "text": text,
+                "status": status,
+                "headers": headers,
                 "latency": latency
             }
         except Exception as e:

@@ -1,3 +1,6 @@
-torch
+aiohttp
+beautifulsoup4
+websockets
 numpy
-requests
+torch
+sqlite3

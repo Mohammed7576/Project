@@ -215,10 +215,15 @@ process.on('uncaughtException', (error) => {
   console.error('[UNCAUGHT EXCEPTION]', error);
 });
 
+import { WebSocketServer, WebSocket } from "ws";
+
+// Store active socket connections
+const activeSockets = new Set<WebSocket>();
+
 async function startServer() {
   const app = express();
   app.use(express.json());
-  
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -844,7 +849,24 @@ async function startServer() {
       }, 5000); // More frequent heartbeat (5s instead of 15s)
 
       pythonProcess.stdout.on("data", (data: any) => {
+        const raw = data.toString();
         if (!res.writableEnded) res.write(data);
+        
+        // Split by newline to handle multiple JSON objects in one buffer
+        const lines = raw.split("\n").filter((l: string) => l.trim().length > 0);
+        
+        lines.forEach((line: string) => {
+          const trimmed = line.trim();
+          try {
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+              broadcast(JSON.parse(trimmed));
+            } else {
+              broadcast({ type: "log", message: trimmed });
+            }
+          } catch (e) {
+            broadcast({ type: "log", message: trimmed });
+          }
+        });
       });
 
       pythonProcess.stderr.on("data", (data: any) => {
@@ -975,6 +997,31 @@ async function startServer() {
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Initialize WebSocket server
+  const wss = new WebSocketServer({ server });
+
+  wss.on("connection", (ws) => {
+    console.log("[WS] Client connected");
+    activeSockets.add(ws);
+
+    ws.on("close", () => {
+      console.log("[WS] Client disconnected");
+      activeSockets.delete(ws);
+    });
+
+    // Send initial welcome message
+    ws.send(JSON.stringify({ type: "system", message: "Connected to Prometheus Swarm Intelligence WS" }));
+  });
+
+  function broadcast(data: any) {
+    const payload = JSON.stringify(data);
+    activeSockets.forEach((socket) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(payload);
+      }
+    });
+  }
 
   // Graceful shutdown
   const shutdown = () => {
