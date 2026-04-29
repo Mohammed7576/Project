@@ -184,7 +184,8 @@ class ASTMutator:
         return {
             "strategies": self.strategy_weights,
             "keywords": self.keyword_reputation,
-            "sequences": self.sequence_reputation
+            "sequences": self.sequence_reputation,
+            "rl_weights": self.rl_agent.get_weights()
         }
 
     def load_policy_weights(self, policy_data):
@@ -203,6 +204,10 @@ class ASTMutator:
         for k, v in policy_data.get("sequences", {}).items():
             current = self.sequence_reputation.get(k, 1.0)
             self.sequence_reputation[k] = (current + v) / 2.0
+
+        # Load RL Weights if provided
+        if "rl_weights" in policy_data:
+            self.rl_agent.load_weights(policy_data["rl_weights"])
 
     def report_success(self, payload, score, status=None, state_vector=None, block_reason=None):
         """

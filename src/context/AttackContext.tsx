@@ -22,6 +22,7 @@ interface AttackContextType {
   systemLogs: string[];
   currentGeneration: number;
   elapsedTime: number;
+  attemptHistory: any[];
   startAttack: (mode?: 'training' | 'attack') => Promise<void>;
   stopAttack: () => void;
 }
@@ -43,6 +44,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
   const [currentGeneration, setCurrentGeneration] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [attemptHistory, setAttemptHistory] = useState<any[]>([]);
   
   const abortControllerRef = useRef<AbortController | null>(null);
   const attackStartTimeRef = useRef<number | null>(null);
@@ -85,11 +87,12 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleStructuredLog = (data: any) => {
-    const { type, message, payload, score, status, gen, island } = data;
+    const { type, message, payload, score, status, gen, island, latency } = data;
 
     if (type === 'attempt') {
       const logLine = `[ISLAND ${island}] Gen ${gen}: Score ${Math.round(score * 100)} | ${status} | Payload: ${payload}`;
       setLearningLogs(prev => [...prev.slice(-199), logLine]);
+      setAttemptHistory(prev => [...prev.slice(-499), { island, score, status, gen, latency, timestamp: Date.now() }]);
       if (score >= 0.7) {
         setSuccessLogs(prev => [...prev.slice(-99), `[SUCCESS] ${payload}`]);
       }
