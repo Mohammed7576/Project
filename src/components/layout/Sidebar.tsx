@@ -4,8 +4,9 @@ import { Terminal, Activity, Database, ShieldAlert, Settings, Cpu } from 'lucide
 
 const navItems = [
   { name: 'لوحة القيادة الموحدة', path: '/', icon: Activity },
-  { name: 'مختبر المحاكاة', path: '/sandbox', icon: Terminal },
-  { name: 'بيئات الأهداف', path: '/targets', icon: Database },
+  { name: 'مختبر التدريب المحاكي', path: '/training', icon: Terminal },
+  { name: 'حملة الاختراق الفعلي', path: '/attack', icon: Database },
+  { name: 'أرشيف الأهداف', path: '/targets', icon: Activity },
   { name: 'التحليل السلوكي WAF', path: '/waf', icon: ShieldAlert },
   { name: 'إعدادات النظام البحثي', path: '/settings', icon: Settings },
 ];

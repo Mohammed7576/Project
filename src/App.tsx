@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import Dashboard from './pages/Dashboard';
 import Sandbox from './pages/Sandbox';
+import Campaign from './pages/Campaign';
 import Targets from './pages/Targets';
 import WAFAnalysis from './pages/WAFAnalysis';
 import PlaceholderPage from './pages/PlaceholderPage';
@@ -14,7 +15,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
-          <Route path="sandbox" element={<Sandbox />} />
+          <Route path="training" element={<Sandbox />} />
+          <Route path="attack" element={<Campaign />} />
           <Route path="targets" element={<Targets />} />
           <Route path="waf" element={<WAFAnalysis />} />
           <Route path="settings" element={<PlaceholderPage title="إعدادات النظام" />} />

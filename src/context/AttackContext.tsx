@@ -22,7 +22,7 @@ interface AttackContextType {
   systemLogs: string[];
   currentGeneration: number;
   elapsedTime: number;
-  startAttack: () => Promise<void>;
+  startAttack: (mode?: 'training' | 'attack') => Promise<void>;
   stopAttack: () => void;
 }
 
@@ -98,7 +98,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
     attackStartTimeRef.current = null;
   }, []);
 
-  const startAttackLoop = useCallback(async (isResume = false) => {
+  const startAttackLoop = useCallback(async (mode: 'training' | 'attack' = 'attack', isResume = false) => {
     // Sanitize URL: remove leading slashes and trim whitespace
     let sanitizedUrl = url.trim().replace(/^\/+/, '');
     
@@ -145,7 +145,8 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       security,
       population: population.toString(),
       generations: generations.toString(),
-      targetName
+      targetName,
+      mode
     });
 
     try {
@@ -202,7 +203,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
         
         // Short delay to allow the server to settle between cycles
         await new Promise(r => setTimeout(r, 2000));
-        startAttackLoop(true);
+        startAttackLoop(mode, true);
       } else {
         setIsAttacking(false);
         if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
@@ -225,7 +226,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
           const recoveryMsg = `[SYSTEM] Connection lost. Attempting auto-recovery in 3s...`;
           setSystemLogs(prev => [...prev, recoveryMsg]);
           await new Promise(r => setTimeout(r, 3000));
-          startAttackLoop(true);
+          startAttackLoop(mode, true);
         } else {
           setIsAttacking(false);
           if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
@@ -240,7 +241,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
     }
   }, [url, username, password, security, population, generations, targetName]);
 
-  const startAttack = useCallback(() => startAttackLoop(false), [startAttackLoop]);
+  const startAttack = useCallback((mode: 'training' | 'attack' = 'attack') => startAttackLoop(mode, false), [startAttackLoop]);
 
   return (
     <AttackContext.Provider value={{

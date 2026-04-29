@@ -5,6 +5,7 @@ from core.mutator_ast import ASTMutator
 from core.payload_genome import PayloadGenome
 from core.predictive_blocker import PredictiveBlocker
 from core.waf_fingerprinter import WAFFingerprinter
+from core.waf_rule_inferrer import WAFRuleInferrer
 from core.error_refiner import SQLErrorRefiner
 from core.semantic_memory import SemanticMemory
 from utils.success_validator import SuccessValidator
@@ -34,8 +35,10 @@ class IslandManager:
         self.disable_strings = disable_strings
         self.blocker = PredictiveBlocker()
         self.fingerprinter = WAFFingerprinter()
+        self.inferrer = WAFRuleInferrer(semantic_memory=self.semantic_memory)
         self.error_refiner = SQLErrorRefiner()
         self.session_tested = set() # Avoid repeating in same session
+        self.blocked_buffer = [] # Buffer for batch WAF analysis
         self.current_gen = 0
         
         # Initialize Islands with their own mutators and populations
@@ -184,6 +187,21 @@ class IslandManager:
                 island["stagnation"] = 0
                 island["best_score"] = island_results["max_score"]
 
+        # 1.5 Batch WAF Pattern Analysis (Understanding 'Why')
+        if self.blocked_buffer:
+            print(f"[*] Analyzing WAF behavior across {len(self.blocked_buffer)} blocked payloads...", flush=True)
+            new_inferred_rules = self.inferrer.analyze_batch(self.blocked_buffer)
+            if new_inferred_rules:
+                print(f"[WAF_ANALYSIS_SUCCESS] Inferred {len(new_inferred_rules)} blocking patterns.", flush=True)
+                for island in self.islands:
+                    island["mutator"].inferred_rules = new_inferred_rules
+                    
+                for rule in new_inferred_rules[:3]: # Log top 3
+                    print(f"  [PATTERN_ID] Rule: '{rule['pattern']}' | Confidence: {rule['confidence']:.2f}", flush=True)
+            
+            # Clear buffer for next gen
+            self.blocked_buffer = []
+
         # 2. Migration Step: Every 5 generations, exchange genetic material
         if gen_num > 0 and gen_num % 5 == 0:
             self._migrate()
@@ -306,6 +324,7 @@ class IslandManager:
 
             if score <= 0.1:
                 self.blocker.learn_from_block(payload_str)
+                self.blocked_buffer.append(payload_str)
                 if self.semantic_memory:
                     self.semantic_memory.learn_blocked_pattern(payload_str)
             elif score >= 0.8:
@@ -321,11 +340,19 @@ class IslandManager:
                     status = f"BIASED_{status}"
                     break
 
+            # 3.5 Identify Blocking Reason (Understanding 'Why')
+            # Check if this specific block matches any of our inferred rules
+            block_reason = None
+            if score <= 0.1:
+                block_reason = self.inferrer.get_blocking_reason(payload_str)
+                if block_reason:
+                    print(f"  [WAF_REASON] Payload matched inferred rule: '{block_reason[0]['pattern']}'", flush=True)
+
             print(f"  [{status} | {score*100:.1f}] ... {payload_str[:20]}... {island['id']}:{i+1}/{len(pop)} [{island['id']} Island]", flush=True)
             
             self.session_tested.add(payload_str)
             # Pass advanced metrics to RL reporter
-            mutator.report_success(payload_str, score, status=status, state_vector=state_vec)
+            mutator.report_success(payload_str, score, status=status, state_vector=state_vec, block_reason=block_reason)
             self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
             scored_population.append((genome, score, error_msg))
             

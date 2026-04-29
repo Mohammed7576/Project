@@ -13,8 +13,15 @@ from core.context_discoverer import ContextDiscoverer
 from utils.data_extractor import DataExtractor
 
 def run_prometheus():
+    training_mode = os.getenv("TRAINING_MODE", "false").lower() == "true"
+    
     print("\n" + "="*50, flush=True)
-    print("--- [ القيادة والسيطرة: وحدة الهجوم Initialized ] ---", flush=True)
+    if training_mode:
+        print("--- [ مختبر التدريب النمطي: وضع المحاكاة النشط ] ---", flush=True)
+        print("--- [ الوضع: تعليمي / تحليل الأخطاء المفصل ] ---", flush=True)
+    else:
+        print("--- [ القيادة والسيطرة: وحدة الهجوم الفعلي ] ---", flush=True)
+        print("--- [ الوضع: حملة اختراق متطورة / هجوم صامت ] ---", flush=True)
     print("="*50, flush=True)
     
     client = HTTPClient(base_url=os.getenv("TARGET_URL", "http://localhost/"))

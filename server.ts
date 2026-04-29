@@ -796,7 +796,7 @@ async function startServer() {
     let heartbeat: NodeJS.Timeout;
 
     try {
-      const { url, username, password, security, population, generations, targetName } = req.query;
+      const { url, username, password, security, population, generations, targetName, mode } = req.query;
       
       // Basic URL Validation
       try {
@@ -822,6 +822,7 @@ async function startServer() {
           POPULATION_SIZE: population as string,
           MAX_GENERATIONS: generations as string,
           TARGET_NAME: (targetName as string) || 'default',
+          TRAINING_MODE: mode === 'training' ? 'true' : 'false',
           DB_PATH: dbPath,
           PYTHONUNBUFFERED: "1" 
         }

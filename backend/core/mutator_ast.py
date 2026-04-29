@@ -71,6 +71,8 @@ class ASTMutator:
         self.last_score = 0
         self.current_state_vector = [1, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0] # Default baseline state (Size 11)
         self.semantic_memory = None # Set by IslandManager
+        self.inferred_rules = [] # Latest inferred rules from batch analysis
+        self.last_blocked_reason = None # Why the last payload was blocked
 
     def apply_hint(self, hint):
         """Applies AI-driven hints to strategy weights."""
@@ -130,7 +132,12 @@ class ASTMutator:
             
         # 3. Dynamic WAF Adaptation: Evade specific patterns learned by the RL Blocker
         if hasattr(self, "active_waf_rules") and self.active_waf_rules:
-            mutated = self._apply_waf_evasion(mutated, self.active_waf_rules)
+            # Combine individual blocked patterns with inferred batch rules
+            all_patterns = list(self.active_waf_rules)
+            if hasattr(self, "inferred_rules") and self.inferred_rules:
+                all_patterns.extend([r['pattern'] for r in self.inferred_rules if r['confidence'] > 0.6])
+            
+            mutated = self._apply_waf_evasion(mutated, all_patterns)
 
         # 4. Contextual Compatibility Logic
         if wrap:
@@ -197,18 +204,28 @@ class ASTMutator:
             current = self.sequence_reputation.get(k, 1.0)
             self.sequence_reputation[k] = (current + v) / 2.0
 
-    def report_success(self, payload, score, status=None, state_vector=None):
+    def report_success(self, payload, score, status=None, state_vector=None, block_reason=None):
         """
         Gene Credit Assignment: Update strategy and keyword reputation based on score.
-        Point 1 (HER), Point 2 (ICM) & Point 7 (Deep Actor-Critic RL) implemented here.
+        Enhanced: Now takes block_reason into account for "WAF Understanding".
         """
         self.last_score = score
+        self.last_blocked_reason = block_reason
+        
+        # Adjust reward if we know WHY it was blocked
+        effective_reward = score
+        if block_reason:
+            # If it matched an inferred rule, we provide a more specific negative reward
+            # This helps the RL agent correlate specific patterns with failure
+            rule_confidence = max([r.get('confidence', 0) for r in block_reason] + [0])
+            if score <= 0.1:
+                # Extra penalty for hitting a known rule
+                effective_reward -= (rule_confidence * 0.2)
         
         # Point 7: Update Actor-Critic (CRITIC Step)
         if state_vector:
             self.current_state_vector = state_vector
-            # The Critic uses the score as immediate reward to refine the policy
-            self.rl_agent.update(score)
+            self.rl_agent.update(effective_reward)
         
         # 1. HER & Information Gain: Learning from 403 (Forbidden)
         if status == "WAF_BLOCKED" or (status and "403" in str(status)):
