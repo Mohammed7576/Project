@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Search, Filter, AlertCircle, XCircle } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
 
 interface WAFRule {
   pattern: string;

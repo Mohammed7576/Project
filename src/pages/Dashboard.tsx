@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Activity, ShieldAlert, Database, Zap, Copy, Check, Search, Trash2, LayoutGrid, BarChart3, ListFilter, Radar, MessageSquareWarning, History, EyeOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { useSearchParams } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
 import { cn, copyToClipboard } from '../lib/utils';
 
 // Types remain the same...
