@@ -39,7 +39,26 @@ class HTTPClient:
 
     def log(self, message, type="log"):
         """Sends a message that the server will broadcast via WebSocket."""
-        print(json.dumps({"type": type, "message": message}), flush=True)
+        if isinstance(message, dict):
+            # If it's already a dict, merge with type if not present or just print it
+            if "type" not in message:
+                message["type"] = type
+            print(json.dumps(message), flush=True)
+        else:
+            print(json.dumps({"type": type, "message": str(message)}), flush=True)
+
+    async def semantic_search(self, payload, k=5):
+        """Fetches semantically similar payloads using the Vector Database API."""
+        def _fetch():
+            try:
+                res = requests.post("http://localhost:3000/api/semantic/search-text", 
+                                    json={"content": payload, "k": k}, timeout=5)
+                if res.status_code == 200:
+                    return res.json()
+            except Exception as e:
+                pass
+            return []
+        return await asyncio.to_thread(_fetch)
 
     async def _get_token(self, url):
         """Extracts user_token from the specified page using regex to avoid bs4 dependency."""
