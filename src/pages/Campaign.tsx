@@ -1,11 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon, Activity, Flame, LineChart as ChartIcon, Gauge } from 'lucide-react';
+import { Play, Square, Globe, Shield, Zap, Target, Terminal as TerminalIcon, Activity, Flame } from 'lucide-react';
 import { useAttack } from '../context/AttackContext';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { StatsPanel } from '../components/StatsPanel';
-import { EvolutionChart } from '../components/EvolutionChart';
-import { TelemetryDashboard } from '../components/TelemetryDashboard';
 
 const formatLogLine = (log: string) => {
   if (typeof log !== 'string') return log;
@@ -104,9 +101,7 @@ export default function Campaign() {
     CONTROLS: true,
     LEARNING: true,
     SUCCESS: true,
-    ENGINE: true,
-    CHART: true,
-    TELEMETRY: false
+    ENGINE: true
   });
 
   const [summary, setSummary] = React.useState({ successfulPayloads: 0, sqlErrorPayloads: 0, totalPayloads: 0 });
@@ -151,11 +146,6 @@ export default function Campaign() {
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      {/* Stats Panel */}
-      <div className="mb-2">
-        <StatsPanel />
-      </div>
-
       <div className="bg-[#0a0a0a] border border-red-500/20 rounded-xl shadow-2xl overflow-hidden sticky top-0 z-50">
         <div className="bg-red-500/5 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-red-500/10">
           <div className="flex items-center gap-5">
@@ -219,8 +209,6 @@ export default function Campaign() {
            <NavButton active={windowVisibility.LEARNING} onClick={() => toggleWindow('LEARNING')} icon={Zap} label="الاختراق" subLabel="BYPASS" color="text-yellow-400" />
            <NavButton active={windowVisibility.SUCCESS} onClick={() => toggleWindow('SUCCESS')} icon={Flame} label="الغنائم" subLabel="LOOT" color="text-emerald-400" />
            <NavButton active={windowVisibility.ENGINE} onClick={() => toggleWindow('ENGINE')} icon={TerminalIcon} label="القيادة" subLabel="CNC" color="text-blue-400" />
-           <NavButton active={windowVisibility.CHART} onClick={() => toggleWindow('CHART')} icon={ChartIcon} label="التحليل" subLabel="ANA" color="text-indigo-400" />
-           <NavButton active={windowVisibility.TELEMETRY} onClick={() => toggleWindow('TELEMETRY')} icon={Gauge} label="القياس" subLabel="TEL" color="text-rose-400" />
         </div>
       </div>
 
@@ -277,31 +265,6 @@ export default function Campaign() {
             {windowVisibility.SUCCESS && (
               <ConsoleBox title="سجل الاختراقات الناجحة" icon={Flame} data={successLogs} ref={successRef} className="border-emerald-400/10" iconColor="text-emerald-400" />
             )}
-            
-            {windowVisibility.CHART && (
-              <div className="md:col-span-2 bg-[#0a0a0a] border border-indigo-500/10 rounded-lg p-4 h-[350px]">
-                <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-2">
-                   <ChartIcon className="w-3.5 h-3.5 text-indigo-400" />
-                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Evolution Intelligence Real-time</span>
-                </div>
-                <div className="h-full">
-                  <EvolutionChart />
-                </div>
-              </div>
-            )}
-
-            {windowVisibility.TELEMETRY && (
-              <div className="md:col-span-2 bg-[#0a0a0a] border border-rose-500/10 rounded-lg p-4 h-auto min-h-[400px]">
-                <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-2">
-                   <Gauge className="w-3.5 h-3.5 text-rose-400" />
-                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Engine Swarm Telemetry Systems</span>
-                </div>
-                <div className="h-full">
-                  <TelemetryDashboard />
-                </div>
-              </div>
-            )}
-
             {windowVisibility.ENGINE && (
               <div className="md:col-span-2 h-full lg:h-[45%]">
                 <ConsoleBox title="وحدة التحكم Command & Control" icon={TerminalIcon} data={systemLogs} ref={systemRef} className="border-blue-400/10" iconColor="text-blue-400" />

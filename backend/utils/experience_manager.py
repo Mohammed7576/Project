@@ -158,19 +158,6 @@ class ExperienceManager:
                 )
             ''')
 
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS telemetry (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    generation INTEGER,
-                    island_id INTEGER,
-                    max_score REAL,
-                    diversity REAL,
-                    mutation_intensity REAL,
-                    stagnation INTEGER,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
             # Migration: Ensure target_name exists in reputation_history
             try:
                 cursor.execute('SELECT target_name FROM reputation_history LIMIT 1')
@@ -393,18 +380,6 @@ class ExperienceManager:
             conn.commit()
         except Exception as e:
             print(f"[!] Database Error (Reputation History): {e}")
-
-    def save_telemetry(self, gen, island_id, max_score, diversity, mutation_intensity, stagnation):
-        try:
-            conn = self.conn
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO telemetry (generation, island_id, max_score, diversity, mutation_intensity, stagnation)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (gen, island_id, max_score, diversity, mutation_intensity, stagnation))
-            conn.commit()
-        except Exception as e:
-            print(f"[!] Database Error (Telemetry): {e}")
 
     def get_payload_lineage(self, final_payload):
         """Recursively traces the lineage of a payload back to its seed."""

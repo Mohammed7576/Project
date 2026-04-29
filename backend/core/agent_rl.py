@@ -25,28 +25,6 @@ class RLAgent:
         self.last_state = None
         self.last_action_idx = None
 
-    def get_weights(self):
-        """Serializes neural network weights for persistence."""
-        return {
-            "W1": self.W1.tolist(),
-            "W_actor": self.W_actor.tolist(),
-            "W_critic": self.W_critic.tolist(),
-            "memory": [ [s.tolist(), a, r, (ns.tolist() if ns is not None else None)] for s, a, r, ns in self.memory ]
-        }
-
-    def load_weights(self, weights):
-        """Loads neural network weights from serialized data."""
-        if not weights: return
-        try:
-            self.W1 = np.array(weights["W1"])
-            self.W_actor = np.array(weights["W_actor"])
-            self.W_critic = np.array(weights["W_critic"])
-            self.memory = []
-            for s, a, r, ns in weights.get("memory", []):
-                self.memory.append((np.array(s), a, r, (np.array(ns) if ns is not None else None)))
-        except Exception as e:
-            print(f"[!] RL Agent: Error loading weights: {e}")
-
     def _softmax(self, x):
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
