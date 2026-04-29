@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Search, Filter, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
+import { Shield, Search, Filter, AlertCircle, XCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 interface WAFRule {
   pattern: string;
@@ -35,22 +37,22 @@ export default function WAFAnalysis() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-white font-mono">تحليل <span className="text-[#10b981]">WAF</span></h1>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-blue-500/10 text-blue-400 px-3 py-1 rounded border border-blue-500/30 text-[10px] font-mono">
-             <span>WAF: {intel?.waf_name}</span>
-          </div>
-          <div className="flex items-center gap-2 bg-[#10b981]/10 text-[#10b981] px-3 py-1 rounded border border-[#10b981]/30 text-[10px] font-mono">
+          <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/30 text-[10px] font-mono whitespace-nowrap">
+             WAF: {intel?.waf_name}
+          </Badge>
+          <Badge variant="outline" className="bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30 text-[10px] font-mono gap-1 whitespace-nowrap">
             <Shield className="w-3 h-3" />
-            <span>الذكاء الاصطناعي نشط</span>
-          </div>
+            الذكاء الاصطناعي نشط
+          </Badge>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Rules Table */}
-        <div className="lg:col-span-2 bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg overflow-hidden">
+        <Card className="lg:col-span-2 bg-[#0a0a0a] border-[#10b981]/20 overflow-hidden">
           <div className="p-4 border-b border-[#10b981]/20 bg-black/40 flex justify-between items-center">
             <h2 className="text-sm font-mono text-white">بصمات جدار الحماية (WAF) المستخرجة</h2>
             <div className="flex gap-2">
@@ -58,7 +60,7 @@ export default function WAFAnalysis() {
               <Filter className="w-4 h-4 text-slate-500" />
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-right font-mono text-xs">
               <thead>
                 <tr className="text-slate-500 border-b border-[#10b981]/10">
@@ -73,7 +75,7 @@ export default function WAFAnalysis() {
                     <td className="p-4 text-slate-300 break-all">{rule.pattern}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1 bg-slate-800 rounded-full w-16">
+                         <div className="flex-1 h-1 bg-slate-800 rounded-full w-16">
                           <div className="h-1 bg-[#10b981] rounded-full" style={{ width: `${rule.confidence * 100}%` }}></div>
                         </div>
                         <span className="text-[#10b981]">{(rule.confidence * 100).toFixed(0)}%</span>
@@ -82,7 +84,7 @@ export default function WAFAnalysis() {
                     <td className="p-4">
                       <span className="text-red-400 flex items-center gap-1">
                         <XCircle className="w-3 h-3" />
-                        محظور (BLOCKED)
+                         محظور (BLOCKED)
                       </span>
                     </td>
                   </tr>
@@ -93,29 +95,33 @@ export default function WAFAnalysis() {
                 )}
               </tbody>
             </table>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Insights Sidebar */}
         <div className="space-y-6">
-          <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
-            <h2 className="text-sm font-mono text-white mb-4 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-yellow-500" />
-              توصيات التخطي الخوارزمية
-            </h2>
-            <div className="space-y-4">
+          <Card className="bg-[#0a0a0a] border-[#10b981]/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-mono text-white flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-yellow-500" />
+                توصيات التخطي الخوارزمية
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               {intel?.recommendations?.map((rec: any, i: number) => (
                 <div key={i} className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded">
                   <p className="text-[10px] text-yellow-500 font-bold mb-1">{rec.title}</p>
                   <p className="text-[10px] text-slate-400 leading-relaxed">{rec.text}</p>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-6">
-            <h2 className="text-sm font-mono text-white mb-4">القدرات التجريبية المكتشفة لـ WAF</h2>
-            <div className="space-y-3">
+          <Card className="bg-[#0a0a0a] border-[#10b981]/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-mono text-white">القدرات التجريبية المكتشفة لـ WAF</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
               <div className="flex justify-between text-[10px] font-mono">
                 <span className="text-slate-500">تعقيد WAF المستنتج</span>
                 <span className="text-yellow-500">{intel?.stats?.intelligenceLevel || "جاري التحليل..."}</span>
@@ -129,17 +135,17 @@ export default function WAFAnalysis() {
                 <span className="text-blue-400">{intel?.stats?.bypassedPatterns || 0}</span>
               </div>
               <div className="mt-4 pt-4 border-t border-[#10b981]/10">
-                <div className="text-[9px] text-slate-500 font-mono mb-1">مجموعات الأحرف المحظورة المكتشفة:</div>
-                <div className="flex flex-wrap gap-1">
+                <div className="text-[9px] text-slate-500 font-mono mb-2">مجموعات الأحرف المحظورة المكتشفة:</div>
+                <div className="flex flex-wrap gap-1.5">
                   {intel?.blocked_chars?.split(',').map((char: string, i: number) => (
-                    <span key={i} className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-[10px] font-mono">
+                    <Badge key={i} variant="outline" className="bg-red-500/10 border-red-500/20 text-red-400 text-[10px] font-mono rounded">
                       {char.trim()}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

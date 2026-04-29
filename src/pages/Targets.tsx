@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Plus, Trash2, ExternalLink, Shield, AlertTriangle, Eye } from 'lucide-react';
+import { Database, Plus, Trash2, ExternalLink, Shield, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 interface Target {
   url: string;
@@ -43,59 +46,65 @@ export default function Targets() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white font-mono">بيئات التطبيقات <span className="text-[#10b981]">المستهدفة</span></h1>
         <div className="flex gap-2">
-          <input 
+          <Input 
             type="text" 
             placeholder="إضافة رابط بيئة اختبار جديدة..."
             value={newUrl}
             dir="ltr"
             onChange={(e) => setNewUrl(e.target.value)}
-            className="bg-black/40 border border-[#10b981]/20 rounded-lg px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-[#10b981]/50 font-mono w-64 text-left placeholder:text-right"
+            className="w-64 bg-black/40 border-[#10b981]/20 focus-visible:ring-[#10b981]/50 text-slate-200 font-mono text-left placeholder:text-right"
           />
-          <button className="bg-[#10b981] text-black px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-[#10b981]/80 transition-all">
+          <Button className="bg-[#10b981] hover:bg-[#10b981]/80 text-black font-bold flex items-center gap-2">
             <Plus className="w-4 h-4" />
             إدراج الهدف
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         {targets.length > 0 ? targets.map((target, i) => (
-          <div key={i} className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-4 flex items-center justify-between hover:border-[#10b981]/40 transition-all group">
-            <div className="flex items-center gap-4 cursor-pointer" onClick={() => handleTargetClick(target.url)}>
-              <div className="w-10 h-10 rounded-lg bg-[#10b981]/10 flex items-center justify-center group-hover:bg-[#10b981]/20 transition-colors">
-                <Shield className="w-5 h-5 text-[#10b981]" />
-              </div>
-              <div>
-                <h3 className="text-sm font-mono text-white flex items-center gap-2 group-hover:text-[#10b981] transition-colors" dir="ltr">
-                  {target.url}
-                  <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer mx-2" />
-                </h3>
-                <div className="flex gap-3 mt-1">
-                  <span className="text-[10px] font-mono text-slate-500">آخر قياس (Telemetry): {new Date(target.lastAttack).toLocaleString('ar-EG')}</span>
-                  <span className="text-[10px] font-mono text-[#10b981]">DB: {target.db_type}</span>
-                  <span className="text-[10px] font-mono text-blue-400">WAF: {target.waf_name}</span>
+          <Card key={i} className="bg-[#0a0a0a] border-[#10b981]/20 hover:border-[#10b981]/40 transition-all group overflow-hidden">
+            <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4 cursor-pointer" onClick={() => handleTargetClick(target.url)}>
+                <div className="w-10 h-10 rounded-lg bg-[#10b981]/10 flex items-center justify-center group-hover:bg-[#10b981]/20 transition-colors">
+                  <Shield className="w-5 h-5 text-[#10b981]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-mono text-white flex items-center gap-2 group-hover:text-[#10b981] transition-colors" dir="ltr">
+                    {target.url}
+                    <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer mx-2" />
+                  </h3>
+                  <div className="flex flex-wrap gap-3 mt-1">
+                    <span className="text-[10px] font-mono text-slate-500">آخر قياس (Telemetry): {new Date(target.lastAttack).toLocaleString('ar-EG')}</span>
+                    <span className="text-[10px] font-mono text-[#10b981]">DB: {target.db_type}</span>
+                    <span className="text-[10px] font-mono text-blue-400">WAF: {target.waf_name}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => handleTargetClick(target.url)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded text-[10px] font-bold bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20 hover:bg-[#10b981]/20 transition-all"
-              >
-                <Eye className="w-3 h-3" />
-                تحليل المقاييس
-              </button>
-              <button className="p-2 text-slate-500 hover:text-red-500 transition-colors">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+              
+              <div className="flex items-center gap-4 self-end sm:self-auto">
+                <Button 
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleTargetClick(target.url)}
+                  className="h-8 text-[10px] font-bold bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20 hover:bg-[#10b981]/20 hover:text-[#10b981]"
+                >
+                  <Eye className="w-3 h-3 ml-2" />
+                  تحليل المقاييس
+                </Button>
+                <Button variant="ghost" size="icon" className="text-slate-500 hover:text-red-500 hover:bg-red-500/10">
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         )) : (
-          <div className="bg-[#0a0a0a] border border-dashed border-slate-800 rounded-lg p-12 text-center">
-            <Database className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-            <p className="text-slate-500 font-mono text-sm">لا توجد بيئات مستهدفة مسجلة. قم ببدء خط الاختبار من المختبر لتوليد بيانات القياس عن بعد.</p>
-          </div>
+          <Card className="bg-[#0a0a0a] border-dashed border-[#10b981]/20">
+            <CardContent className="p-12 text-center flex flex-col items-center">
+              <Database className="w-12 h-12 text-[#10b981] opacity-20 mx-auto mb-4" />
+              <p className="text-slate-500 font-mono text-sm">لا توجد بيئات مستهدفة مسجلة. قم ببدء خط الاختبار من المختبر لتوليد بيانات القياس عن بعد.</p>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>

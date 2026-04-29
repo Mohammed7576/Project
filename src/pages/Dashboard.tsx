@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Activity, ShieldAlert, Database, Zap, Copy, Check, Search, Trash2, LayoutGrid, BarChart3, ListFilter, Radar, MessageSquareWarning, History, EyeOff } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { useSearchParams } from 'react-router-dom';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn, copyToClipboard } from '../lib/utils';
 
 // Types remain the same...
@@ -198,19 +201,21 @@ export default function Dashboard() {
             <div className="h-8 w-[1px] bg-[#10b981]/20 hidden lg:block"></div>
             <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-0 scrollbar-hide">
               {sections.map(s => (
-                <button
+                <Button
                   key={s.id}
+                  variant="outline"
+                  size="sm"
                   onClick={() => toggleSection(s.id)}
                   className={cn(
-                    "px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-2 transition-all border whitespace-nowrap",
+                    "h-8 text-[10px] font-bold gap-2 transition-all border whitespace-nowrap px-3",
                     activeSections.includes(s.id)
-                      ? "bg-[#10b981] text-black border-[#10b981]"
-                      : "bg-[#10b981]/5 text-slate-400 border-[#10b981]/10 hover:border-[#10b981]/40"
+                      ? "bg-[#10b981] text-black border-[#10b981] hover:bg-[#10b981]/90 hover:text-black"
+                      : "bg-[#10b981]/5 text-slate-400 border-[#10b981]/10 hover:border-[#10b981]/40 hover:bg-[#10b981]/10"
                   )}
                 >
                   <s.icon className="w-3.5 h-3.5" />
                   {s.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -235,10 +240,12 @@ export default function Dashboard() {
       </div>
 
       {activeSections.length === 0 ? (
-        <div className="h-[60vh] flex flex-col items-center justify-center text-slate-700 border-2 border-dashed border-slate-900 rounded-3xl">
-          <LayoutGrid className="w-16 h-16 opacity-5 mb-6" />
-          <p className="text-sm font-mono tracking-widest uppercase opacity-20">الشاشة خاملة - يرجى تحديد المقاييس من الأعلى للبدء</p>
-        </div>
+        <Card className="h-[60vh] flex flex-col items-center justify-center text-slate-700 border-2 border-dashed border-[#10b981]/20 bg-[#0a0a0a]">
+          <CardContent className="flex flex-col items-center justify-center p-6">
+            <LayoutGrid className="w-16 h-16 opacity-5 mb-6 text-[#10b981]" />
+            <p className="text-sm font-mono tracking-widest uppercase opacity-40">الشاشة خاملة - يرجى تحديد المقاييس من الأعلى للبدء</p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
           
@@ -492,15 +499,15 @@ export default function Dashboard() {
 
 function StatCard({ title, value, icon: Icon, trend }: { title: string, value: string, icon: any, trend: string }) {
   return (
-    <div className="bg-[#0a0a0a] border border-[#10b981]/20 rounded-lg p-5 relative overflow-hidden group hover:border-[#10b981]/50 transition-all duration-300">
-      <div className="absolute top-0 left-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+    <Card className="bg-[#0a0a0a] border-[#10b981]/20 relative overflow-hidden group hover:border-[#10b981]/50 transition-all duration-300">
+      <div className="absolute top-0 left-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
         <Icon className="w-12 h-12 text-[#10b981]" />
       </div>
-      <div className="relative z-10 font-mono">
+      <CardContent className="p-5 relative z-10 font-mono">
         <h3 className="text-slate-500 text-[11px] mb-1 uppercase tracking-tighter">{title}</h3>
         <div className="text-2xl font-bold text-white mb-2">{value}</div>
         <div className="text-[9px] text-[#10b981] opacity-70 tracking-widest">{trend}</div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
