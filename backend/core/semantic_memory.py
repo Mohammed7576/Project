@@ -149,9 +149,18 @@ class SemanticMemory:
             self.token_reputation[ngram] = new_rep
             
             # If an n-gram is very malicious, elevate it to a blocking rule
-            if b_count > 5 and new_rep < 0.2:
-                self.insert_pattern(ngram, confidence=0.9)
-                cursor.execute("INSERT OR IGNORE INTO blocking_rules (pattern, confidence) VALUES (?, ?)", (ngram, 0.9))
+            # Constraint: More conservative threshold (15 blocks) and quality checks
+            if b_count > 15 and new_rep < 0.1:
+                # Quality check: prevent single-character or too-generic rules
+                is_generic = len(ngram) < 4 and not ngram.isalnum()
+                is_keyword_only = ngram in ["SELECT", "UNION", "AND", "OR", "WHERE", "FROM", "NULL"]
+                
+                if not is_generic and not is_keyword_only:
+                    self.insert_pattern(ngram, confidence=0.9)
+                    cursor.execute("INSERT OR IGNORE INTO blocking_rules (pattern, confidence) VALUES (?, ?)", (ngram, 0.9))
+                    # Periodically prune old/low confidence rules to keep DB clean
+                    if random.random() < 0.1:
+                        cursor.execute("DELETE FROM blocking_rules WHERE confidence < 0.3")
                 
             conn.commit()
         except Exception as e:

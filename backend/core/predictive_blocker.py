@@ -49,10 +49,29 @@ class PredictiveBlocker:
             cursor = conn.cursor()
             cursor.execute('CREATE TABLE IF NOT EXISTS blocking_rules (pattern TEXT PRIMARY KEY, confidence REAL)')
             
-            # Prune broad rules once at startup
+            # Prune broad or low-quality rules once at startup
+            # 1. Broad SQL Keywords
             bad_rules = [r"\bSELECT\b", r"\bOR\b", r"\bAND\b", r"\bUNION\b", r"\bXOR\b", r"\d+\s*=\s*\d+", r"/\*.*\*/"]
             for bad in bad_rules:
                 cursor.execute('DELETE FROM blocking_rules WHERE pattern = ?', (bad,))
+            
+            # 2. Too short rules (often noise from random mutations)
+            cursor.execute("DELETE FROM blocking_rules WHERE length(pattern) < 3 AND confidence < 0.9")
+            
+            # 3. Scale back if too many (keep top 500 by confidence)
+            cursor.execute("SELECT COUNT(*) FROM blocking_rules")
+            count = cursor.fetchone()[0]
+            if count > 1000:
+                print(f"[*] Blocker: Pruning database (Current: {count} rules). Keeping top 800.", flush=True)
+                cursor.execute("""
+                    DELETE FROM blocking_rules 
+                    WHERE pattern NOT IN (
+                        SELECT pattern FROM blocking_rules 
+                        ORDER BY confidence DESC, length(pattern) DESC 
+                        LIMIT 800
+                    )
+                """)
+            
             conn.commit()
         except Exception as e:
             print(f"[!] Blocker: Error in _init_db: {e}")
@@ -77,7 +96,16 @@ class PredictiveBlocker:
 
         for pattern in self.blocked_patterns:
             try:
-                if re.search(pattern, payload, re.IGNORECASE):
+                # Convert space-separated patterns (from Semantic Memory/Inferrer) 
+                # to whitespace-flexible regexes for better detection
+                processed_pattern = pattern
+                if ' ' in pattern and not (pattern.startswith('\\b') or pattern.startswith('/')):
+                    # Replace spaces with flexible whitespace/comment regex
+                    # This allows matching "UNION SELECT" against "UNION  /*junk*/ SELECT"
+                    parts = [re.escape(p) for p in pattern.split()]
+                    processed_pattern = r"\b" + r"\s*.*?\s*".join(parts) + r"\b"
+                
+                if re.search(processed_pattern, payload, re.IGNORECASE):
                     risk_score += 1
                     matching_patterns.append(pattern)
             except: pass
@@ -152,6 +180,7 @@ class PredictiveBlocker:
         self._load_patterns() # Refresh local set
 
     def _update_rule(self, pattern, confidence_boost):
+        if len(pattern) < 3: return # Skip minor noise
         import time
         max_retries = 5
         for attempt in range(max_retries):

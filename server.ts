@@ -255,7 +255,12 @@ async function startServer() {
       db.prepare("DELETE FROM hints").run();
       db.prepare("DELETE FROM blocking_rules").run();
       db.prepare("DELETE FROM session_state").run();
-      res.json({ message: "تمت إعادة ضبط ذكاء الوكيل بنجاح" });
+      db.prepare("DELETE FROM token_reputation").run();
+      db.prepare("DELETE FROM reputation_history").run();
+      db.prepare("DELETE FROM target_profiles").run();
+      db.prepare("DELETE FROM brain_logs").run();
+      db.prepare("DELETE FROM rl_knowledge").run();
+      res.json({ message: "تمت إعادة ضبط ذكاء الوكيل بالكامل بنجاح" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

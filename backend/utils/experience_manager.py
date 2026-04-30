@@ -381,6 +381,21 @@ class ExperienceManager:
         except Exception as e:
             print(f"[!] Database Error (Reputation History): {e}")
 
+    def save_waf_type(self, target_url, waf_name):
+        try:
+            conn = self.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO target_profiles (target_url, waf_name, last_updated)
+                VALUES (?, ?, ?)
+                ON CONFLICT(target_url) DO UPDATE SET 
+                waf_name = excluded.waf_name,
+                last_updated = excluded.last_updated
+            ''', (target_url, waf_name, time.strftime('%Y-%m-%d %H:%M:%S')))
+            conn.commit()
+        except Exception as e:
+            print(f"[!] Database Error (WAF Save): {e}")
+
     def get_payload_lineage(self, final_payload):
         """Recursively traces the lineage of a payload back to its seed."""
         lineage = []

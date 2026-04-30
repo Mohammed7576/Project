@@ -252,14 +252,62 @@ export default function Dashboard() {
           {/* Overview Cards Section */}
           {activeSections.includes('OVERVIEW') && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <StatCard title="إجمالي الأجيال المحققة" value={summaryStats.totalGenerations.toString()} icon={History} trend="Evolution Progress" />
-              <StatCard title="الحمولات الملغاة (الوكيل الذكي)" value={summaryStats.smartAgentBlocked.toString()} icon={ShieldAlert} trend="Predictive Blocks" />
-              <StatCard title="محظورات جدار الحماية (WAF)" value={summaryStats.wafBlocked.toString()} icon={ShieldAlert} trend="Total WAF Blocks" />
-              <StatCard title="البصمات التي تم تخطيها (Exploits)" value={summaryStats.successfulPayloads.toString()} icon={Check} trend="Confirmed Bypasses" />
-              <StatCard title="أخطاء SQL المستخرجة" value={summaryStats.sqlErrorPayloads.toString()} icon={MessageSquareWarning} trend="Data Leaks/Errors" />
-              <StatCard title="الوقت الفعلي المستغرق" value={summaryStats.attackDuration.formatted} icon={Activity} trend="Attack Duration" />
-              <StatCard title="إجمالي المحاولات (Full Log)" value={summaryStats.totalPayloads.toString()} icon={Zap} trend="Total Throughput" />
-              <StatCard title="قواعد WAF المكتشفة" value={stats.wafPatterns} icon={Radar} trend="Pattern Database" />
+              <StatCard 
+                title="إجمالي الأجيال المحققة" 
+                value={summaryStats.totalGenerations.toString()} 
+                icon={History} 
+                trend="Evolution Progress" 
+                description="عدد دورات التحسين الجيني التي مرت بها الحمولات للوصول للكفاءة القصوى."
+              />
+              <StatCard 
+                title="الحمولات الملغاة (الوكيل الذكي)" 
+                value={summaryStats.smartAgentBlocked.toString()} 
+                icon={ShieldAlert} 
+                trend="Predictive Blocks" 
+                description="الحمولات التي منعها النظام داخلياً لتوقعه فشلها الأكيد بناءً على خبراته السابقة." 
+              />
+              <StatCard 
+                title="محظورات جدار الحماية (WAF)" 
+                value={summaryStats.wafBlocked.toString()} 
+                icon={ShieldAlert} 
+                trend="Total WAF Blocks" 
+                description="عدد المحاولات التي تم صدها فعلياً بواسطة جدار حماية الهدف الخارجي."
+              />
+              <StatCard 
+                title="البصمات التي تم تخطيها (Exploits)" 
+                value={summaryStats.successfulPayloads.toString()} 
+                icon={Check} 
+                trend="Confirmed Bypasses" 
+                description="عدد الحمولات الفريدة التي نجحت في اختراق فلاتر الهدف والوصول للبيانات."
+              />
+              <StatCard 
+                title="أخطاء SQL المستخرجة" 
+                value={summaryStats.sqlErrorPayloads.toString()} 
+                icon={MessageSquareWarning} 
+                trend="Data Leaks/Errors" 
+                description="الردود المسربة من قاعدة بيانات الهدف والتي تكشف عن الثغرات البنيوية."
+              />
+              <StatCard 
+                title="الوقت الفعلي المستغرق" 
+                value={summaryStats.attackDuration.formatted} 
+                icon={Activity} 
+                trend="Attack Duration" 
+                description="المدة الزمنية الإجمالية منذ بدء أول محاولة هجوم نشطة."
+              />
+              <StatCard 
+                title="إجمالي المحاولات (Full Log)" 
+                value={summaryStats.totalPayloads.toString()} 
+                icon={Zap} 
+                trend="Total Throughput" 
+                description="العدد الكلي لطلبات HTTP المرسلة للهدف خلال هذه الجلسة."
+              />
+              <StatCard 
+                title="قواعد WAF المكتشفة" 
+                value={stats.wafPatterns} 
+                icon={Radar} 
+                trend="Pattern Database" 
+                description="إجمالي الأنماط والبصمات المحظورة التي تم تحليلها وحفظها في قاعدة البيانات العالمية للنظام."
+              />
             </div>
           )}
 
@@ -497,14 +545,19 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon: Icon, trend }: { title: string, value: string, icon: any, trend: string }) {
+function StatCard({ title, value, icon: Icon, trend, description }: { title: string, value: string, icon: any, trend: string, description: string }) {
   return (
     <Card className="bg-[#0a0a0a] border-[#10b981]/20 relative overflow-hidden group hover:border-[#10b981]/50 transition-all duration-300">
       <div className="absolute top-0 left-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
         <Icon className="w-12 h-12 text-[#10b981]" />
       </div>
       <CardContent className="p-5 relative z-10 font-mono">
-        <h3 className="text-slate-500 text-[11px] mb-1 uppercase tracking-tighter">{title}</h3>
+        <div className="flex justify-between items-start mb-1">
+          <h3 className="text-slate-500 text-[11px] uppercase tracking-tighter">{title}</h3>
+          <div className="invisible group-hover:visible absolute top-2 left-2 right-2 bg-black/90 p-2 border border-[#10b981]/30 rounded text-[9px] text-[#10b981] z-50 shadow-xl">
+            {description}
+          </div>
+        </div>
         <div className="text-2xl font-bold text-white mb-2">{value}</div>
         <div className="text-[9px] text-[#10b981] opacity-70 tracking-widest">{trend}</div>
       </CardContent>

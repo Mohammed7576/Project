@@ -275,6 +275,12 @@ class IslandManager:
             
             if not ignore_blocker:
                 risk_score, matched_patterns = self.blocker.should_block(payload_str)
+                if risk_score > 3: # Extremely high risk, system refuses to send to prevent IP ban
+                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [PRED_BLOCK] Risk {risk_score} too high. Skipping to protect reputation.", flush=True)
+                    self.exp_manager.save_attempt(payload_str, 0, "PREDICTIVE_BLOCKED", island_id=island['id'], generation_num=gen_num, target_name=self.target_name, parent_payload=genome.parent_payload)
+                    scored_population.append((genome, 0, "PREDICTIVE_BLOCKED"))
+                    continue
+                
                 if risk_score > 0:
                     print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...", flush=True)
                     # Point 5: Instead of avoiding, we increase camouflage
@@ -296,6 +302,7 @@ class IslandManager:
                 waf = self.fingerprinter.identify(response['headers'], response['text'])
                 if waf != "GENERIC / UNKNOWN":
                     print(f"[*] WAF DETECTED: {waf}", flush=True)
+                    self.exp_manager.save_waf_type(self.client.base_url, waf) # New method needed
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
 
