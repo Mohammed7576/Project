@@ -41,13 +41,14 @@ class WAFRuleInferrer:
         
         # Filter by significance
         # A pattern is significant if it appears in a high % of the blocked batch
-        threshold = max(self.min_occurrence, len(blocked_payloads) * 0.4)
+        # increased threshold to 60% for better noise rejection
+        threshold = max(self.min_occurrence + 2, len(blocked_payloads) * 0.6)
         
         for ngram, count in counts.items():
             if count >= threshold:
                 # Potential candidate. Now check if it's too generic
-                # (e.g., "SELECT" is too generic, but "SELECT FROM INFORMATION_SCHEMA" is good)
-                if len(ngram.split()) >= 2:
+                # Pattern must have at least 3 tokens or be sufficiently long
+                if len(ngram.split()) >= 3 or len(ngram) > 12:
                     new_rules.append({
                         "pattern": ngram,
                         "confidence": count / len(blocked_payloads),

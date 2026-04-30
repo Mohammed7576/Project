@@ -87,9 +87,11 @@ class SemanticMemory:
         tokens = self._tokenize(payload)
         
         # Point 5: Update all n-grams in the payload with success/fail status
-        for n in [1, 2, 3]:
+        for n in [2, 3, 4]: # Shifted to longer n-grams for better specificity
             for i in range(len(tokens) - n + 1):
                 ngram = " ".join(tokens[i:i+n])
+                # Skip if ngram is just numbers or very short
+                if len(ngram) < 6: continue
                 self._update_ngram_maliciousness(ngram, is_blocked=not is_success)
             
         # Point 4: Shared Knowledge Update (Consolidation)
@@ -104,9 +106,10 @@ class SemanticMemory:
         tokens = self._tokenize(payload)
         
         # We record the appearance of these tokens in blocked payloads
-        for n in [1, 2, 3]:
+        for n in [2, 3, 4]:
             for i in range(len(tokens) - n + 1):
                 ngram = " ".join(tokens[i:i+n])
+                if len(ngram) < 6: continue
                 # We update a 'maliciousness_score' in the DB
                 self._update_ngram_maliciousness(ngram, is_blocked=True)
 

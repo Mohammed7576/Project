@@ -81,8 +81,15 @@ class PredictiveBlocker:
         try:
             conn = self.conn
             cursor = conn.cursor()
-            cursor.execute('SELECT pattern FROM blocking_rules WHERE confidence > 0.4')
+            # Filter at load time: length > 4 and high confidence
+            cursor.execute("SELECT pattern FROM blocking_rules WHERE confidence > 0.4 AND length(pattern) > 4")
             self.blocked_patterns = {row[0] for row in cursor.fetchall()}
+            
+            # Additional logic to keep pattern set healthy: protect against "pattern explosion"
+            if len(self.blocked_patterns) > 1000:
+                # If too many, strictly pick the highest confidence ones
+                cursor.execute("SELECT pattern FROM blocking_rules ORDER BY confidence DESC LIMIT 800")
+                self.blocked_patterns = {row[0] for row in cursor.fetchall()}
         except Exception as e:
             print(f"[!] Blocker: Error loading patterns: {e}")
 
@@ -114,30 +121,43 @@ class PredictiveBlocker:
 
     def learn_from_block(self, payload):
         """Analyzes a blocked payload and extracts WAF rules to avoid."""
+        # QUALITY GATE 1: If payload is already clearly matched by predictive blockers with high confidence, 
+        # do not learn more from it to prevent rule explosion and overfitting.
+        risk_score, matches = self.should_block(payload)
+        if risk_score >= 1:
+            # We already know this is bad, don't over-analyze
+            return
+
         tokens = self.mutator._tokenize(payload)
         rule_added = False
         
+        # QUALITY GATE 2: Only learn if block is consistent (simulated by checking if we have enough tokens)
+        if len(tokens) < 2: return
+
         # We look for dangerous pairings (e.g., KEYWORD + KEYWORD or KEYWORD + SYMBOL)
         for i in range(len(tokens) - 1):
             tok1 = tokens[i]
             
             # 1. Structural Function Calls: Block the specific function structure
-            if tok1['type'] in ['KEYWORD', 'IDENTIFIER'] and tokens[i+1]['value'] == '(':
+            # Ensure it's not a single-char identifier
+            if tok1['type'] in ['KEYWORD', 'IDENTIFIER'] and len(tok1['value']) > 2 and tokens[i+1]['value'] == '(':
                 # Block the exact keyword + parenthesis format specifically
                 pattern = f"\\b{re.escape(tok1['value']).upper()}\\s*\\("
-                self._update_rule(pattern, 0.15)
+                self._update_rule(pattern, 0.1) # Reduced boost
                 rule_added = True
                 
             # 2. Syntax-Specific Injection: Find Operator + Keyword blocks
-            if tok1['type'] == 'KEYWORD':
+            if tok1['type'] == 'KEYWORD' and len(tok1['value']) > 2:
                 # Walk ahead to find the next meaningful token (skip spaces and minor comments)
                 for j in range(i+1, min(len(tokens), i+4)):
                     tok2 = tokens[j]
                     if tok2['type'] in ['KEYWORD', 'OPERATOR', 'SYS_VAR']:
-                        pattern = f"\\b{re.escape(tok1['value']).upper()}\\b.*?\\b{re.escape(tok2['value']).upper()}\\b"
-                        self._update_rule(pattern, 0.1)
-                        rule_added = True
-                        break
+                        # Pattern must be substantial
+                        if len(tok2['value']) > 1:
+                            pattern = f"\\b{re.escape(tok1['value']).upper()}\\b.*?\\b{re.escape(tok2['value']).upper()}\\b"
+                            self._update_rule(pattern, 0.1)
+                            rule_added = True
+                            break
 
             # 3. Direct Encoding / Evasion Signatures
             if tok1['type'] == 'HEX_BIT':
@@ -180,7 +200,12 @@ class PredictiveBlocker:
         self._load_patterns() # Refresh local set
 
     def _update_rule(self, pattern, confidence_boost):
-        if len(pattern) < 3: return # Skip minor noise
+        # STRICT NOISE FILTER: 
+        # 1. Length check
+        if len(pattern) < 5: return 
+        # 2. SQL keyword only check (prevent blocking common tokens like '(', 'OR', etc)
+        if pattern.upper().strip() in [r"\(", r"\bOR\b", r"\bAND\b", r"\bSELECT\b", r"\bUNION\b"]: return
+        
         import time
         max_retries = 5
         for attempt in range(max_retries):
