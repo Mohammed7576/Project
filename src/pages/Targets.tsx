@@ -38,7 +38,7 @@ export default function Targets() {
   }, []);
 
   const handleTargetClick = (url: string) => {
-    navigate(`/dashboard?target=${encodeURIComponent(url)}`);
+    navigate(`/?target=${encodeURIComponent(url)}`);
   };
 
   return (

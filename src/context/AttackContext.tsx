@@ -22,7 +22,7 @@ interface AttackContextType {
   systemLogs: string[];
   currentGeneration: number;
   elapsedTime: number;
-  startAttack: (mode?: 'training' | 'attack') => Promise<void>;
+  startAttack: (mode?: 'training' | 'attack', rlParams?: any) => Promise<void>;
   stopAttack: () => void;
 }
 
@@ -98,7 +98,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
     attackStartTimeRef.current = null;
   }, []);
 
-  const startAttackLoop = useCallback(async (mode: 'training' | 'attack' = 'attack', isResume = false) => {
+  const startAttackLoop = useCallback(async (mode: 'training' | 'attack' = 'attack', isResume = false, rlParams?: any) => {
     // Sanitize URL: remove leading slashes and trim whitespace
     let sanitizedUrl = url.trim().replace(/^\/+/, '');
     
@@ -119,11 +119,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
 
     if (!isResume) {
       setIsAttacking(true);
-      // We no longer clear successLogs or learningLogs completely here to keep historical info visible
-      // We only clear the live execution log area so the terminal looks clean for the new run
       setLogs([]); 
-      // If desired, you can add a fetch here to repopulate them if they were empty, 
-      // but they are kept in state across restarts in the same tab.
       setCurrentGeneration(0);
       setElapsedTime(0);
       attackStartTimeRef.current = Date.now();
@@ -146,7 +142,12 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
       population: population.toString(),
       generations: generations.toString(),
       targetName,
-      mode
+      mode,
+      ...(rlParams ? {
+        learningRate: rlParams.learningRate,
+        explorationRate: rlParams.explorationRate,
+        curiosityWeight: rlParams.curiosityWeight
+      } : {})
     });
 
     try {
@@ -241,7 +242,7 @@ export function AttackProvider({ children }: { children: React.ReactNode }) {
     }
   }, [url, username, password, security, population, generations, targetName]);
 
-  const startAttack = useCallback((mode: 'training' | 'attack' = 'attack') => startAttackLoop(mode, false), [startAttackLoop]);
+  const startAttack = useCallback((mode: 'training' | 'attack' = 'attack', rlParams?: any) => startAttackLoop(mode, false, rlParams), [startAttackLoop]);
 
   return (
     <AttackContext.Provider value={{

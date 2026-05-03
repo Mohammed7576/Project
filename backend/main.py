@@ -45,7 +45,19 @@ def run_prometheus():
     pop_size = safe_int(os.getenv("POPULATION_SIZE"), 12)
     max_gens = safe_int(os.getenv("MAX_GENERATIONS"), 30)
     
-    print(f"[*] Config: Target={target_name}, Security={target_security}, Pop={pop_size}, MaxGens={max_gens}", flush=True)
+    def safe_float(val, default):
+        try:
+            if val is None or str(val).strip() == "" or str(val).lower() == "undefined":
+                return default
+            return float(val)
+        except:
+            return default
+
+    lr = safe_float(os.getenv("RL_LEARNING_RATE"), 0.05)
+    exploration = safe_float(os.getenv("RL_EXPLORATION_RATE"), 0.5)
+    curiosity = safe_float(os.getenv("RL_CURIOSITY_WEIGHT"), 1.0)
+    
+    print(f"[*] Config: Target={target_name}, Security={target_security}, Pop={pop_size}, MaxGens={max_gens}, LR={lr}, Epsilon={exploration}, Curiosity={curiosity}", flush=True)
     
     # Phase 0: Ensure Target Profile
     print("[*] Stage: Database Initialization...", flush=True)
@@ -156,7 +168,10 @@ def run_prometheus():
         disable_strings=disable_quotes,
         baseline=baseline_response,
         target_name=target_name,
-        comment_style=comment_style
+        comment_style=comment_style,
+        learning_rate=lr,
+        exploration_rate=exploration,
+        curiosity_weight=curiosity
     )
     
     start_gen = island.current_gen

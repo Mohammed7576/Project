@@ -12,11 +12,14 @@ from utils.success_validator import SuccessValidator
 from utils.data_extractor import DataExtractor
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default", comment_style="-- -"):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default", comment_style="-- -", learning_rate=0.01, exploration_rate=0.2, curiosity_weight=1.0):
         self.client = client
         self.baseline = baseline
         self.exp_manager = exp_manager
         self.comment_style = comment_style
+        self.learning_rate = learning_rate
+        self.exploration_rate = exploration_rate
+        self.curiosity_weight = curiosity_weight
         
         # Shared Semantic Memory (Global Experience Buffer)
         self.semantic_memory = SemanticMemory(self.exp_manager)
@@ -55,7 +58,7 @@ class IslandManager:
                 for i_data in state['islands']:
                     is_quoteless = (context == "QUOTELESS_STRING")
                     actual_context = "SINGLE_QUOTE" if is_quoteless else context
-                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, comment_style=self.comment_style)
+                    mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, comment_style=self.comment_style, learning_rate=self.learning_rate, exploration_rate=self.exploration_rate, curiosity_weight=self.curiosity_weight)
                     mutator.semantic_memory = self.semantic_memory
                     # Merge weights to support new strategies in old sessions
                     loaded_weights = i_data.get('weights', {})
@@ -98,7 +101,7 @@ class IslandManager:
                 actual_context = "SINGLE_QUOTE" if is_quoteless else context
                 
                 # Setting disable_strings dynamically based on target security
-                mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, comment_style=self.comment_style)
+                mutator = ASTMutator(context=actual_context, quoteless=is_quoteless, disable_strings=self.disable_strings, comment_style=self.comment_style, learning_rate=self.learning_rate, exploration_rate=self.exploration_rate, curiosity_weight=self.curiosity_weight)
                 mutator.semantic_memory = self.semantic_memory
                 
                 # 1. Context-Aware Initialization

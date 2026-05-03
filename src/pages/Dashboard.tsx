@@ -326,13 +326,7 @@ export default function Dashboard() {
               <div className="flex-1 w-full min-h-[300px]">
                 {evolutionData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                      <defs>
-                        <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
+                    <LineChart data={evolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} opacity={0.3} />
                       <XAxis 
                         dataKey="generation" 
@@ -349,8 +343,8 @@ export default function Dashboard() {
                         label={{ value: 'Fitness Score (%)', angle: -90, position: 'insideLeft', offset: 15, fill: '#64748b', fontSize: 10 }}
                       />
                       <Tooltip contentStyle={{ backgroundColor: '#050505', border: '1px solid #10b98133', borderRadius: '4px', fontSize: '10px' }} />
-                      <Area type="monotone" dataKey="avgScore" name="Avg Fitness" stroke="#10b981" fillOpacity={1} fill="url(#colorScore)" strokeWidth={3} dot={{ r: 2, fill: '#10b981' }} />
-                    </AreaChart>
+                      <Line type="monotone" dataKey="avgScore" name="Avg Fitness" stroke="#10b981" strokeWidth={3} dot={{ r: 2, fill: '#10b981' }} />
+                    </LineChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex items-center justify-center h-full text-slate-600 font-mono text-xs italic">بانتظار خط تدفق البيانات التطورية...</div>

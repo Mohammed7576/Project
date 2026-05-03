@@ -3,7 +3,7 @@ import re
 from core.grammar_engine import GrammarEngine
 
 class ASTMutator:
-    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True, comment_style="-- -"):
+    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True, comment_style="-- -", learning_rate=0.01, exploration_rate=0.2, curiosity_weight=1.0):
         self.sql_keywords = [
             "UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", 
             "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION",
@@ -57,7 +57,7 @@ class ASTMutator:
         
         # Point 7: Deep Actor-Critic Integration
         from core.agent_rl import RLAgent
-        self.rl_agent = RLAgent(state_dim=11, action_names=list(self.strategy_weights.keys()))
+        self.rl_agent = RLAgent(state_dim=11, action_names=list(self.strategy_weights.keys()), learning_rate=learning_rate, exploration_rate=exploration_rate)
         
         self.last_strategy_used = None
         self.last_payload_used = None
@@ -65,6 +65,7 @@ class ASTMutator:
         # Point 2: Curiosity-driven Exploration (ICM)
         self.response_history = [] 
         self.curiosity_reward = 0.0
+        self.curiosity_weight = curiosity_weight
         
         self.stealth_mode = False
         self.boredom_counter = 0 # Track how many samey successes we hit
@@ -232,7 +233,7 @@ class ASTMutator:
             # Point 1: Treat meaningful blocks as Information Gain
             # We don't punish as hard if we got a "new" type of block (Information Gain)
             info_gain = self._calculate_curiosity(state_vector)
-            score = max(score, info_gain * 0.4) # Give a small "experience" boost
+            score = max(score, info_gain * 0.4 * self.curiosity_weight) # Give a small "experience" boost
         
         # 0. Boredom Check
         if score > 0.5 and score < 0.9:

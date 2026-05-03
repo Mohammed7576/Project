@@ -6,11 +6,12 @@ class RLAgent:
     Actor: Base policy for mutation selection.
     Critic: Value estimation learned from a history of experiences.
     """
-    def __init__(self, state_dim, action_names):
+    def __init__(self, state_dim, action_names, learning_rate=0.01, exploration_rate=0.05):
         self.state_dim = state_dim
         self.action_names = action_names
         self.action_dim = len(action_names)
-        self.lr = 0.01
+        self.lr = learning_rate
+        self.epsilon = exploration_rate
         self.gamma = 0.95 # Discount factor for future rewards
         
         # Simple Neural Network Weights
@@ -26,8 +27,10 @@ class RLAgent:
         self.last_action_idx = None
 
     def _softmax(self, x):
-        e_x = np.exp(x - np.max(x))
-        return e_x / e_x.sum()
+        # Subtract max for numerical stability
+        x = x - np.max(x, axis=-1, keepdims=True)
+        e_x = np.exp(x)
+        return e_x / e_x.sum(axis=-1, keepdims=True)
 
     def select_action(self, state_vector):
         """Actor: Forward pass to choose mutation with noise for exploration."""
@@ -35,8 +38,11 @@ class RLAgent:
         h = np.tanh(np.dot(state, self.W1))
         probs = self._softmax(np.dot(h, self.W_actor))[0]
         
+        # Ensure exact sum to 1.0 to prevent ValueError in np.random.choice
+        probs = probs / np.sum(probs)
+        
         # Add a bit of epsilon-greedy for exploration
-        if np.random.random() < 0.05:
+        if np.random.random() < self.epsilon:
             action_idx = np.random.choice(self.action_dim)
         else:
             action_idx = np.random.choice(self.action_dim, p=probs)
@@ -76,9 +82,14 @@ class RLAgent:
             # Advantange estimation
             advantage = r - val
             
+            # Keep original weights for correct backprop
+            W_critic_old = self.W_critic.copy()
+            W_actor_old = self.W_actor.copy()
+            
             # 1. Update Critic (Value Head)
             dv = -2 * advantage
-            self.W_critic -= self.lr * np.dot(h.T, np.array([[dv]]))
+            d_critic = np.array([[dv]])
+            self.W_critic -= self.lr * np.dot(h.T, d_critic)
             
             # 2. Update Actor (Policy Head)
             d_actor = probs.copy()
@@ -87,8 +98,10 @@ class RLAgent:
             self.W_actor -= self.lr * np.dot(h.T, d_actor.reshape(1, -1))
             
             # 3. Hidden layer update (Backprop through Tanh)
-            # Simplification: Only update W1 based on actor grad to steer feature extraction
-            dh = np.dot(d_actor.reshape(1, -1), self.W_actor.T) * (1 - h**2)
+            # Combine Actor and Critic gradients accurately
+            dh_actor = np.dot(d_actor.reshape(1, -1), W_actor_old.T)
+            dh_critic = np.dot(d_critic, W_critic_old.T)
+            dh = (dh_actor + dh_critic) * (1 - h**2)
             self.W1 -= self.lr * np.dot(s.T, dh)
 
         self.last_state = None
