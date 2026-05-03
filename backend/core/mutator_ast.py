@@ -607,10 +607,9 @@ class ASTMutator:
         # Technique 2: Case scrambling
         techniques.append("".join([c.upper() if random.random() > 0.5 else c.lower() for c in token]))
         
-        # Technique 3: Hex encoding (only for specific contexts, but here as general escape)
-        # Note: We only do this if it's not a keyword being hexed in a way that breaks syntax
-        if not re.match(r"^[a-zA-Z]+$", token): 
-             techniques.append("".join([f"%{ord(c):02x}" for c in token]))
+        # Technique 3: SQL standard Hex encoding for characters (Skipped here as it breaks keywords, replaced with comment obfuscation)
+        if not re.match(r"^[a-zA-Z\s]+$", token) and len(token) > 2: 
+             techniques.append(f"/*!{token}*/")
 
         # Technique 4: MySQL Scientific notation for numbers
         if token.isdigit():

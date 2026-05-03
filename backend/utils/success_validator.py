@@ -154,19 +154,32 @@ class SuccessValidator:
         # 0. ERROR-BASED DETECTION (Priority Shift: Catch syntax errors before false successes)
         error_msg = self.get_sql_error(response_text)
         if error_msg:
+            low_err = error_msg.lower()
+            
+            # Explicit XPATH or Dump leaks
+            if "xpath syntax error" in low_err or "duplicate entry" in low_err or "conversion failed" in low_err:
+                return 0.95, "ERROR_SUCCESS_DATA_LEAK"
+
             # Check if actual data is leaked inside the error (not just reflecting the payload)
+            # Remove the payload content so it doesn't skew regex checks
+            import urllib.parse
+            payload_plain = urllib.parse.unquote(payload) if payload else ""
+            clean_error_msg = error_msg.replace(payload_plain, '')
+            if payload:
+                 clean_error_msg = clean_error_msg.replace(payload, '')
+                 
             for sig in self.schema_signatures:
-                if re.search(sig, response_text, re.IGNORECASE):
+                if re.search(sig, clean_error_msg, re.IGNORECASE):
                     # Ensure the signature is NOT just a reflection of the payload
-                    if sig.lower() not in payload_lower:
+                    clean_sig = sig.replace('\\', '').lower()
+                    if clean_sig not in payload_lower and clean_sig not in urllib.parse.unquote(payload_lower):
                         return 0.95, "ERROR_SUCCESS_DATA_LEAK"
             
             # DIAGNOSTIC SUCCESS: Column mismatch or Order By discovery signal
-            low_err = error_msg.lower()
-            if "different number of columns" in low_err:
+            if "different number of columns" in low_err or "has more columns" in low_err or "has fewer columns" in low_err:
                 return 0.85, "SIGNAL_COLUMN_MISMATCH"
             
-            if "order clause" in low_err:
+            if "order clause" in low_err or "unknown column" in low_err and "order by" in low_err:
                 return 0.85, "SIGNAL_ORDER_BY_LIMIT"
                 
             if "unknown column" in low_err:
@@ -175,14 +188,15 @@ class SuccessValidator:
                 if match:
                     discovered_col = match.group(1).lower()
                     # If the "unknown column" is just our payload reflecting back, it's a FAIL.
-                    if discovered_col in payload_lower:
+                    if discovered_col in payload_lower or discovered_col in urllib.parse.unquote(payload_lower):
                         return 0.2, "SQL_SYNTAX_ERROR_SELF_INDUCED"
                     else:
                         # We actually leaked a real column name from the schema! High value.
                         return 0.85, "SIGNAL_LEAKED_COLUMN"
                 # If we couldn't parse the column but it says unknown column, it's still interesting 
                 # but only if not clearly self-induced via simpler check
-                if not any(p_part in low_err for p_part in payload_lower.split() if len(p_part) > 3):
+                unquoted_payload = urllib.parse.unquote(payload_lower)
+                if not any(p_part in low_err for p_part in unquoted_payload.split() if len(p_part) > 3):
                     return 0.85, "SIGNAL_UNKNOWN_COLUMN_GENERIC"
 
             return 0.2, "SQL_SYNTAX_ERROR"
@@ -257,9 +271,11 @@ class SuccessValidator:
 
         # 4. CONTENT-BASED (UNION/DATA LEAK)
         if re.search(self.hash_pattern, response_text):
-            return 1.0, "EXFILTRATION_FULL"
+            if self.hash_pattern.lower() not in payload_lower:
+                return 1.0, "EXFILTRATION_FULL"
             
-        if any(re.search(sig, response_text, re.IGNORECASE) for sig in self.schema_signatures):
+        clean_response = response_text.replace(payload, '')
+        if any(re.search(sig, clean_response, re.IGNORECASE) and sig.replace('\\', '').lower() not in payload_lower for sig in self.schema_signatures):
             if "UNION" in payload_upper:
                 return 0.95, "UNION_EXFILTRATION"
             return 0.8, "DATA_REFLECTION_DETECTED"
