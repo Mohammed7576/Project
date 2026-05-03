@@ -833,6 +833,16 @@ async function startServer() {
         }
       });
 
+      // Listen for client disconnect and kill python process
+      req.on('close', () => {
+        if (pythonProcess) {
+          console.log("[SYSTEM] Client disconnected. Killing Prometheus process.");
+          pythonProcess.kill('SIGTERM');
+          pythonProcess = null;
+        }
+        clearInterval(heartbeat);
+      });
+
       pythonProcess.on("error", (err: any) => {
         console.error("Failed to start python process:", err);
         if (!res.writableEnded) {
@@ -914,7 +924,7 @@ async function startServer() {
       const totalGen = db.prepare(`SELECT MAX(generation_num) as maxGen FROM experience ${whereClause}`).get(...params).maxGen || 0;
       const totalPayloads = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause}`).get(...params).count;
       const smartBlocked = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} status = 'PREDICTIVE_BLOCKED'`).get(...params).count;
-      const wafBlocked = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} (score <= 0.1 OR status = 'WAF_BLOCKED')`).get(...params).count;
+      const wafBlocked = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} ((score <= 0.1 AND status != 'PREDICTIVE_BLOCKED') OR status = 'WAF_BLOCKED')`).get(...params).count;
       const successCount = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} score >= 0.8`).get(...params).count;
       const sqlErrors = db.prepare(`SELECT COUNT(*) as count FROM experience ${whereClause} ${whereClause ? 'AND' : 'WHERE'} error_msg IS NOT NULL AND error_msg != ''`).get(...params).count;
       

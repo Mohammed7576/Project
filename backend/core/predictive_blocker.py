@@ -184,19 +184,27 @@ class PredictiveBlocker:
         """Reduces confidence in rules that were present in a successful payload."""
         to_remove = []
         for pattern in self.blocked_patterns:
-            if re.search(pattern, payload, re.IGNORECASE):
-                # Reduce confidence
-                try:
-                    conn = self.conn
-                    cursor = conn.cursor()
-                    cursor.execute('UPDATE blocking_rules SET confidence = confidence - 0.2 WHERE pattern = ?', (pattern,))
-                    cursor.execute('DELETE FROM blocking_rules WHERE confidence < 0.3')
-                    if cursor.rowcount > 0:
-                        print(f"[*] Blocker: Rule '{pattern}' confidence reduced/removed due to success.", flush=True)
-                    conn.commit()
-                    # We'll reload patterns next time or just remove from set
-                except Exception as e:
-                    print(f"[!] Blocker: Error reducing confidence: {e}")
+            try:
+                processed_pattern = pattern
+                if ' ' in pattern and not (pattern.startswith('\\b') or pattern.startswith('/')):
+                    parts = [re.escape(p) for p in pattern.split()]
+                    processed_pattern = r"\b" + r"\s*.*?\s*".join(parts) + r"\b"
+                    
+                if re.search(processed_pattern, payload, re.IGNORECASE):
+                    # Reduce confidence
+                    try:
+                        conn = self.conn
+                        cursor = conn.cursor()
+                        cursor.execute('UPDATE blocking_rules SET confidence = confidence - 0.2 WHERE pattern = ?', (pattern,))
+                        cursor.execute('DELETE FROM blocking_rules WHERE confidence < 0.3')
+                        if cursor.rowcount > 0:
+                            print(f"[*] Blocker: Rule '{pattern}' confidence reduced/removed due to success.", flush=True)
+                        conn.commit()
+                        # We'll reload patterns next time or just remove from set
+                    except Exception as e:
+                        print(f"[!] Blocker: Error reducing confidence: {e}")
+            except re.error:
+                pass
         self._load_patterns() # Refresh local set
 
     def _update_rule(self, pattern, confidence_boost):

@@ -97,7 +97,7 @@ export default function Dashboard() {
         fetch(`/api/swarm-radar${q}`),
         fetch(`/api/reputation-trends${q}`),
         fetch(`/api/sql-errors${q}`),
-        fetch(`/api/waf-intelligence`)
+        fetch(`/api/waf-intelligence${q}`)
       ]);
 
       if (evoRes.ok) {
