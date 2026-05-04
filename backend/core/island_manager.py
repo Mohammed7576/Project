@@ -279,26 +279,26 @@ class IslandManager:
             if not ignore_blocker:
                 risk_score, matched_patterns = self.blocker.should_block(payload_str)
                 if risk_score > 3: # Extremely high risk, system refuses to send to prevent IP ban
-                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [PRED_BLOCK] Risk {risk_score} too high. Skipping to protect reputation.", flush=True)
+                    # print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [PRED_BLOCK] Risk {risk_score} too high. Skipping to protect reputation.", flush=True)
                     self.exp_manager.save_attempt(payload_str, 0, "PREDICTIVE_BLOCKED", island_id=island['id'], generation_num=gen_num, target_name=self.target_name, parent_payload=genome.parent_payload)
                     scored_population.append((genome, 0, "PREDICTIVE_BLOCKED"))
                     continue
                 
                 if risk_score > 0:
-                    print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...", flush=True)
+                    # print(f"  [Island {island['id']}] {i+1}/{len(pop)}: [RISKY] {risk_score} patterns detected. Applying Active Camouflage...", flush=True)
                     # Point 5: Instead of avoiding, we increase camouflage
                     payload_str = mutator.camouflage_payload(payload_str, matched_patterns)
                     # We might want to re-validate if it's still "too" risky, or just send it
                     # Here we just proceed with the camouflaged version
 
-            print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
+            # print(f"  [Island {island['id']}] {i+1}/{len(pop)}: Requesting... {payload_str[:30]}", flush=True)
             try:
                 response = self.client.send_request(payload_str)
             except Exception as e:
-                print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
+                # print(f"  [Island {island['id']}] Request FAILED: {e}", flush=True)
                 continue
             
-            print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
+            # print(f"  [Island {island['id']}] Response received (Status: {response['status']})", flush=True)
             
             # 1.1 WAF Fingerprinting (First Request of the generation or if unknown)
             if i == 0:
@@ -356,9 +356,9 @@ class IslandManager:
             if score <= 0.1:
                 block_reason = self.inferrer.get_blocking_reason(payload_str)
                 if block_reason:
-                    print(f"  [WAF_REASON] Payload matched inferred rule: '{block_reason[0]['pattern']}'", flush=True)
+                    pass # print(f"  [WAF_REASON] Payload matched inferred rule: '{block_reason[0]['pattern']}'", flush=True)
 
-            print(f"  [{status} | {score*100:.1f}] ... {payload_str[:20]}... {island['id']}:{i+1}/{len(pop)} [{island['id']} Island]", flush=True)
+            # print(f"  [{status} | {score*100:.1f}] ... {payload_str[:20]}... {island['id']}:{i+1}/{len(pop)} [{island['id']} Island]", flush=True)
             
             self.session_tested.add(payload_str)
             # Pass advanced metrics to RL reporter
@@ -384,6 +384,13 @@ class IslandManager:
 
         # Next Gen for this island
         scored_population.sort(key=lambda x: x[1], reverse=True)
+        
+        # Display top 10 payloads for this generation in the system logs
+        print(f"\n  [Island {island['id']}] Top 10 Payloads for Generation {gen_num}:", flush=True)
+        for rank, (genome, score, error_msg) in enumerate(scored_population[:10]):
+            payload_str = genome.render()
+            print(f"    {rank+1}. [{score*100:.1f}%] {payload_str}", flush=True)
+
         elites = [p[0] for p in scored_population[:2] if p[1] > 0.2]
         survivors = [p for p in scored_population if p[1] > 0.1]
         
