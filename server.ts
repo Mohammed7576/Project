@@ -318,7 +318,15 @@ async function startServer() {
       // Try to select island_id, fallback to 1 if column doesn't exist yet
       let rows: any[] = [];
       try {
-        const stmt = db.prepare(`SELECT payload, score, island_id, generation_num FROM experience ${whereClause} ORDER BY timestamp DESC LIMIT 100`);
+        // Only return the top 10 payloads per generation to lessen load on processor
+        const stmt = db.prepare(`
+          SELECT * FROM (
+            SELECT payload, score, island_id, generation_num,
+                   ROW_NUMBER() OVER(PARTITION BY generation_num ORDER BY score DESC, timestamp DESC) as rnk
+            FROM experience ${whereClause}
+          ) WHERE rnk <= 10
+          ORDER BY generation_num DESC, score DESC LIMIT 100
+        `);
         rows = stmt.all(...params);
       } catch (e) {
         const stmt = db.prepare(`SELECT payload, score, 1 as island_id, 1 as generation_num FROM experience ${whereClause} ORDER BY timestamp DESC LIMIT 100`);
