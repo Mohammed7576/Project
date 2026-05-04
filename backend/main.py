@@ -15,20 +15,22 @@ from utils.data_extractor import DataExtractor
 def run_prometheus():
     training_mode = os.getenv("TRAINING_MODE", "false").lower() == "true"
     
-    print("\n" + "="*50, flush=True)
+    # print("\n" + "="*50, flush=True)
     if training_mode:
-        print("--- [ مختبر التدريب النمطي: وضع المحاكاة النشط ] ---", flush=True)
-        print("--- [ الوضع: تعليمي / تحليل الأخطاء المفصل ] ---", flush=True)
+        pass
+        # print("--- [ مختبر التدريب النمطي: وضع المحاكاة النشط ] ---", flush=True)
+        # print("--- [ الوضع: تعليمي / تحليل الأخطاء المفصل ] ---", flush=True)
     else:
-        print("--- [ القيادة والسيطرة: وحدة الهجوم الفعلي ] ---", flush=True)
-        print("--- [ الوضع: حملة اختراق متطورة / هجوم صامت ] ---", flush=True)
-    print("="*50, flush=True)
+        pass
+        # print("--- [ القيادة والسيطرة: وحدة الهجوم الفعلي ] ---", flush=True)
+        # print("--- [ الوضع: حملة اختراق متطورة / هجوم صامت ] ---", flush=True)
+    # print("="*50, flush=True)
     
     client = HTTPClient(base_url=os.getenv("TARGET_URL", "http://localhost/"))
     exp_manager = ExperienceManager()
     extractor = DataExtractor()
     
-    print("[*] Stage: Configuration Loading...", flush=True)
+    # print("[*] Stage: Configuration Loading...", flush=True)
     target_user = os.getenv("TARGET_USER", "admin")
     target_pass = os.getenv("TARGET_PASS", "password")
     target_name = os.getenv("TARGET_NAME", "default")
@@ -57,20 +59,20 @@ def run_prometheus():
     exploration = safe_float(os.getenv("RL_EXPLORATION_RATE"), 0.5)
     curiosity = safe_float(os.getenv("RL_CURIOSITY_WEIGHT"), 1.0)
     
-    print(f"[*] Config: Target={target_name}, Security={target_security}, Pop={pop_size}, MaxGens={max_gens}, LR={lr}, Epsilon={exploration}, Curiosity={curiosity}", flush=True)
+    # print(f"[*] Config: Target={target_name}, Security={target_security}, Pop={pop_size}, MaxGens={max_gens}, LR={lr}, Epsilon={exploration}, Curiosity={curiosity}", flush=True)
     
     # Phase 0: Ensure Target Profile
-    print("[*] Stage: Database Initialization...", flush=True)
+    # print("[*] Stage: Database Initialization...", flush=True)
     exp_manager.save_target_profile(client.base_url, target_name=target_name)
 
     # المرحلة 1 و 2: تسجيل الدخول وضبط الحماية
-    print("[*] Stage: Target Authentication...", flush=True)
+    # print("[*] Stage: Target Authentication...", flush=True)
     if not client.setup_dvwa(username=target_user, password=target_pass, security_level=target_security):
         print("[!] Failed to establish session.", flush=True)
         return
 
     # المرحلة 3: اكتشاف السياق (Context Discovery)
-    print("[*] Stage: Smart Context Discovery...", flush=True)
+    # print("[*] Stage: Smart Context Discovery...", flush=True)
     discoverer = ContextDiscoverer(client, disable_strings=(target_security == "high"))
     discovery_results = discoverer.discover()
     
@@ -79,12 +81,12 @@ def run_prometheus():
     comment_style = discovery_results.get("comment_style", "-- -")
     disable_quotes = discovery_results.get("disable_strings", False)
     
-    print(f"[*] Discovery Results: Context={inj_type}, DB={db_type}, Style={comment_style}", flush=True)
+    # print(f"[*] Discovery Results: Context={inj_type}, DB={db_type}, Style={comment_style}", flush=True)
     
-    print(f"[*] Targeting Target '{target_name}' @ {client.base_url}", flush=True)
+    # print(f"[*] Targeting Target '{target_name}' @ {client.base_url}", flush=True)
     
     # Load payloads from database API
-    print("[*] Stage: Loading Base Payloads...", flush=True)
+    # print("[*] Stage: Loading Base Payloads...", flush=True)
     base_payloads = client.fetch_base_payloads()
     
     # Fallback/Default payloads if DB is empty or inaccessible
@@ -155,10 +157,10 @@ def run_prometheus():
 
     # المرحلة ٤: التقاط "الخط الأساسي" (Baseline)
     # نستخدم رقم "1" كمرجع لأنه يعيد بيانات الأدمن بشكل شرعي، وذلك لمنع النتائج الكاذبة.
-    print("[*] Stage: Capturing Baseline (Testing '1')...", flush=True)
+    # print("[*] Stage: Capturing Baseline (Testing '1')...", flush=True)
     baseline_response = client.send_request("1")
 
-    print("[*] Stage: Evolutionary Engine Initialization...", flush=True)
+    # print("[*] Stage: Evolutionary Engine Initialization...", flush=True)
     island = IslandManager(
         client, 
         base_payloads, 
@@ -177,16 +179,16 @@ def run_prometheus():
     start_gen = island.current_gen
     max_generations = start_gen + max_gens
     
-    print(f"[*] Resuming from generation {start_gen}, target end generation: {max_generations}", flush=True)
+    # print(f"[*] Resuming from generation {start_gen}, target end generation: {max_generations}", flush=True)
     
     # Load historical successes to avoid duplication and track progress
-    print("[*] Stage: Loading Historical Successes...", flush=True)
+    # print("[*] Stage: Loading Historical Successes...", flush=True)
     historical_exploits = exp_manager.get_all_exploits()
     successful_payloads = {e[0] for e in historical_exploits} if historical_exploits else set()
-    print(f"[*] Loaded {len(successful_payloads)} historical successes.", flush=True)
+    # print(f"[*] Loaded {len(successful_payloads)} historical successes.", flush=True)
 
     if start_gen >= max_generations:
-        print(f"[!] Target generation already reached ({start_gen} >= {max_generations}). Use a larger MAX_GENERATIONS to continue.", flush=True)
+        # print(f"[!] Target generation already reached ({start_gen} >= {max_generations}). Use a larger MAX_GENERATIONS to continue.", flush=True)
         return
 
     for gen in range(start_gen, max_generations):

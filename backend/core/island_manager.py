@@ -54,7 +54,7 @@ class IslandManager:
             try:
                 state = json.loads(saved_state)
                 self.current_gen = state.get('gen_num', 0)
-                print(f"[*] Resuming from previous session (Generation {self.current_gen})", flush=True)
+                # print(f"[*] Resuming from previous session (Generation {self.current_gen})", flush=True)
                 for i_data in state['islands']:
                     is_quoteless = (context == "QUOTELESS_STRING")
                     actual_context = "SINGLE_QUOTE" if is_quoteless else context
@@ -90,7 +90,7 @@ class IslandManager:
                 
                 is_resuming = True
             except Exception as e:
-                print(f"[!] Failed to load state: {e}. Starting fresh.", flush=True)
+                # print(f"[!] Failed to load state: {e}. Starting fresh.", flush=True)
                 self.islands = [] # Reset
 
         if not is_resuming:
@@ -107,13 +107,13 @@ class IslandManager:
                 # 1. Context-Aware Initialization
                 if context == "SINGLE_QUOTE" or context == "QUOTELESS_STRING":
                     mutator.strategy_weights["context_aware"] *= 3.0
-                    print(f"[*] Island {island_id}: Optimizing for String contexts.", flush=True)
+                    # print(f"[*] Island {island_id}: Optimizing for String contexts.", flush=True)
                 elif context == "DOUBLE_QUOTE":
                     mutator.strategy_weights["context_aware"] *= 3.0
-                    print(f"[*] Island {island_id}: Optimizing for DOUBLE_QUOTE context.", flush=True)
+                    # print(f"[*] Island {island_id}: Optimizing for DOUBLE_QUOTE context.", flush=True)
                 elif context == "NUMERIC":
                     mutator.strategy_weights["logical_alts"] *= 3.0
-                    print(f"[*] Island {island_id}: Optimizing for NUMERIC context.", flush=True)
+                    # print(f"[*] Island {island_id}: Optimizing for NUMERIC context.", flush=True)
 
                 # Specialization: Each island focuses on a distinct Obfuscation (تشويش) category
                 # Mapping: 1: Lexical, 2: Structural, 3: Semantic/Dialect
@@ -122,18 +122,18 @@ class IslandManager:
                     mutator.strategy_weights["scientific_notation"] *= 3.0
                     mutator.strategy_weights["wide_byte"] *= 2.0
                     mutator.strategy_weights["dios_mutation"] *= 2.0
-                    print(f"[*] Island {island_id}: Specialized in Semantic Obfuscation (Function/Logic alternatives).", flush=True)
+                    # print(f"[*] Island {island_id}: Specialized in Semantic Obfuscation (Function/Logic alternatives).", flush=True)
                 elif island_id == 2: # Structural Obfuscation (The "Deception" Island)
                     mutator.strategy_weights["inline_comments"] *= 3.0
                     mutator.strategy_weights["junk_fill"] *= 3.0
                     mutator.strategy_weights["micro_fragmentation"] *= 4.0
                     mutator.strategy_weights["dynamic_structural"] *= 2.0
-                    print(f"[*] Island {island_id}: Specialized in Structural Obfuscation (Fragmentation & Comments).", flush=True)
+                    # print(f"[*] Island {island_id}: Specialized in Structural Obfuscation (Fragmentation & Comments).", flush=True)
                 else: # island_id == 1: Lexical Obfuscation (The "Visual" Island)
                     mutator.strategy_weights["semantic_mutation"] *= 3.0 # Handles case/backticks
                     mutator.strategy_weights["nested_encoding"] *= 3.0 # Strictly Single-Layer URL
                     mutator.strategy_weights["grammar_expansion"] *= 2.0
-                    print(f"[*] Island {island_id}: Specialized in Lexical Obfuscation (Encoding & Case Variance).", flush=True)
+                    # print(f"[*] Island {island_id}: Specialized in Lexical Obfuscation (Encoding & Case Variance).", flush=True)
 
                 # Initialize population for this island
                 golden_seeds = self.exp_manager.get_golden_payloads(limit=10)
@@ -151,7 +151,7 @@ class IslandManager:
                     "best_score": 0
                 })
 
-        print(f"[*] Archipelago Initialized: {len(self.islands)} Islands established.", flush=True)
+        # print(f"[*] Archipelago Initialized: {len(self.islands)} Islands established.", flush=True)
 
     def _calculate_similarity(self, p1, p2):
         """Simple Jaccard similarity based on characters to detect structural bias."""

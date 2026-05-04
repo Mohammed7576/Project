@@ -36,7 +36,7 @@ class HTTPClient:
     def setup_dvwa(self, username="admin", password="password", security_level="medium"):
         """Performs login and sets security level."""
         self.security_level = security_level.lower()
-        print(f"[*] Initializing connection to {self.base_url}...")
+        # print(f"[*] Initializing connection to {self.base_url}...")
         
         # 1. Login
         token = self._get_token(self.login_url)
@@ -48,7 +48,7 @@ class HTTPClient:
         if token:
             login_data['user_token'] = token
             
-        print(f"[*] Attempting login as '{username}'...")
+        # print(f"[*] Attempting login as '{username}'...")
         res = self.session.post(self.login_url, data=login_data, timeout=10)
         
         if "Login failed" in res.text:
@@ -56,7 +56,7 @@ class HTTPClient:
             return False
             
         # 2. Set Security Level
-        print(f"[*] Setting Security Level to: {security_level.upper()}")
+        # print(f"[*] Setting Security Level to: {security_level.upper()}")
         token = self._get_token(self.security_url)
         security_data = {
             'security': security_level.lower(),
