@@ -102,8 +102,7 @@ class HTTPClient:
             'Submit': 'Submit'
         }
         
-        # Decrease request speed
-        time.sleep(1.0)
+        # Removed intentional delay to increase speed
         
         start_time = time.time()
         try:

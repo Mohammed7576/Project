@@ -21,7 +21,7 @@ class RLAgent:
         
         # Experience Replay Buffer
         self.memory = []
-        self.max_memory = 100
+        self.max_memory = 500
         
         self.last_state = None
         self.last_action_idx = None
@@ -68,7 +68,7 @@ class RLAgent:
         self.store_experience(self.last_state, self.last_action_idx, reward, None)
         
         # Learn from a small batch of history (Stochastic Gradient Descent)
-        batch_size = min(len(self.memory), 64)
+        batch_size = min(len(self.memory), 16)
         batch_indices = np.random.choice(len(self.memory), batch_size, replace=False)
         
         for idx in batch_indices:

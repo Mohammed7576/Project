@@ -229,7 +229,7 @@ class ASTMutator:
             rule_confidence = max([r.get('confidence', 0) for r in block_reason] + [0])
             if score <= 0.1:
                 # Heavy penalty for hitting a known rule to adapt faster to predictive WAF
-                effective_reward -= (rule_confidence * 2.0)
+                effective_reward -= (rule_confidence * 1.5)
         
         # Point 7: Update Actor-Critic (CRITIC Step)
         if state_vector:
