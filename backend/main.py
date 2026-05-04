@@ -192,11 +192,11 @@ def run_prometheus():
         return
 
     for gen in range(start_gen, max_generations):
-        print(f"\n[+] Processing generation {gen + 1} of {max_generations}...", flush=True)
+        # print(f"\n[+] Processing generation {gen + 1} of {max_generations}...", flush=True)
         try:
             island.evolve_generation(gen)
             # Extra keep-alive push to stdout
-            print(f"[*] Generation {gen + 1} complete. Current Hall of Fame size: {len(island.hall_of_fame)}", flush=True)
+            # print(f"[*] Generation {gen + 1} complete. Current Hall of Fame size: {len(island.hall_of_fame)}", flush=True)
         except Exception as e:
             print(f"  [!] CRITICAL ERROR in Generation {gen + 1}: {e}", flush=True)
             import traceback

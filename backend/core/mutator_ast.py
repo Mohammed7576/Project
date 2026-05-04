@@ -85,13 +85,13 @@ class ASTMutator:
         strategy = hint.get("strategy")
         if strategy in self.strategy_weights:
             self.strategy_weights[strategy] *= 5.0
-            print(f"[*] Mutator: AI Hint Applied - Boosting {strategy}", flush=True)
+            # print(f"[*] Mutator: AI Hint Applied - Boosting {strategy}", flush=True)
         
         # Keyword specific hints
         target_kw = hint.get("target_keyword")
         if target_kw in self.keyword_reputation:
             self.keyword_reputation[target_kw] = 0.1 # Force bypass for this keyword
-            print(f"[*] Mutator: AI Hint Applied - Flagging {target_kw} for bypass", flush=True)
+            # print(f"[*] Mutator: AI Hint Applied - Flagging {target_kw} for bypass", flush=True)
             
         # WAF strategy weight boosts
         waf_weights = hint.get("weights")
@@ -99,7 +99,7 @@ class ASTMutator:
             for w_name, val in waf_weights.items():
                 if w_name in self.strategy_weights:
                     self.strategy_weights[w_name] = val
-                    print(f"[*] Mutator: WAF Strategy Applied - Setting {w_name} to {val}", flush=True)
+                    # print(f"[*] Mutator: WAF Strategy Applied - Setting {w_name} to {val}", flush=True)
 
     def _strip_wrappers(self, payload):
         """Isolate core gene: Strip known outer wrappers and terminators before mutation."""
@@ -162,7 +162,7 @@ class ASTMutator:
         if self.semantic_memory:
             is_blocked, conf, pattern = self.semantic_memory.check_payload(mutated)
             if is_blocked and conf > 0.7:
-                print(f"[*] Mutator: BLOCK PREVENTED by Semantic Memory! Pattern matched: {pattern}", flush=True)
+                # print(f"[*] Mutator: BLOCK PREVENTED by Semantic Memory! Pattern matched: {pattern}", flush=True)
                 # Final emergency obfuscation to break the known pattern
                 mutated = self._break_regex_match(mutated)
         
@@ -176,7 +176,7 @@ class ASTMutator:
                 # Find all segments matching the blocked regex pattern
                 matches = list(re.finditer(pattern, mutated, re.IGNORECASE))
                 if matches:
-                    print(f"[*] Mutator: Active Evasion applied against learned WAF rule: {pattern}", flush=True)
+                    # print(f"[*] Mutator: Active Evasion applied against learned WAF rule: {pattern}", flush=True)
                     # Replace from right to left to avoid index shifting
                     for match in reversed(matches):
                         start, end = match.span()

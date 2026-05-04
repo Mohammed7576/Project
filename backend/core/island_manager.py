@@ -166,7 +166,7 @@ class IslandManager:
         # 0. Poll for AI Hints from SQLite
         hints = self.exp_manager.get_latest_hint()
         if hints:
-            print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
+            # print(f"[*] AI HINT RECEIVED: {hints.get('suggestion', 'N/A')}", flush=True)
             for island in self.islands:
                 island["mutator"].apply_hint(hints)
 
@@ -192,15 +192,15 @@ class IslandManager:
 
         # 1.5 Batch WAF Pattern Analysis (Understanding 'Why')
         if self.blocked_buffer:
-            print(f"[*] Analyzing WAF behavior across {len(self.blocked_buffer)} blocked payloads...", flush=True)
+            # print(f"[*] Analyzing WAF behavior across {len(self.blocked_buffer)} blocked payloads...", flush=True)
             new_inferred_rules = self.inferrer.analyze_batch(self.blocked_buffer)
             if new_inferred_rules:
-                print(f"[WAF_ANALYSIS_SUCCESS] Inferred {len(new_inferred_rules)} blocking patterns.", flush=True)
+                # print(f"[WAF_ANALYSIS_SUCCESS] Inferred {len(new_inferred_rules)} blocking patterns.", flush=True)
                 for island in self.islands:
                     island["mutator"].inferred_rules = new_inferred_rules
                     
                 for rule in new_inferred_rules[:3]: # Log top 3
-                    print(f"  [PATTERN_ID] Rule: '{rule['pattern']}' | Confidence: {rule['confidence']:.2f}", flush=True)
+                    pass # print(f"  [PATTERN_ID] Rule: '{rule['pattern']}' | Confidence: {rule['confidence']:.2f}", flush=True)
             
             # Clear buffer for next gen
             self.blocked_buffer = []
@@ -218,7 +218,7 @@ class IslandManager:
                 if self.stagnation_counter >= 5:
                     # Request AI Analysis
                     best_p = self.hall_of_fame[-1] if self.hall_of_fame else self.base_seeds[0]
-                    print(f"[ANALYSIS_REQUIRED] Payload: {best_p} | Stagnation: {self.stagnation_counter}", flush=True)
+                    # print(f"[ANALYSIS_REQUIRED] Payload: {best_p} | Stagnation: {self.stagnation_counter}", flush=True)
             else:
                 self.stagnation_counter = 0
 
@@ -262,7 +262,7 @@ class IslandManager:
         mutation_intensity = min(max(1, round(calc_intensity)), 6)
 
         if mutation_intensity >= 3:
-            print(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}", flush=True)
+            pass # print(f"  [!] Island {island['id']} Chaos: Intensity {mutation_intensity} | Diversity: {diversity_ratio:.2f}", flush=True)
 
         for i, genome in enumerate(pop):
             payload_str = genome.render()
@@ -304,7 +304,7 @@ class IslandManager:
             if i == 0:
                 waf = self.fingerprinter.identify(response['headers'], response['text'])
                 if waf != "GENERIC / UNKNOWN":
-                    print(f"[*] WAF DETECTED: {waf}", flush=True)
+                    # print(f"[*] WAF DETECTED: {waf}", flush=True)
                     self.exp_manager.save_waf_type(self.client.base_url, waf) # New method needed
                     strategy = self.fingerprinter.get_bypass_strategy(waf)
                     mutator.apply_hint({"suggestion": strategy["hint"], "weights": strategy["weights"]})
@@ -376,7 +376,7 @@ class IslandManager:
                     harvested_data = self.extractor.extract(response['text'])
                     if harvested_data:
                         report = self.extractor.format_report(harvested_data)
-                        print(report, flush=True)
+                        # print(report, flush=True)
 
                     if payload_str not in self.hall_of_fame:
                         self.hall_of_fame.append(payload_str)
@@ -404,7 +404,7 @@ class IslandManager:
         Point 5: Federated Policy Migration.
         Exchanges both genetic material (payloads) and learned weights (Policy).
         """
-        print("[*] Migration Event: Exchanging payloads AND learned policy weights between islands...", flush=True)
+        # print("[*] Migration Event: Exchanging payloads AND learned policy weights between islands...", flush=True)
         for i in range(self.num_islands):
             source_island = self.islands[i]
             target_island = self.islands[(i + 1) % self.num_islands]
