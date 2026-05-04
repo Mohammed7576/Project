@@ -12,7 +12,7 @@ from utils.success_validator import SuccessValidator
 from utils.data_extractor import DataExtractor
 
 class IslandManager:
-    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default", comment_style="-- -", learning_rate=0.01, exploration_rate=0.2, curiosity_weight=1.0):
+    def __init__(self, client, base_payloads, exp_manager, population_size=12, num_islands=3, context="GENERIC", disable_strings=True, baseline=None, target_name="default", comment_style="-- -", learning_rate=0.1, exploration_rate=0.2, curiosity_weight=1.0):
         self.client = client
         self.baseline = baseline
         self.exp_manager = exp_manager

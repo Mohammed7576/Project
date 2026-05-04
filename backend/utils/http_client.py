@@ -102,6 +102,9 @@ class HTTPClient:
             'Submit': 'Submit'
         }
         
+        # Decrease request speed
+        time.sleep(1.0)
+        
         start_time = time.time()
         try:
             # Dynamic method switching based on DVWA security context

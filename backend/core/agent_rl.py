@@ -6,7 +6,7 @@ class RLAgent:
     Actor: Base policy for mutation selection.
     Critic: Value estimation learned from a history of experiences.
     """
-    def __init__(self, state_dim, action_names, learning_rate=0.01, exploration_rate=0.05):
+    def __init__(self, state_dim, action_names, learning_rate=0.1, exploration_rate=0.05):
         self.state_dim = state_dim
         self.action_names = action_names
         self.action_dim = len(action_names)
@@ -21,7 +21,7 @@ class RLAgent:
         
         # Experience Replay Buffer
         self.memory = []
-        self.max_memory = 500
+        self.max_memory = 100
         
         self.last_state = None
         self.last_action_idx = None
@@ -68,7 +68,7 @@ class RLAgent:
         self.store_experience(self.last_state, self.last_action_idx, reward, None)
         
         # Learn from a small batch of history (Stochastic Gradient Descent)
-        batch_size = min(len(self.memory), 16)
+        batch_size = min(len(self.memory), 64)
         batch_indices = np.random.choice(len(self.memory), batch_size, replace=False)
         
         for idx in batch_indices:

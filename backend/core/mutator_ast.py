@@ -3,7 +3,7 @@ import re
 from core.grammar_engine import GrammarEngine
 
 class ASTMutator:
-    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True, comment_style="-- -", learning_rate=0.01, exploration_rate=0.2, curiosity_weight=1.0):
+    def __init__(self, context="GENERIC", quoteless=False, disable_strings=True, comment_style="-- -", learning_rate=0.1, exploration_rate=0.2, curiosity_weight=1.0):
         self.sql_keywords = [
             "UNION", "SELECT", "OR", "AND", "XOR", "WHERE", "ORDER BY", "SLEEP", 
             "GROUP BY", "FROM", "INFORMATION_SCHEMA", "DATABASE", "USER", "VERSION",
@@ -228,12 +228,13 @@ class ASTMutator:
             # This helps the RL agent correlate specific patterns with failure
             rule_confidence = max([r.get('confidence', 0) for r in block_reason] + [0])
             if score <= 0.1:
-                # Extra penalty for hitting a known rule
-                effective_reward -= (rule_confidence * 0.2)
+                # Heavy penalty for hitting a known rule to adapt faster to predictive WAF
+                effective_reward -= (rule_confidence * 2.0)
         
         # Point 7: Update Actor-Critic (CRITIC Step)
         if state_vector:
             self.current_state_vector = state_vector
+            # Pass final strongly adapted reward
             self.rl_agent.update(effective_reward)
         
         # 1. HER & Information Gain: Learning from 403 (Forbidden)

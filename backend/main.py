@@ -53,7 +53,7 @@ def run_prometheus():
         except:
             return default
 
-    lr = safe_float(os.getenv("RL_LEARNING_RATE"), 0.05)
+    lr = safe_float(os.getenv("RL_LEARNING_RATE"), 0.1)
     exploration = safe_float(os.getenv("RL_EXPLORATION_RATE"), 0.5)
     curiosity = safe_float(os.getenv("RL_CURIOSITY_WEIGHT"), 1.0)
     
