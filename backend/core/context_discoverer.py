@@ -45,11 +45,11 @@ class ContextDiscoverer:
                 break
             
             # Fallback: Boolean-based check if time fails
-            res_bool = self.client.send_request(case['verify'])
+            res_bool = self.client.send_request(case['verify'] + " " + self.comment_style)
             if len(res_bool['text']) == len(baseline['text']) and not self._check_sql_errors(res_bool['text']):
                 # Double check with a FALSE condition
                 false_payload = case['verify'].replace("1=1", "1=2").replace("\"1\"=\"1\"", "\"1\"=\"2\"").replace("'1'='1'", "'1'='2'")
-                res_false = self.client.send_request(false_payload)
+                res_false = self.client.send_request(false_payload + " " + self.comment_style)
                 if len(res_false['text']) != len(baseline['text']):
                     self.detected_context = case['name']
                     found = True

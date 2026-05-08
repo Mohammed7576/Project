@@ -217,8 +217,12 @@ def run_prometheus():
     if successful_payloads:
         print("\n" + "*"*60, flush=True)
         print(f"[!!!] ATTACK PHASE COMPLETE: {len(successful_payloads)} SUCCESSFUL EXPLOITS FOUND", flush=True)
-        for i, p in enumerate(successful_payloads):
+        # Sort and take top 10 (or handle it, maybe by picking arbitrary 10 since it's a set)
+        top_10 = list(successful_payloads)[:10]
+        for i, p in enumerate(top_10):
             print(f"  {i+1}. {p}", flush=True)
+        if len(successful_payloads) > 10:
+             print(f"  ... and {len(successful_payloads) - 10} more.", flush=True)
         print("*"*60, flush=True)
         
         # Use the best one for extraction

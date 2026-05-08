@@ -27,7 +27,8 @@ class SuccessValidator:
         # sqlmap (official data/xml/errors.xml) exhaustive signatures for MySQL ONLY
         self.db_errors = {
             "MySQL": [
-                r"SQL syntax.*(?:MySQL|MariaDB)", 
+                r"SQL syntax.*(?:MySQL|MariaDB)",
+                r"You have an error in your SQL syntax",
                 r"Warning.*mysql_.*", 
                 r"valid MySQL result",
                 r"MySqlClient\.", 
@@ -254,9 +255,10 @@ class SuccessValidator:
         sig_matches = sum(1 for sig in self.basic_signatures if response_text.count(sig) > 2)
         if sig_matches >= 2 or response_text.count("ID:") > 5:
             # If it's just a boolean bypass, cap it so more advanced exploration is needed
-            if any(kw in payload_upper for kw in ["OR ", "||", "XOR ", "TRUE", "1=1", "2=2"]):
+            if any(kw in payload_upper for kw in ["OR ", "||", "XOR ", "TRUE", "1=1", "2=2"]) and not self.get_sql_error(response_text):
                  return 0.55, "SUCCESS_BOOLEAN_MASS_DUMP"
-            return 1.0, "SUCCESS_MASS_DATA_DUMP"
+            if not self.get_sql_error(response_text):
+                 return 1.0, "SUCCESS_MASS_DATA_DUMP"
 
         # 2. WAF/IPS Detection (sqlmap logic)
         waf_signatures = [
@@ -300,7 +302,7 @@ class SuccessValidator:
                 return 0.85, "TIME_BASED_POSITIVE"
 
         # 6. HEURISTIC SIGNATURES
-        if any(sig in response_text for sig in self.basic_signatures):
+        if any(sig in response_text for sig in self.basic_signatures) and not self.get_sql_error(response_text):
             return 0.65, "LOGIC_BYPASS_GENERIC"
 
         return 0.2, "INCONCLUSIVE"

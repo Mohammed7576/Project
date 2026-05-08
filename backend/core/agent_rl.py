@@ -39,7 +39,10 @@ class RLAgent:
         probs = self._softmax(np.dot(h, self.W_actor))[0]
         
         # Ensure exact sum to 1.0 to prevent ValueError in np.random.choice
-        probs = probs / np.sum(probs)
+        if np.any(np.isnan(probs)) or np.sum(probs) == 0:
+            probs = np.ones(self.action_dim) / self.action_dim
+        else:
+            probs = probs / np.sum(probs)
         
         # Add a bit of epsilon-greedy for exploration
         if np.random.random() < self.epsilon:
@@ -88,6 +91,7 @@ class RLAgent:
             
             # 1. Update Critic (Value Head)
             dv = -2 * advantage
+            dv = np.clip(dv, -1.0, 1.0)
             d_critic = np.array([[dv]])
             self.W_critic -= self.lr * np.dot(h.T, d_critic)
             
@@ -95,6 +99,7 @@ class RLAgent:
             d_actor = probs.copy()
             d_actor[a] -= 1.0
             d_actor *= advantage
+            d_actor = np.clip(d_actor, -1.0, 1.0)
             self.W_actor -= self.lr * np.dot(h.T, d_actor.reshape(1, -1))
             
             # 3. Hidden layer update (Backprop through Tanh)
@@ -102,6 +107,12 @@ class RLAgent:
             dh_actor = np.dot(d_actor.reshape(1, -1), W_actor_old.T)
             dh_critic = np.dot(d_critic, W_critic_old.T)
             dh = (dh_actor + dh_critic) * (1 - h**2)
+            dh = np.clip(dh, -1.0, 1.0)
             self.W1 -= self.lr * np.dot(s.T, dh)
+            
+            # Clip weights to prevent overflow
+            self.W_critic = np.clip(self.W_critic, -10.0, 10.0)
+            self.W_actor = np.clip(self.W_actor, -10.0, 10.0)
+            self.W1 = np.clip(self.W1, -10.0, 10.0)
 
         self.last_state = None
