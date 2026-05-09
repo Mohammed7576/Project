@@ -160,6 +160,12 @@ class IslandManager:
         union = len(s1.union(s2))
         return intersection / union if union > 0 else 0
 
+    def update_context(self, new_context):
+        """Dynamic Context Learning: Update the context of all island mutators."""
+        self.context = new_context
+        for island in self.islands:
+            island['mutator'].context = new_context
+            
     def evolve_generation(self, gen_num):
         global_max_score = 0
         
