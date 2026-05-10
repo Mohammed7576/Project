@@ -211,13 +211,6 @@ def run_prometheus():
             for payload in new_successes:
                 print(f"\n[!!!] NEW EXPLOIT DISCOVERED: {payload}", flush=True)
                 successful_payloads.add(payload)
-                
-                # Dynamic Context Learning from Successful Exploit
-                inferred_context = discoverer.infer_from_successful_payload(payload)
-                if inferred_context != "UNKNOWN" and inferred_context != inj_type:
-                    print(f"[*] AI HINT: Learned new context from exploit: {inferred_context}", flush=True)
-                    inj_type = inferred_context
-                    island.update_context(inj_type)
         
         # We don't stop early anymore.
     

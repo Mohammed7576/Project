@@ -148,32 +148,3 @@ class ContextDiscoverer:
             if re.search(pattern, text, re.IGNORECASE):
                 return True
         return False
-
-    def infer_from_successful_payload(self, payload):
-        """Infer context from a successful payload."""
-        import re
-        # Look for the combination of quotes and parentheses before the first SQL operator
-        match = re.match(r"^[^'\"\)\s]+(['\"\)]*)\s*(?:AND|OR|UNION|PROCEDURE|XOR|/|#|-)", payload, re.IGNORECASE)
-        if not match:
-            # Fallback looking for just any quotes/parens at the beginning
-            match = re.match(r"^[a-zA-Z0-9_]*(['\"\)]+)", payload)
-            
-        if match:
-            prefix = match.group(1)
-            mapping = {
-                "'": "SINGLE_QUOTE",
-                "\"": "DOUBLE_QUOTE",
-                "')": "QUOTE_PAREN_1",
-                "'))": "QUOTE_PAREN_2",
-                "')))": "QUOTE_PAREN_3",
-                "\")": "DOUBLE_QUOTE_PAREN_1",
-                "\"))": "DOUBLE_QUOTE_PAREN_2",
-                ")": "NUMERIC_PAREN_1",
-                "))": "NUMERIC_PAREN_2",
-                ")))": "NUMERIC_PAREN_3",
-                "": "NUMERIC"
-            }
-            if prefix in mapping:
-                self.detected_context = mapping[prefix]
-                return self.detected_context
-        return "UNKNOWN"
